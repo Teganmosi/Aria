@@ -1,387 +1,104 @@
-import { useState } from 'react'
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { Outlet, NavLink } from 'react-router-dom'
 import {
   House,
   MessageSquare,
   BookOpen,
-  Heart,
-  Sun,
-  User,
-  LogOut,
-  Sparkles,
   BookText,
-  FileText,
-  Menu,
-  X
+  Calendar,
+  Settings,
+  Heart
 } from 'lucide-react'
-import useAuth from '../hooks/useAuth'
+import { ThemeToggle } from '../pages/LandingPage'
 
 const AppLayout = () => {
-  const navigate = useNavigate()
-  const { logout, user } = useAuth()
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-
-  const handleLogout = () => {
-    logout()
-    navigate('/')
-  }
 
   const navItems = [
-    { 
-      path: '/app/home', 
-      icon: <House size={20} />, 
-      label: 'Home',
-      desc: 'Dashboard',
-      color: '#c9a227'
-    },
-    { 
-      path: '/app/ai-chat', 
-      icon: <MessageSquare size={20} />, 
-      label: 'AI Chat',
-      desc: 'Ask anything',
-      color: '#8b5cf6'
-    },
-    { 
-      path: '/app/bible', 
-      icon: <BookText size={20} />, 
-      label: 'Bible',
-      desc: 'Read Scripture',
-      color: '#10b981'
-    },
-    { 
-      path: '/app/bible-study', 
-      icon: <BookOpen size={20} />, 
-      label: 'Bible Study',
-      desc: 'Interactive companion',
-      color: '#3b82f6'
-    },
-    { 
-      path: '/app/emotional-support', 
-      icon: <Heart size={20} />, 
-      label: 'Faith Companion',
-      desc: 'Emotional support',
-      color: '#ec4899'
-    },
-    {
-      path: '/app/devotion',
-      icon: <Sun size={20} />,
-      label: 'Daily Devotion',
-      desc: 'Morning reflection',
-      color: '#f59e0b'
-    },
-    {
-      path: '/app/notes',
-      icon: <FileText size={20} />,
-      label: 'My Notes',
-      desc: 'Personal insights',
-      color: '#8b5cf6'
-    },
+    { path: '/app/home', icon: <House size={18} />, label: 'HOME' },
+    { path: '/app/ai-chat', icon: <MessageSquare size={18} />, label: 'CHAT' },
+    { path: '/app/bible', icon: <BookText size={18} />, label: 'BIBLE' },
+    { path: '/app/bible-study', icon: <BookOpen size={18} />, label: 'STUDY' },
+    { path: '/app/emotional-support', icon: <Heart size={18} />, label: 'SUPPORT' },
+    { path: '/app/notes', icon: <BookText size={18} />, label: 'NOTES' },
+    { path: '/app/devotion', icon: <Calendar size={18} />, label: 'DEVOTIONS' },
   ]
 
   return (
-    <div className="app-layout">
-      <button 
-        className="mobile-menu-toggle"
-        onClick={() => setSidebarOpen(!sidebarOpen)}
-        aria-label="Toggle menu"
-        style={{
-          position: 'fixed',
-          top: '1rem',
-          left: '1rem',
-          zIndex: 200,
-          background: 'rgba(20, 20, 25, 0.9)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          borderRadius: '8px',
-          padding: '0.5rem',
-          color: '#f5f5f5',
-          cursor: 'pointer',
-          display: 'none'
-        }}
-      >
-        {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
-      </button>
+    <div style={{ display: 'flex', height: '100vh', width: '100vw', background: 'var(--bg-main)', color: 'var(--text-main)', overflow: 'hidden' }}>
 
-      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-        {/* Brand */}
-        <div className="sidebar-brand">
-          <div className="brand-icon-wrapper">
-            <Sparkles className="brand-icon" />
-          </div>
-          <div className="brand-text">
-            <span className="brand-name">Aria</span>
-            <span className="brand-tagline">Your spiritual companion</span>
+      {/* Sidebar - Refined & Slimmer */}
+      <aside style={{
+        width: '240px',
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '2.5rem 1.5rem',
+        borderRight: '1px solid var(--border-color)',
+        background: 'var(--glass-bg)',
+        backdropFilter: 'blur(10px)',
+        zIndex: 50,
+        height: '100%'
+      }}>
+
+        {/* Brand - Integrated */}
+        <div style={{ marginBottom: '3.5rem', paddingLeft: '0.25rem' }}>
+          <h2 className="font-serif" style={{ fontStyle: 'italic', fontSize: '1.75rem', color: 'var(--text-main)', marginBottom: '0.25rem', letterSpacing: '-0.02em' }}>Aria</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--brand-solid)', boxShadow: '0 0 10px var(--brand-solid)' }}></div>
+            <span style={{ fontSize: '0.6rem', letterSpacing: '0.15em', color: 'var(--text-muted)', fontWeight: 700 }}>SANCTUARY ACTIVE</span>
           </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="sidebar-nav">
-          <div className="nav-section-label">Main Menu</div>
+        {/* Nav Links - Tailored Spacing */}
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1 }}>
+          <p style={{ fontSize: '0.65rem', letterSpacing: '0.2em', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '1rem', paddingLeft: '0.5rem' }}>NAVIGATE</p>
           {navItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
-              className={({ isActive }) => 
-                `sidebar-link ${isActive ? 'active' : ''}`
-              }
-              style={({ isActive }) => isActive ? { 
-                borderLeftColor: item.color,
-                background: `${item.color}15`
-              } : {}}
-              onClick={() => setSidebarOpen(false)}
+              style={({ isActive }) => ({
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                padding: '0.85rem 1rem',
+                color: isActive ? 'var(--text-main)' : 'var(--text-secondary)',
+                textDecoration: 'none',
+                fontWeight: isActive ? 700 : 500,
+                fontSize: '0.8rem',
+                letterSpacing: '0.05em',
+                borderRadius: '12px',
+                background: isActive ? 'var(--bg-card)' : 'transparent',
+                boxShadow: isActive ? 'var(--shadow-main)' : 'none',
+                border: isActive ? '1px solid var(--border-color)' : '1px solid transparent',
+                transition: 'all 0.2s ease',
+                opacity: isActive ? 1 : 0.7
+              })}
             >
-              <div className="link-icon" style={{ color: item.color }}>
-                {item.icon}
-              </div>
-              <div className="link-text">
-                <span className="link-label">{item.label}</span>
-                <span className="link-desc">{item.desc}</span>
-              </div>
+              <span style={{ display: 'flex', alignItems: 'center', opacity: 0.9 }}>{item.icon}</span>
+              {item.label}
             </NavLink>
           ))}
         </nav>
 
-        {/* Footer */}
-        <div className="sidebar-footer">
-          <NavLink to="/app/profile" className="sidebar-link profile-link">
-            <div className="profile-avatar">
-              {user?.full_name?.charAt(0) || 'U'}
-            </div>
-            <div className="profile-info">
-              <span className="profile-name">{user?.full_name || 'User'}</span>
-              <span className="profile-email">{user?.email || 'faith@companion.app'}</span>
-            </div>
-          </NavLink>
-          <button onClick={handleLogout} className="sidebar-link logout-btn">
-            <LogOut size={18} />
-            <span>Sign Out</span>
-          </button>
+        {/* Footer Actions - Clean & Integrated */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: 'auto' }}>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 0.5rem' }}>
+            <NavLink
+              to="/app/profile"
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', textDecoration: 'none', color: 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.05em' }}
+            >
+              <Settings size={16} />
+              SETTINGS
+            </NavLink>
+            <ThemeToggle />
+          </div>
         </div>
       </aside>
 
-      <main className="app-main">
+      {/* Main Content Area */}
+      <main style={{ flex: 1, position: 'relative', overflowY: 'auto', background: 'var(--bg-main)' }}>
         <Outlet />
       </main>
 
-      <style>{`
-        .app-layout {
-          display: flex;
-          min-height: 100vh;
-        }
-
-        .sidebar {
-          width: 280px;
-          background: linear-gradient(180deg, #0f0f14 0%, #141419 100%);
-          border-right: 1px solid rgba(255, 255, 255, 0.06);
-          display: flex;
-          flex-direction: column;
-          position: fixed;
-          height: 100vh;
-          z-index: 100;
-        }
-
-        .sidebar-brand {
-          padding: 1.5rem;
-          display: flex;
-          align-items: center;
-          gap: 0.875rem;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-        }
-
-        .brand-icon-wrapper {
-          width: 44px;
-          height: 44px;
-          background: linear-gradient(135deg, #c9a227 0%, #a88620 100%);
-          border-radius: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 4px 12px rgba(201, 162, 39, 0.3);
-        }
-
-        .brand-icon-wrapper .brand-icon {
-          color: white;
-          width: 22px;
-          height: 22px;
-        }
-
-        .brand-text {
-          display: flex;
-          flex-direction: column;
-        }
-
-        .brand-name {
-          font-size: 1.125rem;
-          font-weight: 700;
-          color: #f5f5f5;
-          letter-spacing: -0.02em;
-        }
-
-        .brand-tagline {
-          font-size: 0.7rem;
-          color: rgba(255, 255, 255, 0.4);
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
-        }
-
-        .sidebar-nav {
-          flex: 1;
-          padding: 1.25rem 0.875rem;
-          overflow-y: auto;
-        }
-
-        .nav-section-label {
-          font-size: 0.65rem;
-          text-transform: uppercase;
-          letter-spacing: 0.1em;
-          color: rgba(255, 255, 255, 0.3);
-          padding: 0 0.75rem;
-          margin-bottom: 0.75rem;
-        }
-
-        .sidebar-link {
-          display: flex;
-          align-items: center;
-          gap: 0.875rem;
-          padding: 0.875rem 1rem;
-          color: rgba(255, 255, 255, 0.6);
-          text-decoration: none;
-          border-radius: 12px;
-          transition: all 0.2s ease;
-          font-weight: 500;
-          border: none;
-          background: none;
-          cursor: pointer;
-          width: 100%;
-          font-size: 0.875rem;
-          margin-bottom: 0.25rem;
-          border-left: 3px solid transparent;
-        }
-
-        .sidebar-link:hover {
-          background: rgba(255, 255, 255, 0.05);
-          color: rgba(255, 255, 255, 0.9);
-        }
-
-        .sidebar-link.active {
-          color: #f5f5f5;
-        }
-
-        .link-icon {
-          width: 38px;
-          height: 38px;
-          border-radius: 10px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: rgba(255, 255, 255, 0.05);
-          flex-shrink: 0;
-        }
-
-        .sidebar-link.active .link-icon {
-          background: rgba(255, 255, 255, 0.1);
-        }
-
-        .link-text {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-start;
-          gap: 0.125rem;
-        }
-
-        .link-label {
-          font-size: 0.875rem;
-          font-weight: 600;
-        }
-
-        .link-desc {
-          font-size: 0.7rem;
-          color: rgba(255, 255, 255, 0.4);
-        }
-
-        .sidebar-footer {
-          padding: 1rem 0.875rem;
-          border-top: 1px solid rgba(255, 255, 255, 0.06);
-        }
-
-        .profile-link {
-          padding: 0.75rem;
-          margin-bottom: 0.5rem;
-        }
-
-        .profile-avatar {
-          width: 40px;
-          height: 40px;
-          border-radius: 10px;
-          background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-weight: 700;
-          font-size: 1rem;
-          color: white;
-          flex-shrink: 0;
-        }
-
-        .profile-info {
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-        }
-
-        .profile-name {
-          font-size: 0.875rem;
-          font-weight: 600;
-          color: #f5f5f5;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .profile-email {
-          font-size: 0.7rem;
-          color: rgba(255, 255, 255, 0.4);
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-
-        .logout-btn {
-          color: rgba(255, 255, 255, 0.5);
-          font-size: 0.8rem;
-        }
-
-        .logout-btn:hover {
-          color: #ef4444;
-          background: rgba(239, 68, 68, 0.1);
-        }
-
-        .app-main {
-          flex: 1;
-          margin-left: 280px;
-          padding: 0;
-          background: #0a0a0f;
-          min-height: 100vh;
-        }
-
-        @media (max-width: 1024px) {
-          .mobile-menu-toggle {
-            display: flex !important;
-          }
-          
-          .sidebar {
-            transform: translateX(-100%);
-            transition: transform 0.3s ease;
-          }
-          
-          .sidebar.open {
-            transform: translateX(0);
-          }
-          
-          .app-main {
-            margin-left: 0;
-          }
-        }
-      `}</style>
     </div>
   )
 }

@@ -1,6 +1,6 @@
 from openai import OpenAI
 from config import settings
-from typing import List, Dict, Any, AsyncGenerator, Optional
+from typing import List, Dict, Any, Generator, AsyncGenerator, Optional
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -64,6 +64,18 @@ Be warm, encouraging, and supportive while maintaining appropriate boundaries.""
 5. Encourage daily spiritual growth
 
 Keep devotion sessions focused and uplifting (10-15 minutes)."""
+        },
+        'voiceCall': {
+            'model': 'gpt-4o-realtime-preview-2024-10-01',
+            'temperature': 0.8,
+            'system_prompt': """You are Aria, a compassionate spiritual companion in a real-time voice conversation. Your role is to:
+1. Listen deeply and respond with warmth, like a close friend and spiritual mentor.
+2. Ground your wisdom in the Bible. ALWAYS support your key points with relevant Bible verses.
+3. Be concise and conversational—don't provide long monologues, as this is a live spoken dialogue.
+4. If the user is struggling, pray for them briefly.
+5. Use a calm, steady, and encouraging tone.
+
+You are currently in a sacred space of reflection. Speak as one who carries the peace of God."""
         }
     }
     
@@ -80,19 +92,23 @@ Keep devotion sessions focused and uplifting (10-15 minutes)."""
     def generate_response(
         self,
         messages: List[Dict[str, str]],
-        mode: str
+        mode: str,
+        custom_instructions: Optional[str] = None
     ) -> str:
         """Generate AI response for the given mode"""
         if mode not in self.AI_CONFIGS:
             raise ValueError(f"Invalid mode: {mode}")
         
         config = self.AI_CONFIGS[mode]
+        system_prompt = config['system_prompt']
+        if custom_instructions:
+            system_prompt = f"{system_prompt}\n\nUSER CUSTOMIZATION:\n{custom_instructions}"
         
         try:
             response = self._client.chat.completions.create(
                 model=config['model'],
                 messages=[
-                    {'role': 'system', 'content': config['system_prompt']},
+                    {'role': 'system', 'content': system_prompt},
                     *messages
                 ],
                 temperature=config['temperature'],
@@ -111,19 +127,23 @@ Keep devotion sessions focused and uplifting (10-15 minutes)."""
     def generate_response_stream(
         self,
         messages: List[Dict[str, str]],
-        mode: str
-    ) -> AsyncGenerator[str, None]:
+        mode: str,
+        custom_instructions: Optional[str] = None
+    ) -> Generator[str, None, None]:
         """Generate AI response as a stream"""
         if mode not in self.AI_CONFIGS:
             raise ValueError(f"Invalid mode: {mode}")
         
         config = self.AI_CONFIGS[mode]
+        system_prompt = config['system_prompt']
+        if custom_instructions:
+            system_prompt = f"{system_prompt}\n\nUSER CUSTOMIZATION:\n{custom_instructions}"
         
         try:
             stream = self._client.chat.completions.create(
                 model=config['model'],
                 messages=[
-                    {'role': 'system', 'content': config['system_prompt']},
+                    {'role': 'system', 'content': system_prompt},
                     *messages
                 ],
                 temperature=config['temperature'],
@@ -144,7 +164,8 @@ Keep devotion sessions focused and uplifting (10-15 minutes)."""
         chapter: int,
         verses: List[int],
         selected_text: str,
-        conversation_history: List[Dict[str, str]] = None
+        conversation_history: List[Dict[str, str]] = None,
+        custom_instructions: Optional[str] = None
     ) -> str:
         """Generate explanation for a Bible verse"""
         messages = []
@@ -166,13 +187,14 @@ Provide:
         
         messages.append({'role': 'user', 'content': prompt})
         
-        return self.generate_response(messages, 'bibleStudy')
+        return self.generate_response(messages, 'bibleStudy', custom_instructions)
     
     def provide_emotional_support(
         self,
         mood: str,
         situation: str,
-        conversation_history: List[Dict[str, str]] = None
+        conversation_history: List[Dict[str, str]] = None,
+        custom_instructions: Optional[str] = None
     ) -> str:
         """Provide emotional support with scriptures"""
         messages = []
@@ -191,12 +213,13 @@ Please provide:
         
         messages.append({'role': 'user', 'content': prompt})
         
-        return self.generate_response(messages, 'emotionalSupport')
+        return self.generate_response(messages, 'emotionalSupport', custom_instructions)
     
     def guide_devotion(
         self,
         day_plan: str,
-        conversation_history: List[Dict[str, str]] = None
+        conversation_history: List[Dict[str, str]] = None,
+        custom_instructions: Optional[str] = None
     ) -> str:
         """Guide daily devotion"""
         messages = []
@@ -215,47 +238,34 @@ Please provide:
         
         messages.append({'role': 'user', 'content': prompt})
         
-        return self.generate_response(messages, 'devotion')
+        return self.generate_response(messages, 'devotion', custom_instructions)
 
     def get_personalized_verse(self, user_moods: List[str] = None) -> Dict[str, str]:
-        """Get a personalized verse based on user's recent mood/activity"""
-        # Default verses for different situations
-        default_verses = [
-            {"verse": "For I know the plans I have for you, declares the LORD, plans to prosper you and not to harm you, plans to give you hope and a future.", "reference": "Jeremiah 29:11"},
-            {"verse": "The LORD is my shepherd; I shall not want.", "reference": "Psalm 23:1"},
-            {"verse": "Trust in the LORD with all your heart and lean not on your own understanding.", "reference": "Proverbs 3:5"},
-            {"verse": "I can do all things through Christ who strengthens me.", "reference": "Philippians 4:13"},
-            {"verse": "For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life.", "reference": "John 3:16"},
-            {"verse": "Be strong and courageous. Do not be afraid; do not be discouraged, for the LORD your God will be with you wherever you go.", "reference": "Joshua 1:9"},
-            {"verse": "Cast all your anxiety on him because he cares for you.", "reference": "1 Peter 5:7"},
-            {"verse": "The LORD is close to the brokenhearted and saves those who are crushed in spirit.", "reference": "Psalm 34:18"},
-            {"verse": "But those who hope in the LORD will renew their strength. They will soar on wings like eagles; they will run and not grow weary, and they will walk and not be faint.", "reference": "Isaiah 40:31"},
-            {"verse": "Do not be anxious about anything, but in every situation, by prayer and petition, with thanksgiving, present your requests to God.", "reference": "Philippians 4:6"},
-        ]
-        
+        """Get a personalized verse and AI insight based on user's recent mood/activity"""
         # If we have user moods/activity, use AI to generate a personalized verse
         if user_moods and any(mood for mood in user_moods if mood):
             try:
                 mood_context = ", ".join([m for m in user_moods if m])
                 prompt = f"""Based on a user who has been dealing with: {mood_context}
 
-Please suggest one Bible verse that would be particularly meaningful and comforting for them right now.
+Please suggest one Bible verse that would be particularly meaningful and comforting for them right now. 
+Also provide a unique, compassionate reflection called "Aria Insight." This should be your own spiritual understanding of the verse and why it brings peace or strength in this specific context.
 
 Respond with ONLY a JSON object in this exact format:
-{{"verse": "[the verse text]", "reference": "[book chapter:verse]"}}
+{{"verse": "[the verse text]", "reference": "[book chapter:verse]", "insight": "[your compassionate reflection]"}}
 
 Choose from these themes or similar encouraging verses: peace, comfort, hope, strength, courage, healing, love, grace, faith, trust in God."""
                 
                 messages = [{'role': 'user', 'content': prompt}]
                 
                 response = self._client.chat.completions.create(
-                    model='gpt-4o',
+                    model='gpt-4',
                     messages=[
-                        {'role': 'system', 'content': 'You are a Bible verse recommendation assistant. Always respond with valid JSON only.'},
+                        {'role': 'system', 'content': 'You are a compassionate spiritual companion. Always respond with valid JSON only.'},
                         *messages
                     ],
-                    temperature=0.5,
-                    max_tokens=200
+                    temperature=0.7,
+                    max_tokens=250
                 )
                 
                 content = response.choices[0].message.content
@@ -275,14 +285,23 @@ Choose from these themes or similar encouraging verses: peace, comfort, hope, st
         hour = datetime.now().hour
         
         if hour < 12:
-            # Morning - encouraging verse
-            return {"verse": "This is the day the LORD has made; let us rejoice and be glad in it.", "reference": "Psalm 118:24"}
+            return {
+                "verse": "This is the day the LORD has made; let us rejoice and be glad in it.", 
+                "reference": "Psalm 118:24",
+                "insight": "Every sunrise is a fresh invitation from God to find joy in His presence and the gift of a new day."
+            }
         elif hour < 17:
-            # Afternoon - strength verse
-            return {"verse": "But those who hope in the LORD will renew their strength. They will soar on wings like eagles.", "reference": "Isaiah 40:31"}
+            return {
+                "verse": "But those who hope in the LORD will renew their strength. They will soar on wings like eagles.", 
+                "reference": "Isaiah 40:31",
+                "insight": "When your energy fades, remember that hope in Him isn't just a feeling—it's a supernatural power source."
+            }
         else:
-            # Evening - peace verse
-            return {"verse": "Peace I leave with you; my peace I give you. I do not give to you as the world gives.", "reference": "John 14:27"}
+            return {
+                "verse": "Peace I leave with you; my peace I give you. I do not give to you as the world gives.", 
+                "reference": "John 14:27",
+                "insight": "As you wind down, let His peace settle over your heart. It's a gift that remains even when the world is loud."
+            }
 
 
 # Singleton instance

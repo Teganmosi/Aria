@@ -18,6 +18,8 @@ import Devotion from './pages/Devotion'
 import Profile from './pages/Profile'
 import Notes from './pages/Notes'
 
+import ActivityHistory from './pages/ActivityHistory'
+
 // Loading Component
 const LoadingScreen = () => (
   <div className="loading-screen">
@@ -48,27 +50,28 @@ function App() {
   return (
     <ErrorBoundary showReset>
       <Routes>
-      {/* Public Routes */}
-      <Route path="/" element={<PublicRoute><LandingPage /></PublicRoute>} />
-      <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-      <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+        {/* Public Routes */}
+        <Route path="/" element={<PublicRoute><LandingPage /></PublicRoute>} />
+        <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+        <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
 
-      {/* Protected App Routes */}
-      <Route path="/app" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-        <Route index element={<Navigate to="home" replace />} />
-        <Route path="home" element={<Home />} />
-        <Route path="ai-chat" element={<AIChat />} />
-        <Route path="bible" element={<Bible />} />
-        <Route path="bible-study" element={<BibleStudy />} />
-        <Route path="emotional-support" element={<EmotionalSupport />} />
-        <Route path="devotion" element={<Devotion />} />
-        <Route path="notes" element={<Notes />} />
-        <Route path="profile" element={<Profile />} />
-      </Route>
+        {/* Protected App Routes */}
+        <Route path="/app" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+          <Route index element={<Navigate to="home" replace />} />
+          <Route path="home" element={<Home />} />
+          <Route path="ai-chat" element={<AIChat />} />
+          <Route path="bible" element={<Bible />} />
+          <Route path="bible-study" element={<BibleStudy />} />
+          <Route path="emotional-support" element={<EmotionalSupport />} />
+          <Route path="devotion" element={<Devotion />} />
+          <Route path="notes" element={<Notes />} />
+          <Route path="activity" element={<ActivityHistory />} />
+          <Route path="profile" element={<Profile />} />
+        </Route>
 
-      {/* Catch all */}
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        {/* Catch all */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </ErrorBoundary>
   )
 }

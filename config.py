@@ -1,24 +1,20 @@
 from pydantic_settings import BaseSettings
-from typing import List
+from typing import List, Optional
 import json
 import os
 
-
 class Settings(BaseSettings):
-    # Supabase Configuration
-    supabase_url: str = ""
-    supabase_key: str = ""
-    supabase_service_role_key: str = ""
-    
-    # OpenAI Configuration
+    # API Keys (Still needed)
     openai_api_key: str = ""
+    api_bible_key: str = ""
+    
+    # Supabase (Legacy/Empty)
+    supabase_url: Optional[str] = ""
+    supabase_key: Optional[str] = ""
     
     # Redis Configuration
     redis_url: str = "redis://localhost:6379"
     redis_enabled: bool = False
-    
-    # API.Bible Configuration
-    api_bible_key: str = ""
     
     # Application Configuration
     app_name: str = "Aria - Your Spiritual Companion"
@@ -33,31 +29,22 @@ class Settings(BaseSettings):
     
     @property
     def cors_origins_list(self) -> List[str]:
-        return json.loads(self.cors_origins)
+        try:
+            return json.loads(self.cors_origins)
+        except (json.JSONDecodeError, TypeError):
+            return ["http://localhost:3000", "http://localhost:5173", "http://localhost:8000"]
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # Provide defaults from environment if available
-        if not self.supabase_url:
-            self.supabase_url = os.getenv('SUPABASE_URL', '')
-        if not self.supabase_key:
-            self.supabase_key = os.getenv('SUPABASE_KEY', '')
-        if not self.supabase_service_role_key:
-            self.supabase_service_role_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY', '')
-        if not self.openai_api_key:
-            self.openai_api_key = os.getenv('OPENAI_API_KEY', '')
-        if not self.secret_key:
-            self.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
-        if not self.redis_url:
-            self.redis_url = os.getenv('REDIS_URL', 'redis://localhost:6379')
-        if not self.redis_enabled:
-            self.redis_enabled = os.getenv('REDIS_ENABLED', 'false').lower() == 'true'
-        if not self.api_bible_key:
-            self.api_bible_key = os.getenv('API_BIBLE_KEY', '')
-    
+        # Pull from OS ENV if available
+        self.openai_api_key = os.getenv('OPENAI_API_KEY', self.openai_api_key)
+        self.api_bible_key = os.getenv('API_BIBLE_KEY', self.api_bible_key)
+        self.secret_key = os.getenv('SECRET_KEY', self.secret_key)
+        self.redis_enabled = os.getenv('REDIS_ENABLED', str(self.redis_enabled)).lower() == 'true'
+
     class Config:
         env_file = ".env"
         case_sensitive = False
-
+        extra = 'ignore'
 
 settings = Settings()

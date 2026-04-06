@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
   FileText,
   Plus,
@@ -11,31 +10,12 @@ import {
   BookOpen,
   MessageSquare,
   Clock,
-  Tag
+  Tag,
+  X,
+  ChevronRight
 } from 'lucide-react'
 import { notesService } from '../services/api'
-
-// Simple animated background
-const AnimatedBackground = () => {
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
-
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      setMousePosition({
-        x: (e.clientX / window.innerWidth - 0.5) * 8,
-        y: (e.clientY / window.innerHeight - 0.5) * 8
-      })
-    }
-    window.addEventListener('mousemove', handleMouseMove)
-    return () => window.removeEventListener('mousemove', handleMouseMove)
-  }, [])
-
-  return (
-    <div className="page-bg">
-      <div className="bg-orb" style={{ transform: `translate(${mousePosition.x}px, ${mousePosition.y}px)` }} />
-    </div>
-  )
-}
+import { AnimatedBackground } from './LandingPage'
 
 const NoteCard = ({ note, onEdit, onDelete }) => {
   const formatDate = (dateString) => {
@@ -49,106 +29,75 @@ const NoteCard = ({ note, onEdit, onDelete }) => {
 
   const getSourceIcon = (sourceType) => {
     switch (sourceType) {
-      case 'bible':
-        return <BookOpen size={16} />
-      case 'companion':
-        return <MessageSquare size={16} />
-      case 'devotion':
-        return <Clock size={16} />
-      case 'general':
-        return <FileText size={16} />
-      default:
-        return <FileText size={16} />
-    }
-  }
-
-  const getSourceColor = (sourceType) => {
-    switch (sourceType) {
-      case 'bible':
-        return '#8b5cf6'
-      case 'companion':
-        return '#10b981'
-      case 'devotion':
-        return '#f59e0b'
-      case 'general':
-        return '#6b7280'
-      default:
-        return '#6b7280'
+      case 'bible': return <BookOpen size={14} />
+      case 'companion': return <MessageSquare size={14} />
+      case 'devotion': return <Clock size={14} />
+      default: return <FileText size={14} />
     }
   }
 
   return (
-    <div className="note-card">
-      <div className="note-header">
-        <h3 className="note-title">{note.title}</h3>
-        <div className="note-actions">
-          <button
-            className="note-action"
-            onClick={() => onEdit(note)}
-            title="Edit note"
-          >
-            <Edit size={16} />
-          </button>
-          <button
-            className="note-action note-action-delete"
-            onClick={() => onDelete(note.id)}
-            title="Delete note"
-          >
-            <Trash2 size={16} />
-          </button>
-        </div>
-      </div>
-
-      <div className="note-meta">
-        <div
-          className="note-source"
-          style={{ color: getSourceColor(note.source_type) }}
-        >
+    <div
+      className="glass-panel"
+      style={{
+        padding: '1.75rem',
+        borderRadius: '20px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '1rem',
+        cursor: 'pointer',
+        transition: 'all 0.3s ease',
+        border: '1px solid var(--border-color)',
+        background: 'var(--bg-card)',
+        position: 'relative'
+      }}
+      onClick={() => onEdit(note)}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--brand-solid)', fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.1em' }}>
           {getSourceIcon(note.source_type)}
-          <span>{note.source_type.charAt(0).toUpperCase() + note.source_type.slice(1)}</span>
+          {note.source_type.toUpperCase()}
         </div>
-        {note.source_reference && (
-          <div className="note-reference">
-            <Bookmark size={14} />
-            <span>{note.source_reference}</span>
-          </div>
-        )}
-        <div className="note-date">
-          <Clock size={14} />
-          <span>{formatDate(note.created_at)}</span>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(note.id); }}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+          >
+            <Trash2 size={14} />
+          </button>
         </div>
       </div>
 
-      <div className="note-content">
-        {note.content.length > 150
-          ? `${note.content.substring(0, 150)}...`
-          : note.content
-        }
-      </div>
+      <h3 className="font-serif" style={{ fontSize: '1.25rem', color: 'var(--text-main)', margin: 0, lineHeight: 1.3 }}>{note.title}</h3>
 
-      {note.tags && note.tags.length > 0 && (
-        <div className="note-tags">
-          {note.tags.map((tag, index) => (
-            <span key={index} className="note-tag">
-              <Tag size={12} />
-              {tag}
-            </span>
+      <p style={{
+        fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.6,
+        overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical'
+      }}>
+        {note.content}
+      </p>
+
+      <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
+        <div style={{ display: 'flex', gap: '0.4rem' }}>
+          {note.tags?.slice(0, 2).map((t, i) => (
+            <span key={i} style={{ fontSize: '0.65rem', color: 'var(--text-muted)', background: 'var(--input-bg)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>#{t}</span>
           ))}
         </div>
-      )}
+        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{formatDate(note.created_at)}</span>
+      </div>
     </div>
   )
 }
 
 const Notes = () => {
-  const navigate = useNavigate()
   const [notes, setNotes] = useState([])
   const [filteredNotes, setFilteredNotes] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [filterSource, setFilterSource] = useState('')
+  const [showEditor, setShowEditor] = useState(false)
   const [editingNote, setEditingNote] = useState(null)
-  const [showCreateForm, setShowCreateForm] = useState(false)
+
   const [formData, setFormData] = useState({
     title: '',
     content: '',
@@ -162,7 +111,17 @@ const Notes = () => {
   }, [])
 
   useEffect(() => {
-    filterNotes()
+    let filtered = notes
+    if (searchQuery) {
+      filtered = filtered.filter(n =>
+        n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        n.content.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    }
+    if (filterSource) {
+      filtered = filtered.filter(n => n.source_type === filterSource)
+    }
+    setFilteredNotes(filtered)
   }, [notes, searchQuery, filterSource])
 
   const fetchNotes = async () => {
@@ -170,298 +129,164 @@ const Notes = () => {
       setIsLoading(true)
       const data = await notesService.getNotes()
       setNotes(data)
-    } catch (error) {
-      console.error('Error fetching notes:', error)
-    } finally {
-      setIsLoading(false)
-    }
+    } catch (e) { console.error(e) } finally { setIsLoading(false) }
   }
 
-  const filterNotes = () => {
-    let filtered = notes
-
-    // Filter by search query
-    if (searchQuery) {
-      filtered = filtered.filter(note =>
-        note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        note.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        note.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
-    }
-
-    // Filter by source type
-    if (filterSource) {
-      filtered = filtered.filter(note => note.source_type === filterSource)
-    }
-
-    setFilteredNotes(filtered)
-  }
-
-  const handleCreateNote = async (e) => {
+  const handleSave = async (e) => {
     e.preventDefault()
     try {
-      const newNote = {
-        ...formData,
-        tags: formData.tags.filter(tag => tag.trim() !== '')
+      if (editingNote) {
+        await notesService.updateNote(editingNote.id, formData)
+      } else {
+        await notesService.createNote(formData)
       }
-      await notesService.createNote(newNote)
-      setFormData({
-        title: '',
-        content: '',
-        source_type: 'companion',
-        source_reference: '',
-        tags: []
-      })
-      setShowCreateForm(false)
-      fetchNotes()
-    } catch (error) {
-      console.error('Error creating note:', error)
-    }
-  }
-
-  const handleEditNote = async (e) => {
-    e.preventDefault()
-    try {
-      const updatedNote = {
-        ...formData,
-        tags: formData.tags.filter(tag => tag.trim() !== '')
-      }
-      await notesService.updateNote(editingNote.id, updatedNote)
+      setShowEditor(false)
       setEditingNote(null)
-      setFormData({
-        title: '',
-        content: '',
-        source_type: 'companion',
-        source_reference: '',
-        tags: []
-      })
+      setFormData({ title: '', content: '', source_type: 'general', source_reference: '', tags: [] })
       fetchNotes()
-    } catch (error) {
-      console.error('Error updating note:', error)
+    } catch (e) { console.error(e) }
+  }
+
+  const handleDelete = async (id) => {
+    if (confirm('Delete this insight forever?')) {
+      await notesService.deleteNote(id)
+      fetchNotes()
     }
-  }
-
-  const handleDeleteNote = async (noteId) => {
-    if (window.confirm('Are you sure you want to delete this note?')) {
-      try {
-        await notesService.deleteNote(noteId)
-        fetchNotes()
-      } catch (error) {
-        console.error('Error deleting note:', error)
-      }
-    }
-  }
-
-  const startEdit = (note) => {
-    setEditingNote(note)
-    setFormData({
-      title: note.title,
-      content: note.content,
-      source_type: note.source_type,
-      source_reference: note.source_reference || '',
-      tags: note.tags || []
-    })
-  }
-
-  const cancelEdit = () => {
-    setEditingNote(null)
-      setFormData({
-        title: '',
-        content: '',
-        source_type: 'general',
-        source_reference: '',
-        tags: []
-      })
-  }
-
-  const addTag = () => {
-    setFormData(prev => ({
-      ...prev,
-      tags: [...prev.tags, '']
-    }))
-  }
-
-  const updateTag = (index, value) => {
-    setFormData(prev => ({
-      ...prev,
-      tags: prev.tags.map((tag, i) => i === index ? value : tag)
-    }))
-  }
-
-  const removeTag = (index) => {
-    setFormData(prev => ({
-      ...prev,
-      tags: prev.tags.filter((_, i) => i !== index)
-    }))
   }
 
   return (
-    <div className="page-container">
+    <div style={{ minHeight: '100%', position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <AnimatedBackground />
 
-      <div className="page-content">
-        {/* Header */}
-        <div className="page-header">
-          <div className="header-content">
-            <div className="header-icon">
-              <FileText size={32} />
-            </div>
-            <div>
-              <h1>My Notes</h1>
-              <p>Capture insights from your spiritual journey</p>
-            </div>
-          </div>
-          <button
-            className="btn btn-primary"
-            onClick={() => setShowCreateForm(true)}
-          >
-            <Plus size={18} />
-            New Note
-          </button>
+      {/* Header Area */}
+      <header style={{ padding: '2.5rem 3rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
+        <div>
+          <h1 className="font-serif" style={{ fontSize: '2.2rem', color: 'var(--text-main)', fontWeight: 500, marginBottom: '0.25rem' }}>Your Journal</h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '1rem' }}>Insights, prayers, and reflections from your journey.</p>
         </div>
+        <button
+          onClick={() => { setEditingNote(null); setFormData({ title: '', content: '', source_type: 'general', source_reference: '', tags: [] }); setShowEditor(true); }}
+          style={{ background: 'var(--brand-solid)', color: 'var(--bg-main)', padding: '0.8rem 2rem', borderRadius: '3rem', border: 'none', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: 'var(--shadow-main)' }}
+        >
+          <Plus size={18} />
+          NEW ENTRY
+        </button>
+      </header>
 
-        {/* Search and Filters */}
-        <div className="notes-controls">
-          <div className="search-bar">
-            <Search size={18} />
-            <input
-              type="text"
-              placeholder="Search notes..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-
-          <div className="filter-bar">
-            <Filter size={18} />
-            <select
-              value={filterSource}
-              onChange={(e) => setFilterSource(e.target.value)}
-            >
-              <option value="">All Notes</option>
-              <option value="bible">Bible</option>
-              <option value="companion">AI Companion</option>
-              <option value="devotion">Devotion</option>
-              <option value="general">General</option>
-            </select>
-          </div>
+      {/* Constraints & Filters */}
+      <div style={{ padding: '0 3rem', marginBottom: '2.5rem', display: 'flex', gap: '1.5rem', zIndex: 10 }}>
+        <div style={{ flex: 1, position: 'relative' }}>
+          <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            placeholder="Search your reflections..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ width: '100%', padding: '0.75rem 1rem 0.75rem 3rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', color: 'var(--text-main)', outline: 'none' }}
+          />
         </div>
+        <select
+          value={filterSource}
+          onChange={(e) => setFilterSource(e.target.value)}
+          style={{ padding: '0.75rem 1.5rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', color: 'var(--text-main)', outline: 'none', cursor: 'pointer' }}
+        >
+          <option value="">All Sources</option>
+          <option value="bible">Bible</option>
+          <option value="companion">AI Sanctuary</option>
+          <option value="devotion">Devotions</option>
+          <option value="general">Personal</option>
+        </select>
+      </div>
 
-        {/* Create/Edit Form */}
-        {(showCreateForm || editingNote) && (
-          <div className="note-form-overlay">
-            <div className="note-form-card">
-              <h2>{editingNote ? 'Edit Note' : 'Create New Note'}</h2>
-              <form onSubmit={editingNote ? handleEditNote : handleCreateNote}>
-                <div className="form-group">
-                  <label>Title</label>
-                  <input
-                    type="text"
-                    value={formData.title}
-                    onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Reference (optional)</label>
-                  <input
-                    type="text"
-                    value={formData.source_reference}
-                    onChange={(e) => setFormData(prev => ({ ...prev, source_reference: e.target.value }))}
-                    placeholder="e.g., John 3:16, Psalm 23"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Content</label>
-                  <textarea
-                    value={formData.content}
-                    onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
-                    rows={8}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>Tags</label>
-                  <div className="tags-input">
-                    {formData.tags.map((tag, index) => (
-                      <div key={index} className="tag-input-group">
-                        <input
-                          type="text"
-                          value={tag}
-                          onChange={(e) => updateTag(index, e.target.value)}
-                          placeholder="Add tag..."
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removeTag(index)}
-                          className="remove-tag"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                    <button type="button" onClick={addTag} className="add-tag">
-                      <Plus size={14} />
-                      Add Tag
-                    </button>
-                  </div>
-                </div>
-
-                <div className="form-actions">
-                  <button type="button" onClick={editingNote ? cancelEdit : () => setShowCreateForm(false)} className="btn btn-secondary">
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn btn-primary">
-                    {editingNote ? 'Update Note' : 'Create Note'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Notes Grid */}
+      {/* Notes Grid */}
+      <div style={{ flex: 1, padding: '0 3rem 4rem', overflowY: 'auto', zIndex: 10 }}>
         {isLoading ? (
-          <div className="loading-container">
-            <div className="loading-spinner"></div>
-            <p>Loading your notes...</p>
-          </div>
+          <div style={{ textAlign: 'center', marginTop: '4rem', color: 'var(--text-muted)' }}>Preparing your journal...</div>
         ) : filteredNotes.length === 0 ? (
-          <div className="empty-state">
-            <FileText size={48} />
-            <h3>No notes found</h3>
-            <p>
-              {notes.length === 0
-                ? "You haven't created any notes yet. Start capturing your spiritual insights!"
-                : "No notes match your current search or filter."
-              }
-            </p>
-            {notes.length === 0 && (
-              <button
-                className="btn btn-primary"
-                onClick={() => setShowCreateForm(true)}
-              >
-                <Plus size={18} />
-                Create Your First Note
-              </button>
-            )}
+          <div style={{ textAlign: 'center', marginTop: '8rem', color: 'var(--text-muted)' }}>
+            <FileText size={48} style={{ marginBottom: '1.5rem', opacity: 0.2 }} />
+            <p>Your journal is waiting for its first entry.</p>
           </div>
         ) : (
-          <div className="notes-grid">
-            {filteredNotes.map(note => (
-              <NoteCard
-                key={note.id}
-                note={note}
-                onEdit={startEdit}
-                onDelete={handleDeleteNote}
-              />
-            ))}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
+            {filteredNotes.map(n => <NoteCard key={n.id} note={n} onEdit={(note) => { setEditingNote(note); setFormData(note); setShowEditor(true); }} onDelete={handleDelete} />)}
           </div>
         )}
       </div>
+
+      {/* Journal Editor Modal */}
+      {showEditor && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(10px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '700px', background: 'var(--bg-main)', borderRadius: '32px', overflow: 'hidden', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-lg)' }}>
+            <div style={{ padding: '2rem 2.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 className="font-serif" style={{ fontSize: '1.5rem', color: 'var(--text-main)', margin: 0 }}>{editingNote ? 'Refine Entry' : 'New Journal Entry'}</h2>
+              <button onClick={() => setShowEditor(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', cursor: 'pointer' }}><X size={24} /></button>
+            </div>
+
+            <form onSubmit={handleSave} style={{ padding: '2.5rem' }}>
+              <div style={{ marginBottom: '2rem' }}>
+                <label style={{ display: 'block', fontSize: '0.65rem', letterSpacing: '0.15em', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.75rem' }}>TITLE OF REFLECTION</label>
+                <input
+                  type="text"
+                  value={formData.title}
+                  onChange={e => setFormData({ ...formData, title: e.target.value })}
+                  placeholder="What is the Word today?"
+                  required
+                  style={{ width: '100%', background: 'transparent', border: 'none', borderBottom: '1px solid var(--border-color)', fontSize: '1.5rem', color: 'var(--text-main)', outline: 'none', fontWeight: 500, paddingBottom: '0.5rem' }}
+                  className="font-serif"
+                />
+              </div>
+
+              <div style={{ marginBottom: '2.5rem' }}>
+                <label style={{ display: 'block', fontSize: '0.65rem', letterSpacing: '0.15em', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '1rem' }}>JOURNAL CONTENT</label>
+                <textarea
+                  value={formData.content}
+                  onChange={e => setFormData({ ...formData, content: e.target.value })}
+                  placeholder="Write your heart here..."
+                  required
+                  rows={8}
+                  style={{ width: '100%', background: 'var(--input-bg)', border: '1px solid var(--border-color)', borderRadius: '16px', padding: '1.5rem', fontSize: '1.1rem', color: 'var(--text-main)', outline: 'none', lineHeight: 1.6, resize: 'none' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '1.5rem' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '0.65rem', letterSpacing: '0.15em', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>ENTRY SOURCE</label>
+                  <select
+                    value={formData.source_type}
+                    onChange={e => setFormData({ ...formData, source_type: e.target.value })}
+                    style={{ width: '100%', padding: '0.75rem 1rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', color: 'var(--text-main)', outline: 'none' }}
+                  >
+                    <option value="general">Personal Journey</option>
+                    <option value="bible">Bible Verse Insight</option>
+                    <option value="companion">AI Reflection</option>
+                    <option value="devotion">Daily Devotion</option>
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '0.65rem', letterSpacing: '0.15em', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>TAGS (comma separated)</label>
+                  <input
+                    type="text"
+                    placeholder="peace, joy, grace"
+                    value={formData.tags.join(', ')}
+                    onChange={e => setFormData({ ...formData, tags: e.target.value.split(',').map(t => t.trim()) })}
+                    style={{ width: '100%', padding: '0.75rem 1rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', color: 'var(--text-main)', outline: 'none' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginTop: '3.5rem' }}>
+                <button
+                  type="submit"
+                  style={{ width: '100%', background: 'var(--brand-solid)', color: 'var(--bg-main)', padding: '1.25rem', borderRadius: '12px', border: 'none', fontSize: '1.1rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem' }}
+                >
+                  {editingNote ? 'SAVE REFLECTION' : 'CLOSE JOURNAL ENTRY'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

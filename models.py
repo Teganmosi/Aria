@@ -3,6 +3,9 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
+# Constants
+MESSAGE_ROLE_PATTERN = "^(user|assistant|system)$"
+
 
 # ==================== User & Profile Models ====================
 
@@ -14,6 +17,9 @@ class ProfileBase(BaseModel):
     preferred_bible_version: str = "NIV"
     notification_preferences: Dict[str, bool] = {"email": True, "push": True}
     spiritual_journey_notes: Optional[str] = None
+    aria_custom_prompt: Optional[str] = None
+    aria_personal_context: Optional[str] = None
+    aria_voice: str = "verse"
 
 
 class ProfileCreate(ProfileBase):
@@ -26,6 +32,9 @@ class ProfileUpdate(BaseModel):
     preferred_bible_version: Optional[str] = None
     notification_preferences: Optional[Dict[str, bool]] = None
     spiritual_journey_notes: Optional[str] = None
+    aria_custom_prompt: Optional[str] = None
+    aria_personal_context: Optional[str] = None
+    aria_voice: Optional[str] = None
 
 
 class Profile(ProfileBase):
@@ -108,7 +117,7 @@ class BibleStudySession(BibleStudySessionBase):
 
 
 class BibleStudyMessageBase(BaseModel):
-    role: str = Field(..., pattern="^(user|assistant)$")
+    role: str = Field(..., pattern=MESSAGE_ROLE_PATTERN)
     content: str
 
 
@@ -158,7 +167,7 @@ class EmotionalSupportSession(EmotionalSupportSessionBase):
 
 
 class EmotionalSupportMessageBase(BaseModel):
-    role: str = Field(..., pattern="^(user|assistant)$")
+    role: str = Field(..., pattern=MESSAGE_ROLE_PATTERN)
     content: str
 
 
@@ -248,7 +257,7 @@ class Devotion(DevotionBase):
 
 
 class DevotionMessageBase(BaseModel):
-    role: str = Field(..., pattern="^(user|assistant)$")
+    role: str = Field(..., pattern=MESSAGE_ROLE_PATTERN)
     content: str
 
 
@@ -385,8 +394,34 @@ class AIRequest(BaseModel):
 
 class AIResponse(BaseModel):
     content: str
+    mode: str
+
+
+# ==================== AI Chat Models ====================
+
+class AIChatSession(BaseModel):
+    id: str
+    user_id: str
+    title: Optional[str] = "New Conversation"
+    created_at: datetime
+    updated_at: datetime
+
+
+class AIChatSessionCreate(BaseModel):
+    title: Optional[str] = "New Conversation"
+
+
+class AIChatMessage(BaseModel):
+    id: str
+    session_id: str
     role: str
-    timestamp: datetime
+    content: str
+    created_at: datetime
+
+
+class AIChatMessageCreate(BaseModel):
+    role: str
+    content: str
 
 
 # ==================== Auth Models ====================

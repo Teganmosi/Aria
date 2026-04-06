@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import PropTypes from 'prop-types'
 import { AuthContext } from './AuthContext'
 import { authService } from '../services/api'
 
@@ -33,18 +34,17 @@ export const AuthProvider = ({ children }) => {
     checkAuth()
   }, [checkAuth])
 
-  const login = async (email, password) => {
+  const login = useCallback(async (email, password) => {
     const response = await authService.login(email, password)
     localStorage.setItem('authToken', response.access_token)
     setUser(response.user)
     setIsAuthenticated(true)
     setShowAuthModal(false)
     return response
-  }
+  }, [])
 
-  const register = async (email, password, fullName) => {
+  const register = useCallback(async (email, password, fullName) => {
     const response = await authService.register(email, password, fullName)
-    // If access_token is provided (email confirmation disabled), auto-login
     if (response.access_token) {
       localStorage.setItem('authToken', response.access_token)
       setUser(response.user)
@@ -52,16 +52,16 @@ export const AuthProvider = ({ children }) => {
       setShowAuthModal(false)
     }
     return response
-  }
+  }, [])
 
-  const logout = () => {
+  const logout = useCallback(() => {
     localStorage.removeItem('authToken')
     setUser(null)
     setIsAuthenticated(false)
     setShowAuthModal(true)
-  }
+  }, [])
 
-  const value = {
+  const value = useMemo(() => ({
     user,
     isAuthenticated,
     isLoading,
@@ -70,9 +70,13 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     logout,
-  }
+  }), [user, isAuthenticated, isLoading, showAuthModal, login, register, logout])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+
+AuthProvider.propTypes = {
+  children: PropTypes.node.isRequired,
 }
 
 export default AuthProvider

@@ -10,6 +10,14 @@ const getHeaders = () => {
 
 const handleResponse = async (response) => {
   if (!response.ok) {
+    if (response.status === 401) {
+      // Clear token and reload if we get an unauthorized error
+      localStorage.removeItem('authToken')
+      // Only reload if we're not on a login/register page to avoid loops
+      if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
+        window.location.href = '/login'
+      }
+    }
     const error = await response.json().catch(() => ({ error: 'Unknown error' }))
     throw new Error(error.error || `HTTP error! status: ${response.status}`)
   }
@@ -216,9 +224,29 @@ export const aiService = {
     })
     return handleResponse(response)
   },
+}
 
-  chat: async (messages, mode = 'general') => {
-    const response = await fetch(`${API_BASE_URL}/ai/chat`, {
+// Dedicated AI Chat Service with Persistence
+export const aiChatService = {
+  getSessions: async () => {
+    const response = await fetch(`${API_BASE_URL}/ai-chat/sessions`, {
+      headers: getHeaders(),
+    })
+    return handleResponse(response)
+  },
+
+  getMessages: async (sessionId) => {
+    const response = await fetch(`${API_BASE_URL}/ai-chat/sessions/${sessionId}/messages`, {
+      headers: getHeaders(),
+    })
+    return handleResponse(response)
+  },
+
+  chat: async (messages, sessionId = null, mode = 'general') => {
+    const url = sessionId
+      ? `${API_BASE_URL}/ai/chat?session_id=${sessionId}`
+      : `${API_BASE_URL}/ai/chat`
+    const response = await fetch(url, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ messages, mode }),
@@ -267,8 +295,8 @@ export const homeService = {
     return handleResponse(response)
   },
 
-  getActivity: async () => {
-    const response = await fetch(`${API_BASE_URL}/home/activity`, {
+  getActivity: async (limit = 5) => {
+    const response = await fetch(`${API_BASE_URL}/home/activity?limit=${limit}`, {
       headers: getHeaders(),
     })
     return handleResponse(response)
@@ -321,7 +349,7 @@ export const notesService = {
   },
 
   getNotes: async (sourceType = null) => {
-    const url = sourceType 
+    const url = sourceType
       ? `${API_BASE_URL}/notes?source_type=${encodeURIComponent(sourceType)}`
       : `${API_BASE_URL}/notes`
     const response = await fetch(url, {

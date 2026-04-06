@@ -1,868 +1,273 @@
-import { useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { Sparkles, BookOpen, Heart, MessageCircle, ArrowRight, ChevronDown, Check } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Sparkles, MessageSquare, Mic, BookOpen, Calendar, ArrowRight, Play, Moon, Sun, CheckCircle2 } from 'lucide-react'
 
-// Simple animated background with floating orbs - minimal animation
-const AnimatedBackground = () => {
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
+export const ThemeToggle = () => {
+  const [isDark, setIsDark] = useState(false)
 
   useEffect(() => {
-    const handleMouseMove = (e) => {
-      setMousePosition({
-        x: (e.clientX / window.innerWidth - 0.5) * 20,
-        y: (e.clientY / window.innerHeight - 0.5) * 20
-      })
-    }
-    window.addEventListener('mousemove', handleMouseMove)
-    return () => window.removeEventListener('mousemove', handleMouseMove)
-  }, [])
-
-  return (
-    <div className="bg-container">
-      <div 
-        className="orb orb-1"
-        style={{ transform: `translate(${mousePosition.x * 0.5}px, ${mousePosition.y * 0.5}px)` }}
-      />
-      <div 
-        className="orb orb-2"
-        style={{ transform: `translate(${-mousePosition.x * 0.3}px, ${-mousePosition.y * 0.3}px)` }}
-      />
-      <div className="grid-overlay" />
-    </div>
-  )
-}
-
-const LandingPage = () => {
-  const navigate = useNavigate()
-  const [email, setEmail] = useState('')
-  const [activeFaq, setActiveFaq] = useState(null)
-  const [isSubscribed, setIsSubscribed] = useState(false)
-  
-  useEffect(() => {
-    document.body.style.backgroundColor = '#0a0a0f'
-    return () => {
-      document.body.style.backgroundColor = ''
+    const savedTheme = localStorage.getItem('theme') || 'light'
+    if (savedTheme === 'dark') {
+      setIsDark(true)
+      document.documentElement.dataset.theme = 'dark'
+    } else {
+      setIsDark(false)
+      delete document.documentElement.dataset.theme
     }
   }, [])
-  
-  const features = [
-    {
-      icon: <MessageCircle size={24} />,
-      title: 'AI Spiritual Guide',
-      description: 'Chat with an AI companion about faith, scripture, and life\'s questions.'
-    },
-    {
-      icon: <BookOpen size={24} />,
-      title: 'Digital Bible',
-      description: 'Access the complete Bible with searchable verses and AI-powered insights.'
-    },
-    {
-      icon: <Heart size={24} />,
-      title: 'Emotional Support',
-      description: 'Find comfort and encouragement during difficult times with compassionate AI.'
-    },
-    {
-      icon: <Sparkles size={24} />,
-      title: 'Daily Devotion',
-      description: 'Start your day with personalized prayers and scripture reflections.'
-    }
-  ]
 
-  const faqs = [
-    {
-      question: 'How does Aria work?',
-      answer: 'Aria uses advanced AI to have natural conversations about faith and scripture. It combines technology with biblical wisdom to provide personalized guidance.'
-    },
-    {
-      question: 'Is my data private?',
-      answer: 'Yes. Your conversations are encrypted and we never share your personal data. You can delete your data at any time.'
-    },
-    {
-      question: 'Is there a free plan?',
-      answer: 'Yes! Our free tier includes 5 AI conversations per day and basic Bible search. No credit card required.'
-    }
-  ]
-
-  const handleSubscribe = (e) => {
-    e.preventDefault()
-    if (email) {
-      setIsSubscribed(true)
-      setEmail('')
+  const toggleTheme = () => {
+    if (isDark) {
+      delete document.documentElement.dataset.theme
+      localStorage.setItem('theme', 'light')
+      setIsDark(false)
+    } else {
+      document.documentElement.dataset.theme = 'dark'
+      localStorage.setItem('theme', 'dark')
+      setIsDark(true)
     }
   }
 
   return (
-    <div className="landing-page">
+    <button className="theme-toggle" onClick={toggleTheme} aria-label="Toggle theme">
+      {isDark ? <Sun size={20} /> : <Moon size={20} />}
+    </button>
+  )
+}
+
+export const AnimatedBackground = () => (
+  <div className="animated-bg">
+    <div className="bg-orb orb-1"></div>
+    <div className="bg-orb orb-2"></div>
+  </div>
+)
+
+const LandingPage = () => {
+  const navigate = useNavigate()
+
+  return (
+    <div style={{ position: 'relative', minHeight: '100vh', zIndex: 1 }}>
       <AnimatedBackground />
-      
+
       {/* Navigation */}
-      <nav className="nav">
-        <div className="nav-container">
-          <div className="nav-brand" onClick={() => navigate('/')}>
-            <div className="brand-icon">
-              <Sparkles size={20} />
-            </div>
-            <span className="brand-name">Aria</span>
-          </div>
-          
-          <div className="nav-links">
-            <a href="#features">Features</a>
-            <a href="#faq">FAQ</a>
-          </div>
-          
-          <div className="nav-actions">
-            <button className="btn btn-ghost" onClick={() => navigate('/login')}>
-              Sign In
+      <nav className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '2rem 8rem', position: 'sticky', top: 0, zIndex: 50, borderTop: 'none', borderLeft: 'none', borderRight: 'none' }}>
+        <button
+          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        >
+          <span className="font-serif" style={{ fontStyle: 'italic', fontSize: '2rem', fontWeight: 700, color: 'var(--brand-solid)' }}>Aria</span>
+        </button>
+
+        <div style={{ display: 'flex', gap: '4rem', fontSize: '1.05rem', color: 'var(--text-secondary)' }}>
+          <a href="#product" style={{ color: 'var(--text-main)', fontWeight: 500 }}>The Product</a>
+          <a href="#features">Features</a>
+          <a href="#pricing">Pricing</a>
+          <a href="#about">About Us</a>
+        </div>
+
+        <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+          <ThemeToggle />
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginLeft: '1rem' }}>
+            <button
+              onClick={() => navigate('/login')}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', fontSize: '0.95rem', fontWeight: 600, cursor: 'pointer', padding: '0.5rem 1rem' }}
+            >
+              Log in
             </button>
-            <button className="btn btn-primary" onClick={() => navigate('/register')}>
-              Get Started
+            <button
+              onClick={() => navigate('/register')}
+              style={{ background: 'var(--brand-solid)', color: 'var(--bg-main)', border: 'none', borderRadius: '2rem', fontSize: '0.95rem', fontWeight: 600, cursor: 'pointer', padding: '0.625rem 1.5rem', transition: 'transform 0.2s' }}
+            >
+              Sign up
             </button>
           </div>
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section className="hero">
-        <div className="hero-content">
-          <div className="hero-badge">
-            <Sparkles size={14} />
-            <span>Your AI Spiritual Companion</span>
+      {/* Hero Section (The Product) */}
+      <section id="product" style={{ position: 'relative', zIndex: 10, textAlign: 'center', padding: '10rem 4rem 8rem' }}>
+        <p style={{ fontSize: '0.85rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '2rem' }}>Welcome to your sanctuary</p>
+        <h1 className="font-serif" style={{ fontSize: '5.5rem', fontWeight: 700, fontStyle: 'italic', color: 'var(--text-main)', lineHeight: 1.1, marginBottom: '2.5rem', maxWidth: '1000px', margin: '0 auto' }}>
+          Begin your Christian journey with Aria
+        </h1>
+        <p style={{ fontSize: '1.25rem', color: 'var(--text-secondary)', maxWidth: '750px', margin: '0 auto 4rem', lineHeight: 1.6 }}>
+          Experience a faith-based AI companion bridging the gap between eternal wisdom and modern intelligence. Aria is designed to guide your daily devotions, provide deep emotional support, and navigate the scriptures with you.
+        </p>
+
+        <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center', alignItems: 'center' }}>
+          <button
+            onClick={() => navigate('/register')}
+            style={{ background: 'var(--brand-solid)', color: 'var(--text-inverse)', padding: '1rem 2rem', borderRadius: '8px', border: 'none', fontSize: '1rem', fontWeight: 500, cursor: 'pointer', transition: 'transform 0.2s' }}>
+            Start Prayer
+          </button>
+          <button
+            onClick={() => {
+              const el = document.getElementById('features');
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'transparent', border: 'none', color: 'var(--text-main)', fontSize: '1rem', fontWeight: 500, cursor: 'pointer' }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '36px', height: '36px', background: 'var(--border-subtle)', borderRadius: '50%' }}>
+              <Play size={16} fill="var(--text-main)" />
+            </span>
+            {'See how it works'}
+          </button>
+        </div>
+      </section>
+
+      <div style={{ textAlign: 'center', margin: '2rem 0 6rem', position: 'relative', zIndex: 10 }}>
+        <p className="font-serif" style={{ fontStyle: 'italic', color: 'var(--text-muted)', fontSize: '1.1rem' }}>{"\"Be still, and know that I am God.\""}</p>
+      </div>
+
+      {/* Bento Grid (Features) */}
+      <section id="features" style={{ maxWidth: '1500px', margin: '0 auto', padding: '0 4rem 10rem', position: 'relative', zIndex: 10, scrollMarginTop: '8rem' }}>
+        <div style={{ textAlign: 'center', marginBottom: '6rem' }}>
+          <h2 className="font-serif" style={{ fontSize: '3.5rem', color: 'var(--text-main)', marginBottom: '1rem' }}>Designed for your soul.</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '1.2rem', maxWidth: '600px', margin: '0 auto' }}>Aria leverages advanced AI to provide four pillars of spiritual growth tailored entirely to you.</p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: '2.5rem', marginBottom: '2.5rem' }}>
+          <div className="glass-panel" style={{ background: 'var(--gradient-card)', borderRadius: '32px', padding: '4rem', position: 'relative', overflow: 'hidden', minHeight: '400px', display: 'flex', flexDirection: 'column', justifyContent: 'center', border: '1px solid var(--border-color)' }}>
+            <div style={{ position: 'absolute', top: '4rem', left: '4rem' }}>
+              <MessageSquare style={{ color: 'var(--text-main)' }} size={28} />
+            </div>
+            <div style={{ zIndex: 1, marginTop: '3rem' }}>
+              <h3 className="font-serif" style={{ fontStyle: 'italic', fontSize: '3rem', color: 'var(--text-main)', marginBottom: '1.5rem' }}>Emotional Support</h3>
+              <p style={{ color: 'var(--text-secondary)', maxWidth: '400px', lineHeight: 1.6, fontSize: '1.1rem' }}>Share your feelings and the weight of your day. Aria listens with empathy, providing comfort and practical guidance rooted deeply in scripture to help you find peace.</p>
+            </div>
+            <div style={{ position: 'absolute', bottom: '3rem', left: '4rem', display: 'flex', alignItems: 'center', gap: '1.5rem', background: 'var(--bg-card)', padding: '1.25rem 2rem', borderRadius: '16px', boxShadow: 'var(--shadow-main)' }}>
+              <div style={{ width: '40px', height: '40px', background: 'var(--brand-solid)', borderRadius: '50%' }}></div>
+              <span style={{ fontSize: '1rem', color: 'var(--text-secondary)' }}>{"\"I understand you're anxious. Let's look at Philippians 4:6...\""}</span>
+            </div>
           </div>
-          
-          <h1 className="hero-title">
-            Where Faith Meets{' '}
-            <span className="gradient-text">Artificial Intelligence</span>
-          </h1>
-          
-          <p className="hero-subtitle">
-            Experience your faith in a new dimension. Have meaningful conversations, 
-            study scripture with AI insights, and find spiritual guidance whenever you need it.
+
+          <div style={{ background: 'var(--brand-accent)', borderRadius: '32px', padding: '4rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-color)' }}>
+            <div style={{ width: '72px', height: '72px', background: 'rgba(255,255,255,0.4)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2.5rem' }}>
+              <Mic size={32} color="#0B192C" />
+            </div>
+            <h3 className="font-serif" style={{ fontSize: '2.5rem', color: '#0B192C', marginBottom: '1.5rem' }}>Real-Time Guidance</h3>
+            <p style={{ color: 'rgba(11, 25, 44, 0.7)', marginBottom: '3rem', fontSize: '1.1rem', lineHeight: 1.6 }}>Engage in deep, instantaneous conversational chats for profound theological understanding.</p>
+            <button onClick={() => navigate('/register')} style={{ background: '#0B192C', color: 'white', padding: '1rem 3rem', borderRadius: '8px', border: 'none', fontWeight: 500, fontSize: '1rem', cursor: 'pointer' }}>Call Aria</button>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.5rem' }}>
+          <div style={{ background: 'var(--brand-solid)', borderRadius: '32px', padding: '4rem', color: 'var(--text-inverse)', display: 'flex', flexDirection: 'column' }}>
+            <BookOpen size={36} style={{ marginBottom: '2.5rem' }} color="var(--brand-accent)" />
+            <h3 className="font-serif" style={{ fontSize: '2.5rem', marginBottom: '1.5rem' }}>In-Depth Bible Study</h3>
+            <p style={{ color: 'rgba(255,255,255,0.7)', marginBottom: '4rem', lineHeight: 1.6, fontSize: '1.1rem' }}>Select any verse to receive AI-powered explanations. Uncover original context, theology, and historical background instantly.</p>
+            <button
+              style={{
+                marginTop: 'auto', display: 'flex', alignItems: 'center', gap: '0.75rem',
+                fontSize: '0.9rem', letterSpacing: '0.1em', textTransform: 'uppercase',
+                cursor: 'pointer', background: 'none', border: 'none', padding: 0,
+                color: 'inherit', fontWeight: 'inherit'
+              }}
+              onClick={() => navigate('/register')}
+            >
+              OPEN LESSON <ArrowRight size={20} />
+            </button>
+          </div>
+
+          <div style={{ background: 'var(--bg-card)', borderRadius: '32px', padding: '0', display: 'flex', overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+            <div style={{ padding: '4rem', flex: 1 }}>
+              <Calendar size={36} color="var(--text-main)" style={{ marginBottom: '2.5rem' }} />
+              <h3 className="font-serif" style={{ fontStyle: 'italic', fontSize: '2.5rem', color: 'var(--text-main)', marginBottom: '1.5rem' }}>Daily Devotions</h3>
+              <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '1.1rem' }}>Start your day centered on God. Share your upcoming plans and receive tailor-made prayers and scripture readings to set your spirit right.</p>
+            </div>
+            <div style={{ flex: '0 0 320px', background: 'var(--bg-alt)' }}>
+              <img
+                src={"https://images.unsplash.com/photo-1492447105260-2e947425b5cc?q=80&w=600&auto=format&fit=crop"}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                alt="Forest path"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing Section */}
+      <section id="pricing" style={{ maxWidth: '1200px', margin: '0 auto', padding: '4rem 4rem 10rem', position: 'relative', zIndex: 10, scrollMarginTop: '6rem' }}>
+        <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
+          <h2 className="font-serif" style={{ fontSize: '3.5rem', color: 'var(--text-main)', marginBottom: '1rem' }}>Access the Sanctuary</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '1.2rem', maxWidth: '600px', margin: '0 auto' }}>Choose the path that best supports your spiritual journey today.</p>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3rem', alignItems: 'center' }}>
+          <div style={{ background: 'var(--bg-card)', borderRadius: '24px', padding: '3rem', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-main)' }}>
+            <h3 style={{ fontSize: '1.5rem', color: 'var(--text-main)', marginBottom: '0.5rem' }}>Seeker</h3>
+            <div style={{ fontSize: '3rem', color: 'var(--text-main)', fontWeight: 700, marginBottom: '2rem', fontFamily: "'Playfair Display', serif" }}>Free</div>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 3rem 0', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text-secondary)' }}><CheckCircle2 size={20} color="var(--brand-accent-hover)" /> 1 Daily Devotional</li>
+              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text-secondary)' }}><CheckCircle2 size={20} color="var(--brand-accent-hover)" /> Standard AI Responses</li>
+              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text-secondary)' }}><CheckCircle2 size={20} color="var(--brand-accent-hover)" /> Bible Study Search</li>
+              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text-muted)' }}><CheckCircle2 size={20} color="var(--border-color)" /> <del>Real-time Voice Calls</del></li>
+            </ul>
+            <button onClick={() => navigate('/register')} style={{ width: '100%', background: 'var(--input-bg)', color: 'var(--text-main)', padding: '1rem', borderRadius: '12px', border: 'none', fontSize: '1rem', fontWeight: 600, cursor: 'pointer' }}>Get Started</button>
+          </div>
+
+          <div style={{ background: 'var(--brand-solid)', borderRadius: '24px', padding: '4rem 3rem', color: 'var(--text-inverse)', position: 'relative', overflow: 'hidden', transform: 'scale(1.05)' }}>
+            <div style={{ position: 'absolute', top: '2rem', right: '2rem', background: 'var(--brand-accent)', color: '#0B192C', padding: '0.25rem 1rem', borderRadius: '2rem', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recommended</div>
+            <h3 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Sanctuary Pass</h3>
+            <div style={{ fontSize: '3rem', fontWeight: 700, marginBottom: '2rem', fontFamily: "'Playfair Display', serif" }}>$12<span style={{ fontSize: '1.25rem', fontWeight: 400, color: 'rgba(255,255,255,0.7)' }}>/mo</span></div>
+            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 3rem 0', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}><CheckCircle2 size={20} color="var(--brand-accent)" /> Unlimited Devotionals</li>
+              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}><CheckCircle2 size={20} color="var(--brand-accent)" /> Deep Theological Context</li>
+              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}><CheckCircle2 size={20} color="var(--brand-accent)" /> Advanced Bible Study Tools</li>
+              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}><CheckCircle2 size={20} color="var(--brand-accent)" /> Real-time Voice Chat</li>
+            </ul>
+            <button onClick={() => navigate('/register')} style={{ width: '100%', background: 'var(--brand-accent)', color: '#0B192C', padding: '1rem', borderRadius: '12px', border: 'none', fontSize: '1rem', fontWeight: 600, cursor: 'pointer', transition: 'filter 0.2s' }}>Upgrade to Premium</button>
+          </div>
+        </div>
+      </section>
+
+      {/* About Us Section */}
+      <section id="about" style={{ background: 'var(--bg-card)', padding: '8rem 4rem', position: 'relative', zIndex: 10, borderTop: '1px solid var(--border-color)' }}>
+        <div style={{ maxWidth: '800px', margin: '0 auto', textAlign: 'center' }}>
+          <Sparkles size={48} color="var(--brand-accent-hover)" style={{ marginBottom: '2rem' }} />
+          <h2 className="font-serif" style={{ fontSize: '3.5rem', color: 'var(--text-main)', marginBottom: '2rem' }}>Our Mission</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '1.25rem', lineHeight: 1.8, marginBottom: '2rem' }}>
+            We developed Aria with a profound belief: Technology should not distance us from our faith; it should bring us closer to it. In a world full of noise, Aria was built to be a quiet place—a digital sanctuary.
           </p>
-          
-          <div className="hero-ctas">
-            <button className="btn btn-primary btn-lg" onClick={() => navigate('/register')}>
-              Start Free <ArrowRight size={18} />
-            </button>
-            <button className="btn btn-outline btn-lg" onClick={() => navigate('/login')}>
-              Sign In
-            </button>
-          </div>
-          
-          <div className="hero-stats">
-            <div className="stat">
-              <span className="stat-value">24/7</span>
-              <span className="stat-label">AI Available</span>
-            </div>
-            <div className="stat">
-              <span className="stat-value">66+</span>
-              <span className="stat-label">Bible Books</span>
-            </div>
-            <div className="stat">
-              <span className="stat-value">Free</span>
-              <span className="stat-label">To Start</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section id="features" className="features">
-        <div className="container">
-          <div className="section-header">
-            <span className="section-tag">Features</span>
-            <h2>Everything You Need for Your Spiritual Journey</h2>
-            <p>Powerful features designed to deepen your faith in the digital age.</p>
-          </div>
-          
-          <div className="features-grid">
-            {features.map((feature, index) => (
-              <div key={index} className="feature-card">
-                <div className="feature-icon">
-                  {feature.icon}
-                </div>
-                <h3>{feature.title}</h3>
-                <p>{feature.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="cta">
-        <div className="container">
-          <div className="cta-content">
-            <h2>Begin Your Spiritual Journey Today</h2>
-            <p>Join thousands who have discovered a new way to connect with their faith. Start for free.</p>
-            <div className="cta-buttons">
-              <button className="btn btn-primary btn-lg" onClick={() => navigate('/register')}>
-                Create Free Account <ArrowRight size={18} />
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* FAQ Section */}
-      <section id="faq" className="faq">
-        <div className="container">
-          <div className="section-header">
-            <span className="section-tag">FAQ</span>
-            <h2>Frequently Asked Questions</h2>
-          </div>
-          
-          <div className="faq-list">
-            {faqs.map((faq, index) => (
-              <div 
-                key={index} 
-                className={`faq-item ${activeFaq === index ? 'active' : ''}`}
-                onClick={() => setActiveFaq(activeFaq === index ? null : index)}
-              >
-                <div className="faq-question">
-                  <span>{faq.question}</span>
-                  <ChevronDown size={20} className="faq-icon" />
-                </div>
-                {activeFaq === index && (
-                  <div className="faq-answer">
-                    <p>{faq.answer}</p>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Newsletter */}
-      <section className="newsletter">
-        <div className="container">
-          <div className="newsletter-content">
-            <div className="newsletter-text">
-              <h3>Stay Connected</h3>
-              <p>Get weekly spiritual insights and updates</p>
-            </div>
-            <form className="newsletter-form" onSubmit={handleSubscribe}>
-              {isSubscribed ? (
-                <div className="subscribed-message">
-                  <Check size={20} /> Thanks for subscribing!
-                </div>
-              ) : (
-                <>
-                  <input 
-                    type="email" 
-                    placeholder="Enter your email" 
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                  />
-                  <button type="submit" className="btn btn-primary">Subscribe</button>
-                </>
-              )}
-            </form>
-          </div>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '1.25rem', lineHeight: 1.8 }}>
+            Our team of technologists and theologians carefully crafted every interaction to be empathetic, biblically accurate, and deeply reflective. We invite you to join us in making spiritual growth more accessible than ever before.
+          </p>
+          <button onClick={() => navigate('/register')} style={{ marginTop: '3rem', background: 'transparent', border: '2px solid var(--border-color)', color: 'var(--text-main)', padding: '1rem 3rem', borderRadius: '8px', fontSize: '1rem', fontWeight: 600, cursor: 'pointer' }}>Join the Community</button>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="footer">
-        <div className="container">
-          <div className="footer-brand">
-            <div className="nav-brand">
-              <div className="brand-icon">
-                <Sparkles size={20} />
-              </div>
-              <span className="brand-name">Aria</span>
+      <footer style={{ padding: '4rem 6rem', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', position: 'relative', zIndex: 10, background: 'var(--bg-main)' }}>
+        <div style={{ width: '300px' }}>
+          <span className="font-serif" style={{ fontStyle: 'italic', fontSize: '1.75rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '1rem' }}>Aria</span>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.6 }}>Crafting a digital sanctuary where faith meets modern intelligence. Designed to nourish the soul and enlighten the mind.</p>
+        </div>
+
+        <div style={{ display: 'flex', gap: '6rem' }}>
+          <div>
+            <h5 style={{ fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-main)', marginBottom: '1.5rem' }}>Ecosystem</h5>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              <a href="#features">Emotional Support</a>
+              <a href="#features">Real-Time Chat</a>
+              <a href="#features">Bible Study</a>
+              <a href="#features">Daily Devotion</a>
             </div>
-            <p>Pioneering the intersection of faith and technology.</p>
           </div>
-          
-          <div className="footer-bottom">
-            <p>© 2024 Aria. All rights reserved.</p>
+          <div>
+            <h5 style={{ fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-main)', marginBottom: '1.5rem' }}>Company</h5>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+              <a href="#about">About Us</a>
+              <a href="#pricing">Pricing</a>
+              <button
+                onClick={() => { }}
+                style={{ background: 'none', border: 'none', padding: 0, color: 'inherit', fontSize: 'inherit', textAlign: 'left', cursor: 'pointer' }}
+              >
+                Contact
+              </button>
+            </div>
           </div>
         </div>
       </footer>
-
-      <style>{`
-        :root {
-          --primary: #c9a227;
-          --primary-light: #e6c455;
-          --primary-dark: #a68520;
-          --bg-dark: #0a0a0f;
-          --bg-card: #141418;
-          --text: #f5f5f5;
-          --text-muted: #888;
-          --border: rgba(255, 255, 255, 0.1);
-        }
-
-        html, body {
-          margin: 0;
-          padding: 0;
-          width: 100%;
-          height: 100%;
-          overflow-x: hidden;
-        }
-
-        * {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-        }
-
-        body {
-          background: var(--bg-dark) !important;
-          color: var(--text);
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          line-height: 1.6;
-        }
-
-        .landing-page {
-          min-height: 100vh;
-          width: 100%;
-          position: relative;
-          overflow-x: hidden;
-        }
-
-        .bg-container {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          pointer-events: none;
-          z-index: 0;
-          overflow: hidden;
-        }
-
-        .orb {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(80px);
-          opacity: 0.4;
-          transition: transform 0.3s ease-out;
-        }
-
-        .orb-1 {
-          width: 600px;
-          height: 600px;
-          background: radial-gradient(circle, var(--primary-dark) 0%, transparent 70%);
-          top: -200px;
-          right: -100px;
-        }
-
-        .orb-2 {
-          width: 400px;
-          height: 400px;
-          background: radial-gradient(circle, rgba(100, 100, 150, 0.3) 0%, transparent 70%);
-          bottom: -100px;
-          left: -100px;
-        }
-
-        .grid-overlay {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background-image: 
-            linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-          background-size: 50px 50px;
-        }
-
-        .container {
-          max-width: 1100px;
-          width: 100%;
-          margin: 0 auto;
-          padding: 0 2rem;
-          box-sizing: border-box;
-        }
-
-        /* Navigation */
-        .nav {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          z-index: 100;
-          background: rgba(10, 10, 15, 0.8);
-          backdrop-filter: blur(20px);
-          border-bottom: 1px solid var(--border);
-        }
-
-        .nav-container {
-          max-width: 1100px;
-          margin: 0 auto;
-          padding: 1rem 2rem;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-        }
-
-        .nav-brand {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          cursor: pointer;
-        }
-
-        .brand-icon {
-          width: 38px;
-          height: 38px;
-          background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-          border-radius: 10px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #0a0a0f;
-        }
-
-        .brand-name {
-          font-size: 1.5rem;
-          font-weight: 700;
-          color: var(--text);
-        }
-
-        .nav-links {
-          display: flex;
-          gap: 2rem;
-        }
-
-        .nav-links a {
-          color: var(--text-muted);
-          text-decoration: none;
-          font-weight: 500;
-          transition: color 0.2s;
-        }
-
-        .nav-links a:hover {
-          color: var(--primary-light);
-        }
-
-        .nav-actions {
-          display: flex;
-          gap: 1rem;
-        }
-
-        /* Buttons */
-        .btn {
-          padding: 0.75rem 1.5rem;
-          border-radius: 10px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-          font-size: 0.95rem;
-          border: none;
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-        }
-
-        .btn-primary {
-          background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-          color: #0a0a0f;
-        }
-
-        .btn-primary:hover {
-          background: linear-gradient(135deg, var(--primary-light), var(--primary));
-          transform: translateY(-1px);
-        }
-
-        .btn-ghost {
-          background: transparent;
-          border: 1px solid var(--border);
-          color: var(--text);
-        }
-
-        .btn-ghost:hover {
-          background: rgba(255, 255, 255, 0.05);
-        }
-
-        .btn-outline {
-          background: transparent;
-          border: 1px solid var(--border);
-          color: var(--text);
-        }
-
-        .btn-outline:hover {
-          background: rgba(255, 255, 255, 0.05);
-          border-color: rgba(255, 255, 255, 0.2);
-        }
-
-        .btn-lg {
-          padding: 1rem 1.75rem;
-          font-size: 1rem;
-        }
-
-        /* Hero */
-        .hero {
-          position: relative;
-          z-index: 1;
-          min-height: 100vh;
-          width: 100%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 6rem 2rem 4rem;
-        }
-
-        .hero-content {
-          text-align: center;
-          max-width: 700px;
-          width: 100%;
-        }
-
-        .hero-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          padding: 0.5rem 1rem;
-          background: rgba(201, 162, 39, 0.1);
-          border: 1px solid rgba(201, 162, 39, 0.2);
-          border-radius: 2rem;
-          color: var(--primary-light);
-          margin-bottom: 1.5rem;
-          font-size: 0.875rem;
-        }
-
-        .hero-title {
-          font-size: clamp(2.5rem, 5vw, 3.5rem);
-          font-weight: 800;
-          line-height: 1.15;
-          margin-bottom: 1.5rem;
-        }
-
-        .gradient-text {
-          background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary) 50%, var(--primary-light) 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-size: 200% auto;
-          animation: shimmer 3s linear infinite;
-        }
-
-        @keyframes shimmer {
-          to { background-position: 200% center; }
-        }
-
-        .hero-subtitle {
-          font-size: 1.2rem;
-          color: var(--text-muted);
-          margin-bottom: 2rem;
-          line-height: 1.7;
-        }
-
-        .hero-ctas {
-          display: flex;
-          gap: 1rem;
-          justify-content: center;
-          margin-bottom: 3rem;
-          flex-wrap: wrap;
-        }
-
-        .hero-stats {
-          display: flex;
-          gap: 3rem;
-          justify-content: center;
-          padding-top: 2rem;
-          border-top: 1px solid var(--border);
-        }
-
-        .stat {
-          display: flex;
-          flex-direction: column;
-        }
-
-        .stat-value {
-          font-size: 1.75rem;
-          font-weight: 700;
-          color: var(--primary);
-        }
-
-        .stat-label {
-          font-size: 0.875rem;
-          color: var(--text-muted);
-        }
-
-        /* Features */
-        .features {
-          position: relative;
-          z-index: 1;
-          padding: 6rem 2rem;
-          background: rgba(0, 0, 0, 0.3);
-          width: 100%;
-        }
-
-        .section-header {
-          text-align: center;
-          margin-bottom: 3rem;
-        }
-
-        .section-tag {
-          display: inline-block;
-          padding: 0.4rem 0.9rem;
-          background: rgba(201, 162, 39, 0.1);
-          border: 1px solid rgba(201, 162, 39, 0.2);
-          border-radius: 2rem;
-          color: var(--primary);
-          font-size: 0.8rem;
-          font-weight: 500;
-          margin-bottom: 1rem;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-        }
-
-        .section-header h2 {
-          font-size: 2.25rem;
-          font-weight: 700;
-          margin-bottom: 0.75rem;
-        }
-
-        .section-header p {
-          color: var(--text-muted);
-          font-size: 1.1rem;
-        }
-
-        .features-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-          gap: 1.5rem;
-        }
-
-        .feature-card {
-          background: var(--bg-card);
-          border: 1px solid var(--border);
-          border-radius: 16px;
-          padding: 1.75rem;
-          transition: all 0.2s;
-        }
-
-        .feature-card:hover {
-          border-color: rgba(201, 162, 39, 0.3);
-          transform: translateY(-2px);
-        }
-
-        .feature-icon {
-          width: 48px;
-          height: 48px;
-          background: rgba(201, 162, 39, 0.1);
-          border: 1px solid rgba(201, 162, 39, 0.2);
-          border-radius: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--primary);
-          margin-bottom: 1.25rem;
-        }
-
-        .feature-card h3 {
-          font-size: 1.15rem;
-          font-weight: 600;
-          margin-bottom: 0.5rem;
-        }
-
-        .feature-card p {
-          color: var(--text-muted);
-          font-size: 0.95rem;
-          line-height: 1.6;
-        }
-
-        /* CTA */
-        .cta {
-          position: relative;
-          z-index: 1;
-          padding: 6rem 2rem;
-          width: 100%;
-        }
-
-        .cta-content {
-          text-align: center;
-          background: var(--bg-card);
-          border: 1px solid var(--border);
-          border-radius: 24px;
-          padding: 4rem 2rem;
-        }
-
-        .cta-content h2 {
-          font-size: 2rem;
-          font-weight: 700;
-          margin-bottom: 0.75rem;
-        }
-
-        .cta-content p {
-          color: var(--text-muted);
-          font-size: 1.1rem;
-          margin-bottom: 2rem;
-          max-width: 450px;
-          margin-left: auto;
-          margin-right: auto;
-        }
-
-        .cta-buttons {
-          display: flex;
-          gap: 1rem;
-          justify-content: center;
-        }
-
-        /* FAQ */
-        .faq {
-          position: relative;
-          z-index: 1;
-          padding: 6rem 2rem;
-          background: rgba(0, 0, 0, 0.3);
-          width: 100%;
-        }
-
-        .faq-list {
-          max-width: 700px;
-          margin: 0 auto;
-        }
-
-        .faq-item {
-          background: var(--bg-card);
-          border: 1px solid var(--border);
-          border-radius: 12px;
-          margin-bottom: 0.75rem;
-          overflow: hidden;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .faq-item:hover {
-          border-color: rgba(201, 162, 39, 0.2);
-        }
-
-        .faq-item.active {
-          border-color: rgba(201, 162, 39, 0.3);
-        }
-
-        .faq-question {
-          padding: 1.25rem 1.5rem;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          font-weight: 500;
-        }
-
-        .faq-icon {
-          transition: transform 0.2s;
-          color: var(--text-muted);
-        }
-
-        .faq-item.active .faq-icon {
-          transform: rotate(180deg);
-        }
-
-        .faq-answer {
-          padding: 0 1.5rem 1.25rem;
-        }
-
-        .faq-answer p {
-          color: var(--text-muted);
-          line-height: 1.7;
-        }
-
-        /* Newsletter */
-        .newsletter {
-          position: relative;
-          z-index: 1;
-          padding: 4rem 2rem;
-          border-top: 1px solid var(--border);
-          border-bottom: 1px solid var(--border);
-          width: 100%;
-        }
-
-        .newsletter-content {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          flex-wrap: wrap;
-          gap: 1.5rem;
-        }
-
-        .newsletter-text h3 {
-          margin-bottom: 0.25rem;
-        }
-
-        .newsletter-text p {
-          color: var(--text-muted);
-        }
-
-        .newsletter-form {
-          display: flex;
-          gap: 0.5rem;
-        }
-
-        .newsletter-form input {
-          padding: 0.75rem 1rem;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid var(--border);
-          border-radius: 10px;
-          color: white;
-          outline: none;
-          width: 220px;
-        }
-
-        .newsletter-form input::placeholder {
-          color: var(--text-muted);
-        }
-
-        .subscribed-message {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          color: #22c55e;
-        }
-
-        /* Footer */
-        .footer {
-          position: relative;
-          z-index: 1;
-          padding: 3rem 2rem;
-          background: #050507;
-          width: 100%;
-        }
-
-        .footer-brand {
-          margin-bottom: 1.5rem;
-        }
-
-        .footer-brand p {
-          color: var(--text-muted);
-          margin-top: 1rem;
-          font-size: 0.9rem;
-        }
-
-        .footer-bottom {
-          padding-top: 1.5rem;
-          border-top: 1px solid var(--border);
-          color: var(--text-muted);
-          font-size: 0.85rem;
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-          .nav-links {
-            display: none;
-          }
-
-          .hero-stats {
-            gap: 1.5rem;
-          }
-
-          .newsletter-content {
-            flex-direction: column;
-            text-align: center;
-          }
-
-          .newsletter-form {
-            width: 100%;
-            flex-direction: column;
-          }
-
-          .newsletter-form input {
-            width: 100%;
-          }
-        }
-      `}</style>
     </div>
   )
 }

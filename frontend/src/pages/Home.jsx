@@ -1,805 +1,248 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { 
-  MessageSquare, 
-  BookOpen, 
-  Heart, 
-  Sun, 
-  Sparkles,
-  Clock,
-  Flame,
-  Lightbulb,
-  HeartHandshake,
-  Loader2
+import {
+  Sparkles, Book, Heart, Flame, MessageSquare,
+  Settings, Bookmark, ArrowRight, Quote, AlignLeft,
+  BookOpen, ChevronRight, CheckCircle2
 } from 'lucide-react'
-import useAuth from '../hooks/useAuth'
-import { homeService, prayerService } from '../services/api'
+import { homeService, authService } from '../services/api'
 
-const getGreeting = () => {
-  const hour = new Date().getHours()
-  if (hour < 12) return 'Good morning'
-  if (hour < 17) return 'Good afternoon'
-  return 'Good evening'
-}
+import './Home.css'
 
-const getRelativeTime = (dateString) => {
-  const date = new Date(dateString)
-  const now = new Date()
-  const diffMs = now - date
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMs / 3600000)
-  const diffDays = Math.floor(diffMs / 86400000)
-  
-  if (diffMins < 1) return 'Just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  if (diffDays === 1) return 'Yesterday'
-  if (diffDays < 7) return `${diffDays} days ago`
-  return date.toLocaleDateString()
-}
+// --- Sub-components matching the Mockup ---
 
-// Simple animated background
-const AnimatedBackground = () => {
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
-
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      setMousePosition({
-        x: (e.clientX / window.innerWidth - 0.5) * 10,
-        y: (e.clientY / window.innerHeight - 0.5) * 10
-      })
-    }
-    window.addEventListener('mousemove', handleMouseMove)
-    return () => window.removeEventListener('mousemove', handleMouseMove)
-  }, [])
+const FaithStreak = ({ days, streak }) => {
+  const dayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+  const todayIndex = new Date().getDay()
 
   return (
-    <div className="home-bg">
-      <div 
-        className="bg-orb orb-1"
-        style={{ transform: `translate(${mousePosition.x}px, ${mousePosition.y}px)` }}
-      />
-      <div 
-        className="bg-orb orb-2"
-        style={{ transform: `translate(${-mousePosition.x * 0.5}px, ${-mousePosition.y * 0.5}px)` }}
-      />
+    <div style={{ background: 'var(--bg-card)', borderRadius: '24px', padding: '1.5rem', boxShadow: 'var(--shadow-main)', minHeight: '180px', border: '1px solid var(--border-color)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+        <div style={{ width: '40px', height: '40px', background: 'var(--bg-alt)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Flame size={20} color="var(--brand-accent)" />
+        </div>
+        <div>
+          <p style={{ margin: 0, fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.1em' }}>FAITH STREAK</p>
+          <h4 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-main)', fontWeight: 700 }}>{streak} Day Streak</h4>
+        </div>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+        {dayLabels.map((day, i) => {
+          const isCompleted = days && days[i]
+          return (
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--text-muted)' }}>{day}</span>
+              <div style={{
+                width: '30px', height: '30px', borderRadius: '50%',
+                background: isCompleted ? 'var(--brand-accent)' : (i === todayIndex ? 'var(--text-main)' : 'var(--input-bg)'),
+                color: isCompleted ? 'var(--text-inverse)' : (i === todayIndex ? 'var(--bg-main)' : 'var(--text-muted)'),
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700
+              }}>
+                {i + 14}
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
 
-const Home = () => {
-  const navigate = useNavigate()
-  const { user } = useAuth()
-  const [prayerInput, setPrayerInput] = useState('')
-  const [isLoading, setIsLoading] = useState(true)
-  const [homeData, setHomeData] = useState({
-    user: { name: 'Believer' },
-    verse_of_day: { verse: '', reference: '' },
-    activity: [],
-    stats: { streak: 0, time_today_minutes: 0, verses_saved: 0 },
-    recent_prayers: []
-  })
-  const [isSubmitting, setIsSubmitting] = useState(false)
+const ActionCard = ({ icon: Icon, title, subtitle, background, onClick }) => (
+  <div className="action-card" style={{ background }} onClick={onClick}>
+    <div style={{ width: '40px', height: '40px', background: 'rgba(255,255,255,0.1)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Icon size={20} color="#fff" />
+    </div>
+    <div style={{ flex: 1 }}>
+      <h4 style={{ margin: 0, fontSize: '1rem', color: '#fff', fontWeight: 600 }}>{title}</h4>
+      <p style={{ margin: 0, fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)' }}>{subtitle}</p>
+    </div>
+    <ChevronRight size={18} color="rgba(255,255,255,0.5)" />
+  </div>
+)
 
-  useEffect(() => {
-    fetchHomeData()
-  }, [])
-
-  const fetchHomeData = async () => {
-    try {
-      setIsLoading(true)
-      const data = await homeService.getHomeData()
-      setHomeData(data)
-    } catch (error) {
-      console.error('Error fetching home data:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const quickActions = [
-    {
-      icon: <MessageSquare size={24} />,
-      title: 'Chat with Aria',
-      description: 'Have a spiritual conversation',
-      path: '/app/ai-chat',
-      color: '#6366f1'
-    },
-    {
-      icon: <BookOpen size={24} />,
-      title: 'Read the Bible',
-      description: 'Explore scripture',
-      path: '/app/bible',
-      color: '#8b5cf6'
-    },
-    {
-      icon: <Heart size={24} />,
-      title: 'Emotional Support',
-      description: 'Find comfort & guidance',
-      path: '/app/emotional-support',
-      color: '#ec4899'
-    },
-    {
-      icon: <Sun size={24} />,
-      title: 'Daily Devotion',
-      description: 'Start your day with God',
-      path: '/app/devotion',
-      color: '#f59e0b'
-    }
-  ]
-
-  const getActivityIcon = (type) => {
-    switch (type) {
-      case 'bible_study': return <BookOpen size={18} />
-      case 'support': return <Heart size={18} />
-      case 'devotion': return <Sun size={18} />
-      default: return <MessageSquare size={18} />
-    }
-  }
-
-  const handlePrayerSubmit = async () => {
-    if (prayerInput.trim()) {
-      setIsSubmitting(true)
-      try {
-        await prayerService.createPrayer({ content: prayerInput })
-        await fetchHomeData()
-        setPrayerInput('')
-      } catch (error) {
-        console.error('Error submitting prayer:', error)
-      } finally {
-        setIsSubmitting(false)
-      }
-    }
-  }
-
-  const userName = homeData.user?.name?.split(' ')[0] || user?.full_name?.split(' ')[0] || 'Believer'
-
-  if (isLoading) {
-    return (
-      <div className="home-page">
-        <AnimatedBackground />
-        <div className="loading-container">
-          <Loader2 size={40} className="animate-spin" />
+const JourneyCard = ({ icon: Icon, tag, time, title, desc, progress, onClick }) => (
+  <div className="journey-card" onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div style={{ width: '48px', height: '48px', background: 'var(--bg-alt)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon size={24} color="var(--brand-accent)" />
+      </div>
+      {tag && <span style={{ fontSize: '0.6rem', fontWeight: 800, color: 'var(--brand-accent)', background: 'var(--bg-alt)', padding: '0.4rem 0.8rem', borderRadius: '20px', letterSpacing: '0.05em' }}>{tag}</span>}
+      {time && <span style={{ fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.05em' }}>{time}</span>}
+    </div>
+    <div>
+      <h4 style={{ margin: '1rem 0 0.5rem', fontSize: '1.25rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif" }}>{title}</h4>
+      <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{desc}</p>
+    </div>
+    {progress !== undefined && (
+      <div style={{ marginTop: 'auto', paddingTop: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+          <span>PROGRESS</span>
+          <span>{progress}%</span>
+        </div>
+        <div style={{ height: '6px', background: 'var(--bg-alt)', borderRadius: '3px' }}>
+          <div style={{ height: '100%', width: `${progress}%`, background: 'var(--brand-accent)', borderRadius: '3px' }} />
         </div>
       </div>
-    )
+    )}
+  </div>
+)
+
+const Home = () => {
+  const navigate = useNavigate()
+  const [stats, setStats] = useState({
+    streak_days: 7,
+    streak_history: [true, true, true, true, true, true, false]
+  })
+  const [user, setUser] = useState({ full_name: 'SANCTUARY' })
+  const [greeting, setGreeting] = useState('GOOD DAY')
+  const [activities, setActivities] = useState([])
+  const [verseObj, setVerseObj] = useState({
+    verse: 'The LORD is my shepherd; I shall not want.',
+    reference: 'Psalm 23:1',
+    insight: 'Take a moment to rest in the assurance that your every need is seen and provided for by a Shepherd who knows you by name.'
+  })
+
+  useEffect(() => {
+    // Set dynamic greeting based on time
+    const hour = new Date().getHours()
+    if (hour >= 5 && hour < 12) setGreeting('GOOD MORNING')
+    else if (hour >= 12 && hour < 17) setGreeting('GOOD AFTERNOON')
+    else setGreeting('GOOD EVENING')
+
+    const fetchData = async () => {
+      try {
+        // Fetch home data (stats, activity, verse)
+        const data = await homeService.getHomeData()
+        if (data.stats) setStats(data.stats)
+        if (data.verse_of_day) setVerseObj(data.verse_of_day)
+        if (data.activity) setActivities(data.activity)
+
+        // Fetch real user name
+        const userData = await authService.getMe()
+        if (userData && userData.full_name) setUser(userData)
+      } catch (e) {
+        console.error('Failed to fetch dashboard data', e)
+      }
+    }
+    fetchData()
+  }, [])
+
+  // Helper to get relative time
+  const getRelativeTime = (dateStr) => {
+    const now = new Date()
+    const past = new Date(dateStr)
+    const diffMs = now - past
+    const diffHrs = Math.round(diffMs / (1000 * 60 * 60))
+    if (diffHrs < 1) return 'JUST NOW'
+    if (diffHrs < 24) return `${diffHrs}H AGO`
+    return `${Math.round(diffHrs / 24)}D AGO`
   }
 
   return (
-    <div className="home-page">
-      <AnimatedBackground />
-      
-      <div className="home-content">
-        {/* Welcome Section */}
-        <section className="welcome-section">
-          <div className="welcome-text">
-            <p className="greeting">{getGreeting()},</p>
-            <h1>{userName}!</h1>
-            <p className="welcome-subtitle">Welcome to your spiritual home. How can we walk with you today?</p>
-          </div>
-        </section>
-
-        {/* Daily Verse Card */}
-        <section className="verse-section">
-          <div className="verse-card">
-            <div className="verse-header">
-              <Sparkles size={18} />
-              <span>Verse of the Day</span>
-            </div>
-            <blockquote className="verse-text">
-              "{homeData.verse_of_day?.verse || 'Loading verse...'}"
-            </blockquote>
-            <cite className="verse-reference">— {homeData.verse_of_day?.reference || '...'}</cite>
-            <button 
-              className="verse-btn"
-              onClick={() => navigate('/app/bible-study')}
-            >
-              <Lightbulb size={16} />
-              Study this verse
-            </button>
-          </div>
-        </section>
-
-        {/* Quick Actions Grid */}
-        <section className="actions-section">
-          <h2 className="section-title">How would you like to connect?</h2>
-          <div className="actions-grid">
-            {quickActions.map((action, index) => (
-              <button
-                key={index}
-                className="action-card"
-                style={{ '--action-color': action.color }}
-                onClick={() => navigate(action.path)}
-              >
-                <div className="action-icon">{action.icon}</div>
-                <div className="action-info">
-                  <h3>{action.title}</h3>
-                  <p>{action.description}</p>
-                </div>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* Two Column Layout */}
-        <div className="home-columns">
-          {/* Continue Learning */}
-          <section className="continue-section">
-            <h2 className="section-title">Continue Where You Left Off</h2>
-            {homeData.activity && homeData.activity.length > 0 ? (
-              <div className="continue-list">
-                {homeData.activity.map((item, index) => (
-                  <button
-                    key={index}
-                    className="continue-item"
-                    onClick={() => navigate(item.path)}
-                  >
-                    <div className="continue-icon">{getActivityIcon(item.type)}</div>
-                    <div className="continue-info">
-                      <span className="continue-title">{item.title}</span>
-                      <span className="continue-subtitle">{item.subtitle}</span>
-                    </div>
-                    <span className="continue-time">{getRelativeTime(item.created_at)}</span>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-activity">
-                <p>Start your spiritual journey today!</p>
-                <p className="empty-hint">Use any of the features above to begin.</p>
-              </div>
-            )}
-          </section>
-
-          {/* Prayer Section */}
-          <section className="prayer-section">
-            <h2 className="section-title">What's on your heart?</h2>
-            <div className="prayer-card">
-              <div className="prayer-icon">
-                <HeartHandshake size={28} />
-              </div>
-              <textarea
-                className="prayer-input"
-                placeholder="Share your thoughts, prayers, or reflections with God..."
-                value={prayerInput}
-                onChange={(e) => setPrayerInput(e.target.value)}
-                rows={3}
-              />
-              <button 
-                className="prayer-btn"
-                onClick={handlePrayerSubmit}
-                disabled={isSubmitting || !prayerInput.trim()}
-              >
-                {isSubmitting ? (
-                  <Loader2 size={18} className="animate-spin" />
-                ) : (
-                  <Sparkles size={18} />
-                )}
-                Send Prayer
-              </button>
-              {homeData.recent_prayers && homeData.recent_prayers.length > 0 && (
-                <div className="recent-prayers">
-                  <p className="recent-title">Recent Prayers:</p>
-                  {homeData.recent_prayers.slice(0, 2).map((prayer, idx) => (
-                    <div key={idx} className="prayer-preview">
-                      <p>{prayer.content.substring(0, 50)}{prayer.content.length > 50 ? '...' : ''}</p>
-                      <span className="prayer-time">{getRelativeTime(prayer.created_at)}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
+    <div className="home-container">
+      {/* Header */}
+      <div className="home-header">
+        <div>
+          <p className="home-greeting">{greeting}, {user.full_name?.split(' ')[0].toUpperCase()}</p>
+          <h1 className="home-title">Let's walk in faith today.</h1>
         </div>
-
-        {/* Stats Strip */}
-        <section className="stats-section">
-          <div className="stats-grid">
-            <div className="stat-item">
-              <Flame size={20} className="stat-icon" />
-              <div className="stat-info">
-                <span className="stat-value">{homeData.stats?.streak || 0} day streak</span>
-                <span className="stat-label">Keep going!</span>
-              </div>
-            </div>
-            <div className="stat-item">
-              <Clock size={20} className="stat-icon" />
-              <div className="stat-info">
-                <span className="stat-value">{homeData.stats?.time_today_minutes || 0} min today</span>
-                <span className="stat-label">Time in app</span>
-              </div>
-            </div>
-            <div className="stat-item">
-              <BookOpen size={20} className="stat-icon" />
-              <div className="stat-info">
-                <span className="stat-value">{homeData.stats?.verses_saved || 0} verses</span>
-                <span className="stat-label">Saved this week</span>
-              </div>
-            </div>
+        <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+          <Settings size={22} color="var(--text-main)" style={{ cursor: 'pointer' }} />
+          <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'var(--bg-alt)', overflow: 'hidden', border: '2px solid var(--bg-card)', boxShadow: 'var(--shadow-main)' }}>
+            <img src="https://i.pravatar.cc/150?u=aria" style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Profile" />
           </div>
-        </section>
+        </div>
       </div>
 
-      <style>{`
-        :root {
-          --primary: #c9a227;
-          --bg-dark: #0a0a0f;
-          --bg-card: #141418;
-          --text: #f5f5f5;
-          --text-muted: #888;
-          --border: rgba(255, 255, 255, 0.1);
-        }
-
-        .home-page {
-          min-height: 100vh;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .home-bg {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          pointer-events: none;
-          z-index: 0;
-          overflow: hidden;
-        }
-
-        .bg-orb {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(100px);
-          opacity: 0.25;
-          transition: transform 0.2s ease-out;
-        }
-
-        .orb-1 {
-          width: 500px;
-          height: 500px;
-          background: radial-gradient(circle, var(--primary) 0%, transparent 70%);
-          top: -150px;
-          right: -100px;
-        }
-
-        .orb-2 {
-          width: 400px;
-          height: 400px;
-          background: radial-gradient(circle, #6366f1 0%, transparent 70%);
-          bottom: -100px;
-          left: -100px;
-        }
-
-        .home-content {
-          position: relative;
-          z-index: 1;
-          max-width: 1100px;
-          margin: 0 auto;
-          padding: 1.5rem;
-        }
-
-        .loading-container {
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          min-height: 50vh;
-          color: var(--primary);
-        }
-
-        .animate-spin {
-          animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-
-        /* Welcome Section */
-        .welcome-section {
-          background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-          border: 1px solid var(--border);
-          border-radius: 20px;
-          padding: 2rem;
-          margin-bottom: 1.5rem;
-        }
-
-        .welcome-text h1 {
-          font-size: 2rem;
-          font-weight: 700;
-          margin: 0.25rem 0 0.5rem;
-        }
-
-        .greeting {
-          color: var(--text-muted);
-          margin: 0;
-        }
-
-        .welcome-subtitle {
-          color: var(--text-muted);
-          margin: 0;
-          font-size: 0.95rem;
-        }
-
-        /* Verse Section */
-        .verse-section {
-          margin-bottom: 1.5rem;
-        }
-
-        .verse-card {
-          background: rgba(201, 162, 39, 0.08);
-          border: 1px solid rgba(201, 162, 39, 0.2);
-          border-radius: 16px;
-          padding: 1.5rem;
-        }
-
-        .verse-header {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          color: var(--primary);
-          font-weight: 600;
-          font-size: 0.85rem;
-          margin-bottom: 0.75rem;
-        }
-
-        .verse-text {
-          font-size: 1.1rem;
-          line-height: 1.6;
-          color: #e4e4e7;
-          margin: 0 0 0.5rem;
-          font-style: italic;
-        }
-
-        .verse-reference {
-          display: block;
-          color: var(--primary);
-          font-weight: 600;
-          font-size: 0.9rem;
-          margin-bottom: 1rem;
-        }
-
-        .verse-btn {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          background: var(--primary);
-          color: #0a0a0f;
-          border: none;
-          padding: 0.5rem 1rem;
-          border-radius: 10px;
-          font-weight: 600;
-          font-size: 0.85rem;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .verse-btn:hover {
-          background: #d4a017;
-        }
-
-        /* Actions Section */
-        .actions-section {
-          margin-bottom: 1.5rem;
-        }
-
-        .section-title {
-          font-size: 1.15rem;
-          font-weight: 700;
-          color: var(--text);
-          margin: 0 0 1rem;
-        }
-
-        .actions-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-          gap: 1rem;
-        }
-
-        .action-card {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-          padding: 1rem;
-          border: 1px solid var(--border);
-          border-radius: 14px;
-          cursor: pointer;
-          transition: all 0.2s;
-          background: var(--bg-card);
-          text-align: left;
-        }
-
-        .action-card:hover {
-          border-color: var(--action-color);
-          transform: translateY(-2px);
-        }
-
-        .action-icon {
-          width: 44px;
-          height: 44px;
-          background: rgba(255, 255, 255, 0.05);
-          border-radius: 12px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: var(--action-color);
-          flex-shrink: 0;
-        }
-
-        .action-info h3 {
-          font-size: 0.95rem;
-          font-weight: 600;
-          margin: 0 0 0.2rem;
-          color: var(--text);
-        }
-
-        .action-info p {
-          font-size: 0.8rem;
-          color: var(--text-muted);
-          margin: 0;
-        }
-
-        /* Two Column Layout */
-        .home-columns {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 1.5rem;
-          margin-bottom: 1.5rem;
-        }
-
-        @media (max-width: 768px) {
-          .home-columns {
-            grid-template-columns: 1fr;
-          }
-        }
-
-        /* Continue Section */
-        .continue-section {
-          background: var(--bg-card);
-          border: 1px solid var(--border);
-          border-radius: 16px;
-          padding: 1.25rem;
-        }
-
-        .continue-list {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-
-        .continue-item {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          padding: 0.75rem;
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid transparent;
-          border-radius: 10px;
-          cursor: pointer;
-          transition: all 0.2s;
-          text-align: left;
-        }
-
-        .continue-item:hover {
-          background: rgba(255, 255, 255, 0.06);
-          border-color: var(--border);
-        }
-
-        .continue-icon {
-          width: 36px;
-          height: 36px;
-          background: rgba(99, 102, 241, 0.15);
-          border-radius: 8px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #6366f1;
-        }
-
-        .continue-info {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-        }
-
-        .continue-title {
-          font-weight: 600;
-          color: var(--text);
-          font-size: 0.9rem;
-        }
-
-        .continue-subtitle {
-          font-size: 0.75rem;
-          color: var(--text-muted);
-        }
-
-        .continue-time {
-          font-size: 0.7rem;
-          color: var(--text-muted);
-        }
-
-        .empty-activity {
-          text-align: center;
-          padding: 1.5rem;
-          color: var(--text-muted);
-        }
-
-        .empty-activity p {
-          margin: 0;
-        }
-
-        .empty-hint {
-          font-size: 0.85rem;
-          margin-top: 0.25rem !important;
-        }
-
-        /* Prayer Section */
-        .prayer-section {
-          background: var(--bg-card);
-          border: 1px solid var(--border);
-          border-radius: 16px;
-          padding: 1.25rem;
-        }
-
-        .prayer-card {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          text-align: center;
-        }
-
-        .prayer-icon {
-          width: 56px;
-          height: 56px;
-          background: var(--primary);
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #0a0a0f;
-          margin-bottom: 0.75rem;
-        }
-
-        .prayer-input {
-          width: 100%;
-          padding: 0.75rem;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid var(--border);
-          border-radius: 10px;
-          font-size: 0.9rem;
-          resize: none;
-          font-family: inherit;
-          margin-bottom: 0.75rem;
-          color: var(--text);
-          transition: border-color 0.2s;
-        }
-
-        .prayer-input:focus {
-          outline: none;
-          border-color: var(--primary);
-        }
-
-        .prayer-input::placeholder {
-          color: var(--text-muted);
-        }
-
-        .prayer-btn {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          background: var(--primary);
-          color: #0a0a0f;
-          border: none;
-          padding: 0.625rem 1.25rem;
-          border-radius: 10px;
-          font-weight: 600;
-          font-size: 0.9rem;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .prayer-btn:hover:not(:disabled) {
-          background: #d4a017;
-        }
-
-        .prayer-btn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-
-        .recent-prayers {
-          width: 100%;
-          margin-top: 0.75rem;
-          text-align: left;
-        }
-
-        .recent-title {
-          font-size: 0.8rem;
-          font-weight: 600;
-          color: var(--text-muted);
-          margin: 0 0 0.5rem;
-        }
-
-        .prayer-preview {
-          background: rgba(255, 255, 255, 0.03);
-          padding: 0.5rem;
-          border-radius: 6px;
-          margin-bottom: 0.35rem;
-          border: 1px solid var(--border);
-        }
-
-        .prayer-preview p {
-          margin: 0;
-          font-size: 0.8rem;
-          color: #e4e4e7;
-        }
-
-        .prayer-time {
-          font-size: 0.7rem;
-          color: var(--text-muted);
-        }
-
-        /* Stats Section */
-        .stats-section {
-          margin-bottom: 1rem;
-        }
-
-        .stats-grid {
-          display: flex;
-          align-items: center;
-          justify-content: space-around;
-          background: var(--bg-card);
-          border: 1px solid var(--border);
-          border-radius: 14px;
-          padding: 1rem;
-        }
-
-        .stat-item {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-        }
-
-        .stat-icon {
-          color: var(--primary);
-        }
-
-        .stat-info {
-          display: flex;
-          flex-direction: column;
-        }
-
-        .stat-value {
-          font-weight: 700;
-          color: var(--text);
-          font-size: 0.9rem;
-        }
-
-        .stat-label {
-          font-size: 0.7rem;
-          color: var(--text-muted);
-        }
-
-        @media (max-width: 640px) {
-          .welcome-section {
-            padding: 1.5rem;
-          }
-
-          .welcome-text h1 {
-            font-size: 1.5rem;
-          }
-
-          .actions-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .stats-grid {
-            flex-direction: column;
-            gap: 0.75rem;
-          }
-        }
-      `}</style>
+      {/* Top Feature Grid */}
+      <div className="top-feature-grid">
+        {/* Quote Card */}
+        <div style={{ background: 'var(--bg-card)', padding: '2.5rem', borderRadius: '24px', boxShadow: 'var(--shadow-main)', border: '1px solid var(--border-color)', position: 'relative', overflow: 'hidden' }}>
+          <Quote size={40} color="var(--brand-accent)" style={{ opacity: 0.2, marginBottom: '1.5rem' }} />
+          <p style={{ fontSize: '1.75rem', lineHeight: '1.4', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", fontStyle: 'italic', margin: '0 0 1.5rem' }}>
+            "{verseObj.verse}"
+          </p>
+          <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600, color: 'var(--brand-accent)', letterSpacing: '0.1em' }}>- {verseObj.reference.toUpperCase()}</p>
+
+          <div style={{ marginTop: '2.5rem', paddingTop: '2.5rem', borderTop: '1px solid var(--border-color)' }}>
+            <p style={{ margin: '0 0 0.75rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--brand-accent)', letterSpacing: '0.2em' }}>ARIA INSIGHT</p>
+            <p style={{ margin: 0, fontSize: '0.95rem', lineHeight: '1.6', color: 'var(--text-secondary)' }}>
+              {verseObj.insight}
+            </p>
+          </div>
+        </div>
+
+        {/* Right Stack */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <FaithStreak streak={stats.streak_days} days={stats.streak_history} />
+          <ActionCard icon={MessageSquare} title="Guided Presence" subtitle="Start a Conversation" background="#0B192C" onClick={() => navigate('/app/ai-chat')} />
+          <ActionCard icon={Bookmark} title="Deep Reflection" subtitle="Begin Devotion" background="var(--brand-accent)" onClick={() => navigate('/app/devotion')} />
+          <ActionCard icon={BookOpen} title="The Living Word" subtitle="Open Bible" background="var(--input-bg)" onClick={() => navigate('/app/bible')} />
+        </div>
+      </div>
+
+      {/* Spiritual Journey */}
+      <div style={{ marginBottom: '5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2.5rem' }}>
+          <div>
+            <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.15em', marginBottom: '0.5rem' }}>YOUR SPIRITUAL JOURNEY</p>
+            <h3 style={{ margin: 0, fontSize: '2rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif" }}>Continuing the Path</h3>
+          </div>
+          <p onClick={() => navigate('/app/activity')} style={{ margin: 0, fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', cursor: 'pointer', borderBottom: '1px solid var(--border-color)', paddingBottom: '2px' }}>VIEW ALL</p>
+        </div>
+
+        <div className="journey-grid">
+          {activities.length > 0 ? activities.slice(0, 2).map((activity, idx) => (
+            <JourneyCard
+              key={activity.id || idx}
+              icon={activity.type === 'bible_study' ? Book : (activity.type === 'support' ? MessageSquare : Sparkles)}
+              time={getRelativeTime(activity.created_at)}
+              title={activity.title}
+              desc={activity.subtitle}
+              onClick={() => navigate(activity.path)}
+              style={{ cursor: 'pointer' }}
+            />
+          )) : (
+            <>
+              <JourneyCard
+                icon={AlignLeft}
+                tag="IN PROGRESS"
+                title="The Life of David"
+                desc="Exploring leadership, failure, and the heart after God. You are currently on Session 4: Facing Goliaths."
+                progress={70}
+              />
+              <JourneyCard
+                icon={MessageSquare}
+                time="JUST NOW"
+                title="Finding Peace"
+                desc="Waiting for your first spiritual session to begin."
+              />
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom Manna */}
+      <div style={{
+        background: 'var(--gradient-card)', borderRadius: '40px', padding: 'var(--manna-padding, 5rem)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
+        border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-main)'
+      }}>
+        <div style={{ width: '60px', height: '60px', background: 'var(--brand-accent)', borderRadius: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2rem', boxShadow: '0 8px 20px rgba(245, 206, 77, 0.2)' }}>
+          <Sparkles size={28} color="var(--text-inverse)" />
+        </div>
+        <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.2em', marginBottom: '1.5rem' }}>DAILY MANNA</p>
+        <h2 style={{ fontSize: '1.8rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", maxWidth: '600px', lineHeight: 1.6, marginBottom: '3rem' }}>
+          "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."
+        </h2>
+        <button style={{
+          background: 'var(--text-main)', color: 'var(--bg-main)', border: 'none', padding: '1.25rem 3rem', borderRadius: '50px',
+          fontSize: '0.8rem', fontWeight: 800, letterSpacing: '0.1em', cursor: 'pointer', transition: 'all 0.3s'
+        }}>
+          SAVE TO DEVOTIONS
+        </button>
+      </div>
     </div>
   )
 }

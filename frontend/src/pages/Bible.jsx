@@ -1,32 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { 
-  Search, BookOpen, ChevronRight, ChevronLeft, MessageSquare, 
-  ArrowLeft, Bookmark, Volume2, Share2
+import {
+  Search, BookOpen, ChevronRight, ChevronLeft, MessageSquare,
+  ArrowLeft, Bookmark, Volume2, Share2, Sparkles
 } from 'lucide-react'
 import { bibleService, homeService } from '../services/api'
-
-// Simple animated background
-const AnimatedBackground = () => {
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
-
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      setMousePosition({
-        x: (e.clientX / window.innerWidth - 0.5) * 8,
-        y: (e.clientY / window.innerHeight - 0.5) * 8
-      })
-    }
-    window.addEventListener('mousemove', handleMouseMove)
-    return () => window.removeEventListener('mousemove', handleMouseMove)
-  }, [])
-
-  return (
-    <div className="page-bg">
-      <div className="bg-orb" style={{ transform: `translate(${mousePosition.x}px, ${mousePosition.y}px)` }} />
-    </div>
-  )
-}
+import { AnimatedBackground } from './LandingPage'
 
 // Bible structure - 66 books
 const BIBLE_BOOKS = {
@@ -104,11 +83,11 @@ const BIBLE_BOOKS = {
 
 const BookCard = ({ book, isSelected, onClick }) => (
   <button
-    className={`book-card ${isSelected ? 'selected' : ''}`}
+    className={`book-card glass-panel ${isSelected ? 'active' : ''}`}
     onClick={onClick}
   >
     <div className="book-card-content">
-      <h4>{book.name}</h4>
+      <h4 className="font-serif">{book.name}</h4>
       <p>{book.chapters} chapters</p>
     </div>
   </button>
@@ -116,23 +95,23 @@ const BookCard = ({ book, isSelected, onClick }) => (
 
 const VerseCard = ({ verse }) => {
   const [isSaved, setIsSaved] = useState(false)
-  
+
   return (
     <div className="verse-card">
       <span className="verse-number">{verse.verse}</span>
-      <p className="verse-text">{verse.text}</p>
+      <p className="verse-text font-serif">{verse.text}</p>
       <div className="verse-actions">
-        <button 
+        <button
           className={`verse-action ${isSaved ? 'saved' : ''}`}
           onClick={() => setIsSaved(!isSaved)}
         >
-          <Bookmark size={14} fill={isSaved ? 'currentColor' : 'none'} />
+          <Bookmark size={16} fill={isSaved ? 'var(--brand-accent)' : 'none'} />
         </button>
         <button className="verse-action">
-          <Share2 size={14} />
+          <Share2 size={16} />
         </button>
         <button className="verse-action">
-          <Volume2 size={14} />
+          <Volume2 size={16} />
         </button>
       </div>
     </div>
@@ -158,9 +137,7 @@ const Bible = () => {
         if (data.verse_of_day) {
           setVerseOfDay(data.verse_of_day)
         }
-      } catch (error) {
-        console.error('Error fetching verse of the day:', error)
-      }
+      } catch (error) { }
     }
     fetchVerseOfDay()
   }, [])
@@ -175,7 +152,6 @@ const Bible = () => {
             setReadingProgress(0)
           }
         } catch (error) {
-          console.error('Error fetching verses:', error)
           setVerses([])
         }
       }
@@ -183,7 +159,6 @@ const Bible = () => {
     }
   }, [selectedBook, selectedChapter])
 
-  // Track reading progress
   useEffect(() => {
     if (verses.length > 0) {
       const handleScroll = () => {
@@ -209,12 +184,12 @@ const Bible = () => {
   }
 
   const discussWithAI = () => {
-    navigate('/app/bible-study', { 
-      state: { 
-        book: selectedBook?.name, 
-        chapter: selectedChapter, 
-        selectedText 
-      } 
+    navigate('/app/bible-study', {
+      state: {
+        book: selectedBook?.name,
+        chapter: selectedChapter,
+        selectedText
+      }
     })
   }
 
@@ -239,7 +214,7 @@ const Bible = () => {
   }
 
   const filteredBooks = Object.entries(BIBLE_BOOKS).reduce((acc, [testament, books]) => {
-    const filtered = books.filter(book => 
+    const filtered = books.filter(book =>
       book.name.toLowerCase().includes(searchQuery.toLowerCase())
     )
     if (filtered.length > 0) {
@@ -251,71 +226,69 @@ const Bible = () => {
   return (
     <div className="page-container">
       <AnimatedBackground />
-      
+
       <div className="page-content">
-        <header className="bible-header">
+        <header className="bible-header glass-panel">
           <div className="bible-header-left">
             {view !== 'books' && (
               <button className="back-btn" onClick={goBack}>
                 <ArrowLeft size={20} />
               </button>
             )}
-            <div>
-              <h1><BookOpen size={22} /> Scripture</h1>
-              {selectedBook ? (
-                <p>{selectedBook.name} {selectedChapter > 0 && `• Chapter ${selectedChapter}`}</p>
-              ) : (
-                <p>Explore God's Word</p>
-              )}
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <BookOpen size={24} color="var(--brand-accent)" />
+                <h1 className="font-serif" style={{ margin: 0, fontSize: '1.75rem' }}>The Sanctuary Library</h1>
+              </div>
+              <p style={{ margin: '0.25rem 0 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                {selectedBook ? `${selectedBook.name} • Chapter ${selectedChapter}` : "Explore God's Word in quiet reflection"}
+              </p>
             </div>
           </div>
-          
+
           {view === 'reading' && (
             <div className="reading-progress">
               <div className="progress-bar">
                 <div className="progress-fill" style={{ width: `${readingProgress}%` }} />
               </div>
-              <span>{Math.round(readingProgress)}% read</span>
+              <span className="font-serif" style={{ fontStyle: 'italic' }}>{Math.round(readingProgress)}% reflected</span>
             </div>
           )}
         </header>
 
-        {/* Search Bar */}
-        {view === 'books' && (
-          <div className="search-container">
-            <div className="search-box">
-              <Search size={20} />
-              <input
-                type="text"
-                placeholder="Search books of the Bible..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Main Content */}
-        <div className="bible-content">
+        {/* Main Content Area */}
+        <div className="main-bible-layout">
           {/* Books View */}
           {view === 'books' && (
             <div className="books-view">
-              {/* Verse of the Day */}
-              <div className="verse-of-day">
+              {/* Featured Reflection - Verse of the Day */}
+              <div className="verse-of-day glass-panel">
                 <div className="vod-header">
-                  <span>✨ Verse of the Day</span>
+                  <Sparkles size={18} color="var(--brand-accent)" />
+                  <span className="font-serif">Daily Reflection</span>
                 </div>
-                <blockquote>
-                  "{verseOfDay.verse || 'Loading verse...'}"
+                <blockquote className="font-serif">
+                  "{verseOfDay.verse || 'The Word of the Lord endures forever.'}"
                 </blockquote>
-                <cite>— {verseOfDay.reference || '...'}</cite>
+                <cite className="font-serif">— {verseOfDay.reference || 'Aria'}</cite>
+              </div>
+
+              {/* Search Bar */}
+              <div className="search-container glass-panel">
+                <Search size={20} color="var(--text-muted)" />
+                <input
+                  type="text"
+                  placeholder="Search books..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
               </div>
 
               {/* Books Grid */}
-              <div className="testaments-container">
+              <div className="testaments-layout">
                 {Object.entries(filteredBooks).map(([testament, books]) => (
                   <div key={testament} className="testament-section">
-                    <h3 className="testament-title">{testament}</h3>
+                    <h3 className="testament-title font-serif">{testament}</h3>
                     <div className="books-grid">
                       {books.map((book) => (
                         <BookCard
@@ -334,24 +307,22 @@ const Bible = () => {
 
           {/* Chapters View */}
           {view === 'chapters' && selectedBook && (
-            <div className="chapters-view">
-              <div className="selected-book-display">
-                <div className="book-preview">
-                  <span className="preview-icon">📖</span>
-                </div>
-                <div className="book-preview-info">
-                  <h2>{selectedBook.name}</h2>
-                  <p>{selectedBook.chapters} chapters</p>
+            <div className="chapters-container">
+              <div className="chapter-hero glass-panel">
+                <div className="hero-icon font-serif">📖</div>
+                <div>
+                  <h2 className="font-serif" style={{ fontSize: '2.5rem', margin: 0 }}>{selectedBook.name}</h2>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem' }}>{selectedBook.chapters} Chapters to explore</p>
                 </div>
               </div>
-              
-              <div className="chapters-section">
-                <h3>Select a Chapter</h3>
+
+              <div className="chapters-grid-container glass-panel">
+                <h3 className="font-serif" style={{ marginBottom: '1.5rem', fontSize: '1.25rem' }}>Select a Chapter</h3>
                 <div className="chapter-grid">
                   {Array.from({ length: selectedBook.chapters }, (_, i) => (
                     <button
                       key={i + 1}
-                      className={`chapter-btn ${selectedChapter === i + 1 ? 'active' : ''}`}
+                      className={`chapter-btn glass-panel ${selectedChapter === i + 1 ? 'active' : ''}`}
                       onClick={() => handleChapterSelect(i + 1)}
                     >
                       {i + 1}
@@ -364,56 +335,59 @@ const Bible = () => {
 
           {/* Reading View */}
           {view === 'reading' && selectedBook && (
-            <div className="reading-view">
-              <div 
+            <div className="reading-layout">
+              <div
                 id="verses-container"
-                className="verses-container"
+                className="verses-scroll glass-panel"
                 onMouseUp={handleTextSelection}
               >
-                <div className="chapter-header">
-                  <h2>Chapter {selectedChapter}</h2>
-                  <span>{verses.length} verses</span>
+                <div className="reading-header">
+                  <h2 className="font-serif">Chapter {selectedChapter}</h2>
+                  <p>{verses.length} Verses</p>
                 </div>
-                
-                {verses.map((verse) => (
-                  <VerseCard 
-                    key={verse.verse}
-                    verse={verse}
-                  />
-                ))}
+
+                <div className="verses-content">
+                  {verses.map((verse) => (
+                    <VerseCard key={verse.verse} verse={verse} />
+                  ))}
+                </div>
               </div>
 
-              {/* Navigation */}
-              <div className="reading-nav">
-                <button 
-                  className="nav-chapter-btn"
+              {/* Reading Navigation */}
+              <div className="reading-footer-nav glass-panel">
+                <button
+                  className="nav-btn"
                   disabled={selectedChapter <= 1}
                   onClick={() => setSelectedChapter(prev => prev - 1)}
                 >
                   <ChevronLeft size={20} />
-                  Previous
+                  <span>Previous Chapter</span>
                 </button>
-                <button 
-                  className="nav-chapter-btn"
+                <div className="nav-divider"></div>
+                <button
+                  className="nav-btn"
                   disabled={selectedChapter >= selectedBook.chapters}
                   onClick={() => setSelectedChapter(prev => prev + 1)}
                 >
-                  Next
+                  <span>Next Chapter</span>
                   <ChevronRight size={20} />
                 </button>
               </div>
 
               {showAISelector && (
-                <div className="ai-discuss-popup">
-                  <p>Discuss this verse with AI:</p>
-                  <blockquote>"{selectedText.substring(0, 80)}..."</blockquote>
+                <div className="ai-insight-popup glass-panel">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+                    <Sparkles size={20} color="var(--brand-accent)" />
+                    <span className="font-serif" style={{ fontWeight: 600 }}>Spiritual Insight</span>
+                  </div>
+                  <blockquote className="font-serif">"{selectedText.substring(0, 100)}..."</blockquote>
                   <div className="popup-actions">
-                    <button className="btn btn-primary" onClick={discussWithAI}>
+                    <button className="study-btn" onClick={discussWithAI}>
                       <MessageSquare size={16} />
-                      Study with AI
+                      Reflect with Aria
                     </button>
-                    <button className="btn btn-ghost" onClick={() => setShowAISelector(false)}>
-                      Cancel
+                    <button className="cancel-btn" onClick={() => setShowAISelector(false)}>
+                      Dismiss
                     </button>
                   </div>
                 </div>
@@ -424,52 +398,20 @@ const Bible = () => {
       </div>
 
       <style>{`
-        :root {
-          --primary: #c9a227;
-          --bg-dark: #0a0a0f;
-          --bg-card: #141418;
-          --text: #f5f5f5;
-          --text-muted: #888;
-          --border: rgba(255, 255, 255, 0.1);
-        }
-
         .page-container {
           min-height: 100vh;
+          background: var(--bg-main);
           position: relative;
-          overflow: hidden;
-        }
-
-        .page-bg {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          pointer-events: none;
-          z-index: 0;
-          overflow: hidden;
-        }
-
-        .bg-orb {
-          position: absolute;
-          width: 500px;
-          height: 500px;
-          border-radius: 50%;
-          filter: blur(100px);
-          opacity: 0.15;
-          background: radial-gradient(circle, #6366f1 0%, transparent 70%);
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          transition: transform 0.15s ease-out;
+          color: var(--text-main);
+          transition: all 0.4s ease;
         }
 
         .page-content {
-          position: relative;
-          z-index: 1;
           max-width: 1200px;
           margin: 0 auto;
-          padding: 1.5rem;
+          padding: 2rem 1.5rem;
+          position: relative;
+          z-index: 10;
         }
 
         /* Header */
@@ -477,44 +419,27 @@ const Bible = () => {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 1.5rem;
-          padding-bottom: 1rem;
-          border-bottom: 1px solid var(--border);
+          padding: 1.5rem 2rem;
+          border-radius: 24px;
+          margin-bottom: 2rem;
+          background: var(--glass-bg);
+          backdrop-filter: blur(20px);
+          border: 1px solid var(--border-color);
         }
 
         .bible-header-left {
           display: flex;
           align-items: center;
-          gap: 1rem;
-        }
-
-        .bible-header-left h1 {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          font-size: 1.5rem;
-          font-weight: 700;
-          color: var(--text);
-          margin: 0;
-        }
-
-        .bible-header-left h1 svg {
-          color: #c9a227;
-        }
-
-        .bible-header-left p {
-          color: var(--text-muted);
-          font-size: 0.875rem;
-          margin: 0;
+          gap: 1.5rem;
         }
 
         .back-btn {
-          width: 40px;
-          height: 40px;
+          width: 44px;
+          height: 44px;
           border-radius: 50%;
-          background: rgba(255, 255, 255, 0.1);
-          border: none;
-          color: var(--text);
+          background: var(--input-bg);
+          border: 1px solid var(--border-color);
+          color: var(--text-main);
           cursor: pointer;
           display: flex;
           align-items: center;
@@ -523,316 +448,247 @@ const Bible = () => {
         }
 
         .back-btn:hover {
-          background: rgba(201, 162, 39, 0.2);
-        }
-
-        /* Reading Progress */
-        .reading-progress {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-        }
-
-        .progress-bar {
-          width: 100px;
-          height: 6px;
-          background: rgba(255, 255, 255, 0.1);
-          border-radius: 3px;
-          overflow: hidden;
-        }
-
-        .progress-fill {
-          height: 100%;
-          background: linear-gradient(90deg, #c9a227, #f4d03f);
-          border-radius: 3px;
-          transition: width 0.3s ease;
-        }
-
-        .reading-progress span {
-          color: var(--text-muted);
-          font-size: 0.75rem;
-        }
-
-        /* Search */
-        .search-container {
-          margin-bottom: 1.5rem;
-        }
-
-        .search-box {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          background: var(--bg-card);
-          border: 1px solid var(--border);
-          border-radius: 14px;
-          padding: 0.75rem 1.25rem;
-          max-width: 500px;
-        }
-
-        .search-box svg {
-          color: var(--text-muted);
-        }
-
-        .search-box input {
-          flex: 1;
-          background: none;
-          border: none;
-          outline: none;
-          color: var(--text);
-          font-size: 1rem;
-        }
-
-        .search-box input::placeholder {
-          color: var(--text-muted);
+          background: var(--bg-hover);
+          transform: translateX(-3px);
         }
 
         /* Books View */
         .books-view {
           display: flex;
           flex-direction: column;
-          gap: 1.5rem;
+          gap: 2rem;
         }
 
-        /* Verse of the Day */
         .verse-of-day {
-          background: rgba(201, 162, 39, 0.08);
-          border: 1px solid rgba(201, 162, 39, 0.2);
-          border-radius: 16px;
-          padding: 1.5rem;
+          padding: 2.5rem;
+          border-radius: 32px;
+          text-align: center;
+          background: var(--gradient-card);
+          border: 1px solid var(--border-color);
+          box-shadow: var(--shadow-main);
         }
 
         .vod-header {
-          color: #c9a227;
-          margin-bottom: 0.75rem;
-          font-weight: 600;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.75rem;
+          margin-bottom: 1.5rem;
+          text-transform: uppercase;
+          letter-spacing: 0.15em;
+          font-size: 0.85rem;
+          color: var(--text-muted);
         }
 
         .verse-of-day blockquote {
-          color: var(--text);
-          font-size: 1.1rem;
-          font-style: italic;
-          line-height: 1.7;
-          margin: 0 0 0.75rem;
+          font-size: 2rem;
+          line-height: 1.4;
+          margin: 0 0 1.5rem;
+          color: var(--text-main);
         }
 
         .verse-of-day cite {
-          color: #c9a227;
+          font-size: 1.1rem;
           font-style: normal;
-          font-weight: 500;
-          font-size: 0.9rem;
+          color: var(--brand-accent);
+          font-weight: 600;
         }
 
-        /* Testaments */
+        .search-container {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          padding: 1rem 1.75rem;
+          border-radius: 100px;
+          max-width: 600px;
+          margin: 0 auto;
+          background: var(--input-bg);
+          border: 1px solid var(--border-color);
+        }
+
+        .search-container input {
+          flex: 1;
+          background: none;
+          border: none;
+          outline: none;
+          color: var(--text-main);
+          font-size: 1.1rem;
+        }
+
         .testament-section {
-          margin-bottom: 1.5rem;
+          margin-bottom: 3rem;
         }
 
         .testament-title {
-          font-size: 1.1rem;
-          font-weight: 600;
-          color: var(--text);
-          margin-bottom: 1rem;
-          padding-bottom: 0.5rem;
-          border-bottom: 1px solid var(--border);
+          font-size: 1.75rem;
+          margin-bottom: 1.5rem;
+          padding-left: 0.5rem;
+          color: var(--text-main);
         }
 
         .books-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-          gap: 0.75rem;
+          grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+          gap: 1rem;
         }
 
-        /* Book Card */
         .book-card {
-          background: var(--bg-card);
-          border: 1px solid var(--border);
-          border-radius: 12px;
-          padding: 1rem;
+          padding: 1.5rem;
+          border-radius: 20px;
+          border: 1px solid var(--border-color);
+          text-align: left;
           cursor: pointer;
           transition: all 0.2s;
-          text-align: left;
+          background: var(--bg-card);
+          color: var(--text-main);
         }
 
         .book-card:hover {
-          border-color: rgba(201, 162, 39, 0.5);
-          background: rgba(201, 162, 39, 0.05);
+          background: var(--bg-hover);
+          border-color: var(--brand-accent);
+          transform: translateY(-2px);
         }
 
-        .book-card.selected {
-          border-color: #c9a227;
+        .book-card.active {
+          background: var(--brand-solid);
+          color: var(--text-inverse);
+          border-color: var(--brand-solid);
         }
+        
+        .book-card h4 { margin: 0; font-size: 1.1rem; }
+        .book-card p { margin: 0.25rem 0 0; font-size: 0.85rem; opacity: 0.7; }
 
-        .book-card h4 {
-          color: var(--text);
-          font-size: 0.9rem;
-          font-weight: 600;
-          margin: 0 0 0.25rem;
-        }
-
-        .book-card p {
-          color: var(--text-muted);
-          font-size: 0.75rem;
-          margin: 0;
-        }
-
-        /* Chapters View */
-        .chapters-view {
-          max-width: 600px;
+        /* Chapters */
+        .chapters-container {
+          max-width: 800px;
           margin: 0 auto;
+          display: flex;
+          flex-direction: column;
+          gap: 2rem;
         }
 
-        .selected-book-display {
+        .chapter-hero {
           display: flex;
           align-items: center;
-          gap: 1.25rem;
-          padding: 1.5rem;
+          gap: 2rem;
+          padding: 3rem;
+          border-radius: 32px;
+          background: var(--gradient-card);
+          border: 1px solid var(--border-color);
+        }
+
+        .hero-icon { font-size: 4rem; }
+
+        .chapters-grid-container {
+          padding: 2.5rem;
+          border-radius: 32px;
           background: var(--bg-card);
-          border-radius: 16px;
-          margin-bottom: 1.5rem;
+          border: 1px solid var(--border-color);
         }
 
-        .book-preview {
-          width: 70px;
-          height: 90px;
-          background: linear-gradient(135deg, #6366f1, #4f46e5);
-          border-radius: 10px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .preview-icon {
-          font-size: 2rem;
-        }
-
-        .book-preview-info h2 {
-          color: var(--text);
-          font-size: 1.5rem;
-          margin: 0 0 0.25rem;
-        }
-
-        .book-preview-info p {
-          color: var(--text-muted);
-          margin: 0;
-          font-size: 0.9rem;
-        }
-
-        .chapters-section h3 {
-          color: var(--text);
-          font-size: 1rem;
-          margin-bottom: 1rem;
-        }
-
-        /* Chapter Grid */
         .chapter-grid {
           display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(55px, 1fr));
-          gap: 0.5rem;
+          grid-template-columns: repeat(auto-fill, minmax(65px, 1fr));
+          gap: 0.75rem;
         }
 
         .chapter-btn {
           aspect-ratio: 1;
-          border-radius: 10px;
-          background: var(--bg-card);
-          border: 1px solid var(--border);
-          color: var(--text);
-          font-size: 0.9rem;
-          font-weight: 500;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 1.1rem;
+          font-weight: 600;
+          border-radius: 16px;
           cursor: pointer;
+          background: var(--input-bg);
+          border: 1px solid var(--border-color);
+          color: var(--text-main);
           transition: all 0.2s;
         }
 
         .chapter-btn:hover {
-          background: rgba(201, 162, 39, 0.2);
-          border-color: #c9a227;
+          background: var(--bg-hover);
+          border-color: var(--brand-accent);
         }
 
         .chapter-btn.active {
-          background: linear-gradient(135deg, #c9a227, #d97706);
-          border-color: #c9a227;
+          background: var(--brand-solid);
+          color: var(--text-inverse);
+          border-color: var(--brand-solid);
         }
 
         /* Reading View */
-        .reading-view {
-          max-width: 800px;
+        .reading-layout {
+          max-width: 900px;
           margin: 0 auto;
-        }
-
-        .verses-container {
-          background: var(--bg-card);
-          border-radius: 16px;
-          padding: 1.5rem;
-          max-height: 65vh;
-          overflow-y: auto;
-          margin-bottom: 1rem;
-        }
-
-        .chapter-header {
           display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 1.25rem;
-          padding-bottom: 1rem;
-          border-bottom: 1px solid var(--border);
+          flex-direction: column;
+          gap: 1.5rem;
         }
 
-        .chapter-header h2 {
-          color: var(--text);
-          font-size: 1.25rem;
-          margin: 0;
+        .verses-scroll {
+          padding: 3rem;
+          border-radius: 32px;
+          min-height: 60vh;
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
         }
 
-        .chapter-header span {
-          color: var(--text-muted);
-          font-size: 0.85rem;
+        .reading-header {
+          text-align: center;
+          margin-bottom: 3rem;
+          padding-bottom: 2rem;
+          border-bottom: 1px solid var(--border-color);
         }
 
-        /* Verse Card */
+        .reading-header h2 { font-size: 2.5rem; margin-bottom: 0.5rem; }
+        .reading-header p { color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.85rem; }
+
         .verse-card {
           display: flex;
-          gap: 0.75rem;
-          padding: 0.875rem;
-          margin-bottom: 0.25rem;
-          border-radius: 10px;
-          transition: background 0.2s;
+          gap: 1.5rem;
+          padding: 1.25rem;
+          border-radius: 16px;
+          transition: all 0.2s;
+          border: 1px solid transparent;
         }
 
         .verse-card:hover {
-          background: rgba(255, 255, 255, 0.03);
+          background: var(--bg-hover);
+          border-color: var(--border-subtle);
         }
 
         .verse-number {
-          color: #c9a227;
-          font-weight: 600;
-          font-size: 0.8rem;
-          min-width: 22px;
+          font-size: 0.9rem;
+          font-weight: 700;
+          color: var(--brand-accent);
+          min-width: 24px;
+          padding-top: 0.25rem;
         }
 
         .verse-text {
-          color: #e4e4e7;
+          font-size: 1.2rem;
           line-height: 1.7;
-          margin: 0;
           flex: 1;
-          font-size: 0.95rem;
+          color: var(--text-main);
         }
 
         .verse-actions {
           display: flex;
-          gap: 0.25rem;
+          gap: 0.5rem;
           opacity: 0;
           transition: opacity 0.2s;
         }
 
-        .verse-card:hover .verse-actions {
-          opacity: 1;
-        }
+        .verse-card:hover .verse-actions { opacity: 1; }
 
         .verse-action {
-          width: 26px;
-          height: 26px;
+          width: 36px;
+          height: 36px;
           border-radius: 50%;
-          background: rgba(255, 255, 255, 0.1);
-          border: none;
+          background: var(--input-bg);
+          border: 1px solid var(--border-color);
           color: var(--text-muted);
           cursor: pointer;
           display: flex;
@@ -841,130 +697,103 @@ const Bible = () => {
           transition: all 0.2s;
         }
 
-        .verse-action:hover {
-          background: rgba(201, 162, 39, 0.2);
-          color: #c9a227;
+        .verse-action:hover { 
+          color: var(--brand-accent); 
+          background: var(--bg-card);
+          border-color: var(--brand-accent);
         }
 
-        .verse-action.saved {
-          color: #c9a227;
-        }
-
-        /* Reading Nav */
-        .reading-nav {
-          display: flex;
-          justify-content: space-between;
-          gap: 1rem;
-        }
-
-        .nav-chapter-btn {
+        .reading-footer-nav {
           display: flex;
           align-items: center;
-          gap: 0.5rem;
-          padding: 0.75rem 1.25rem;
-          background: var(--bg-card);
-          border: 1px solid var(--border);
-          border-radius: 10px;
-          color: var(--text);
-          font-size: 0.9rem;
+          justify-content: center;
+          padding: 1rem;
+          border-radius: 100px;
+          background: var(--glass-bg);
+          backdrop-filter: blur(20px);
+          border: 1px solid var(--border-color);
+        }
+
+        .nav-btn {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 1rem;
+          padding: 1rem;
+          background: none;
+          border: none;
+          color: var(--text-main);
+          font-size: 1rem;
+          font-weight: 600;
           cursor: pointer;
+          border-radius: 100px;
           transition: all 0.2s;
         }
 
-        .nav-chapter-btn:hover:not(:disabled) {
-          background: rgba(201, 162, 39, 0.2);
-          border-color: #c9a227;
-        }
+        .nav-btn:hover:not(:disabled) { background: var(--bg-hover); }
+        .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
-        .nav-chapter-btn:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
+        .nav-divider { width: 1px; height: 30px; background: var(--border-color); }
 
-        /* AI Popup */
-        .ai-discuss-popup {
+        .ai-insight-popup {
           position: fixed;
           bottom: 2rem;
           left: 50%;
           transform: translateX(-50%);
-          background: var(--bg-card);
-          border: 1px solid rgba(201, 162, 39, 0.3);
-          border-radius: 14px;
-          padding: 1.25rem;
-          max-width: 380px;
+          width: 450px;
+          padding: 2rem;
+          border-radius: 24px;
           z-index: 100;
+          background: var(--bg-card);
+          border: 1px solid var(--brand-accent);
+          box-shadow: var(--shadow-main);
+          animation: slideUp 0.3s ease-out;
         }
 
-        .ai-discuss-popup p {
-          color: var(--text);
-          margin: 0 0 0.5rem;
-          font-weight: 500;
+        @keyframes slideUp {
+          from { transform: translate(-50%, 20px); opacity: 0; }
+          to { transform: translate(-50%, 0); opacity: 1; }
         }
 
-        .ai-discuss-popup blockquote {
-          color: var(--text-muted);
-          font-size: 0.85rem;
-          margin: 0 0 1rem;
+        .ai-insight-popup blockquote {
           font-style: italic;
+          color: var(--text-secondary);
+          margin-bottom: 2rem;
+          font-size: 1rem;
         }
 
-        .popup-actions {
-          display: flex;
-          gap: 0.75rem;
-        }
+        .popup-actions { display: flex; gap: 1rem; }
 
-        .btn {
-          padding: 0.625rem 1rem;
-          border-radius: 8px;
+        .study-btn {
+          flex: 1;
+          padding: 0.875rem;
+          background: var(--brand-solid);
+          color: var(--text-inverse);
+          border: none;
+          border-radius: 100px;
           font-weight: 600;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
           cursor: pointer;
           transition: all 0.2s;
-          font-size: 0.85rem;
-          border: none;
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
         }
 
-        .btn-primary {
-          background: linear-gradient(135deg, #c9a227, #d97706);
-          color: white;
+        .study-btn:hover {
+          opacity: 0.9;
+          transform: translateY(-1px);
         }
 
-        .btn-primary:hover {
-          background: linear-gradient(135deg, #d4a92c, #c9a227);
-        }
-
-        .btn-ghost {
-          background: transparent;
-          border: 1px solid var(--border);
-          color: var(--text-muted);
-        }
-
-        .btn-ghost:hover {
-          background: rgba(255, 255, 255, 0.05);
-        }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-          .bible-header {
-            flex-direction: column;
-            gap: 1rem;
-            align-items: flex-start;
-          }
-
-          .books-grid {
-            grid-template-columns: repeat(2, 1fr);
-          }
-
-          .selected-book-display {
-            flex-direction: column;
-            text-align: center;
-          }
-
-          .chapter-grid {
-            grid-template-columns: repeat(auto-fill, minmax(45px, 1fr));
-          }
+        .cancel-btn {
+          padding: 0.875rem 1.5rem;
+          background: var(--input-bg);
+          border: 1px solid var(--border-color);
+          border-radius: 100px;
+          color: var(--text-main);
+          font-weight: 600;
+          cursor: pointer;
         }
       `}</style>
     </div>

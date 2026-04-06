@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import PropTypes from 'prop-types'
 import useWebSocket from '../hooks/useWebSocket'
 
 const Chat = ({ sessionId, sessionType }) => {
@@ -8,11 +9,15 @@ const Chat = ({ sessionId, sessionType }) => {
 
   const wsUrl = `${import.meta.env.VITE_WS_URL || 'ws://localhost:8000'}/ws/${sessionType}/${sessionId}`
 
-  const handleMessage = (data) => {
+  const handleMessage = useCallback((data) => {
     if (data.type === 'message') {
-      setMessages(prev => [...prev, { role: data.role, content: data.content }])
+      setMessages(prev => [...prev, {
+        id: Date.now() + Math.random(),
+        role: data.role,
+        content: data.content
+      }])
     }
-  }
+  }, [])
 
   const { connect, disconnect, sendMessage, isConnected } = useWebSocket(wsUrl, handleMessage)
 
@@ -37,7 +42,11 @@ const Chat = ({ sessionId, sessionType }) => {
     })
 
     if (success) {
-      setMessages(prev => [...prev, { role: 'user', content: inputMessage }])
+      setMessages(prev => [...prev, {
+        id: Date.now() + Math.random(),
+        role: 'user',
+        content: inputMessage
+      }])
       setInputMessage('')
     }
   }
@@ -49,34 +58,48 @@ const Chat = ({ sessionId, sessionType }) => {
   return (
     <div className="chat-container">
       <div className="chat-header">
-        <span>Real-time Chat</span>
-        <span className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>
+        <span>Real-time Interaction</span>
+        <div
+          className={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}
+          title={isConnected ? 'Sanctuary Online' : 'Sanctuary Offline'}
+        >
           {isConnected ? '●' : '○'}
-        </span>
+        </div>
       </div>
-      <div className="messages">
-        {messages.map((msg, index) => (
-          <div key={index} className={`message ${msg.role}`}>
+      <div className="messages" role="log" aria-live="polite">
+        {messages.map((msg) => (
+          <div key={msg.id} className={`message ${msg.role}`}>
             {msg.content}
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
-      <div className="chat-input">
+      <fieldset className="chat-input" aria-label="Message composition">
         <input
           type="text"
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
           onKeyDown={handleKeyPress}
-          placeholder="Type a message..."
+          placeholder="Type a message to the sanctuary..."
           className="input"
+          aria-label="Message input"
         />
-        <button onClick={handleSend} className="btn btn-primary" disabled={!isConnected}>
+        <button
+          onClick={handleSend}
+          className="btn btn-primary"
+          disabled={!isConnected}
+          aria-label="Send message"
+        >
           Send
         </button>
-      </div>
+      </fieldset>
     </div>
   )
+}
+
+Chat.propTypes = {
+  sessionId: PropTypes.string.isRequired,
+  sessionType: PropTypes.string.isRequired,
 }
 
 export default Chat

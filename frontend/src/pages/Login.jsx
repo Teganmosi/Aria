@@ -1,36 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Sparkles, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react'
+import { Eye, EyeOff, ArrowLeft } from 'lucide-react'
 import useAuth from '../hooks/useAuth'
-
-// Simple animated background
-const AnimatedBackground = () => {
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
-
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      setMousePosition({
-        x: (e.clientX / window.innerWidth - 0.5) * 15,
-        y: (e.clientY / window.innerHeight - 0.5) * 15
-      })
-    }
-    window.addEventListener('mousemove', handleMouseMove)
-    return () => window.removeEventListener('mousemove', handleMouseMove)
-  }, [])
-
-  return (
-    <div className="bg-container">
-      <div 
-        className="orb orb-1"
-        style={{ transform: `translate(${mousePosition.x}px, ${mousePosition.y}px)` }}
-      />
-      <div 
-        className="orb orb-2"
-        style={{ transform: `translate(${-mousePosition.x * 0.7}px, ${-mousePosition.y * 0.7}px)` }}
-      />
-    </div>
-  )
-}
 
 const Login = () => {
   const navigate = useNavigate()
@@ -40,13 +11,6 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    document.body.style.backgroundColor = '#0a0a0f'
-    return () => {
-      document.body.style.backgroundColor = ''
-    }
-  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -64,526 +28,119 @@ const Login = () => {
   }
 
   return (
-    <div className="auth-page">
-      <AnimatedBackground />
-      
-      {/* Left Panel - Form */}
-      <div className="auth-form-section">
-        <div className="auth-form-container">
-          {/* Brand */}
-          <div className="auth-brand" onClick={() => navigate('/')}>
-            <div className="brand-icon">
-              <Sparkles size={20} />
-            </div>
-            <span className="brand-name">Aria</span>
-          </div>
+    <div style={{ display: 'flex', minHeight: '100vh', width: '100vw', overflow: 'hidden', backgroundColor: 'var(--bg-main)' }}>
 
-          {/* Welcome Text */}
-          <h1 className="auth-title">Welcome Back</h1>
-          <p className="auth-subtitle">Continue your spiritual journey with AI-powered guidance</p>
+      {/* Left Panel - Hero Image Edge to Edge */}
+      <div style={{ flex: 1.2, position: 'relative', display: 'flex', flexDirection: 'column', padding: '4rem' }}>
+        {/* Background Image */}
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }}>
+          <img
+            src="/login-hero.png"
+            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            alt="Sanctuary Sanctuary reflection"
+          />
+          {/* Subtle gradient overlay to ensure text readability */}
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(to bottom, rgba(10,10,15,0.1), rgba(10,10,15,0.8))' }}></div>
+        </div>
 
-          {/* Error Message */}
-          {error && (
-            <div className="error-message">
-              {error}
-            </div>
-          )}
+        {/* Brand Link */}
+        <div style={{ position: 'relative', zIndex: 10, cursor: 'pointer', display: 'inline-flex' }} onClick={() => navigate('/')}>
+          <span className="font-serif" style={{ fontStyle: 'italic', fontSize: '2rem', fontWeight: 700, color: 'white' }}>Aria</span>
+        </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label htmlFor="email">Email Address</label>
-              <div className="input-wrapper">
-                <Mail size={20} className="input-icon" />
-                <input
-                  type="email"
-                  id="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="your@email.com"
-                  required
-                />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="password">Password</label>
-              <div className="input-wrapper">
-                <Lock size={20} className="input-icon" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  id="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
-                  required
-                />
-                <button
-                  type="button"
-                  className="password-toggle"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                </button>
-              </div>
-            </div>
-
-            <div className="form-options">
-              <label className="checkbox-label">
-                <input type="checkbox" />
-                Remember me
-              </label>
-              <Link to="/forgot-password" className="forgot-link">
-                Forgot password?
-              </Link>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="btn btn-primary btn-full"
-            >
-              {isLoading ? (
-                <span className="loading-spinner" />
-              ) : (
-                <>
-                  Sign In <ArrowRight size={18} />
-                </>
-              )}
-            </button>
-          </form>
-
-          <p className="auth-footer-text">
-            Don't have an account?{' '}
-            <Link to="/register" className="auth-link">
-              Create one
-            </Link>
+        {/* Text Overlay */}
+        <div style={{ position: 'relative', zIndex: 10, marginTop: 'auto', maxWidth: '600px' }}>
+          <h1 className="font-serif" style={{ fontSize: '4.5rem', lineHeight: 1.1, marginBottom: '1.5rem', color: 'white' }}>
+            Find <span style={{ fontStyle: 'italic' }}>peace</span> in the digital noise.
+          </h1>
+          <p style={{ fontSize: '1.1rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
+            Your private space for scripture, study, and reflection.
           </p>
         </div>
       </div>
 
-      {/* Right Panel - Info */}
-      <div className="auth-info-section">
-        <div className="auth-info-content">
-          <blockquote className="auth-quote">
-            "Faith is taking the first step even when you don't see the whole staircase."
-            <cite>— Martin Luther King Jr.</cite>
-          </blockquote>
+      {/* Right Panel - Form Container */}
+      <div style={{ flex: '0 0 600px', background: 'var(--bg-card)', padding: '4rem 6rem', display: 'flex', flexDirection: 'column', position: 'relative', boxShadow: '-20px 0 40px rgba(0,0,0,0.05)', zIndex: 10 }}>
 
-          <div className="auth-features">
-            <div className="feature-item">
-              <div className="feature-icon">💬</div>
-              <span>AI Spiritual Conversations</span>
-            </div>
-            <div className="feature-item">
-              <div className="feature-icon">📖</div>
-              <span>Digital Bible Access</span>
-            </div>
-            <div className="feature-item">
-              <div className="feature-icon">❤️</div>
-              <span>Emotional Support</span>
-            </div>
+        {/* Back Button */}
+        <button onClick={() => navigate('/')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', alignSelf: 'flex-start', marginBottom: 'auto', fontSize: '0.9rem', fontWeight: 500 }}>
+          <ArrowLeft size={16} /> Back to Sanctuary
+        </button>
+
+        {/* Form Area */}
+        <div style={{ width: '100%', margin: 'auto 0' }}>
+          <div style={{ marginBottom: '2.5rem' }}>
+            <img src="/sanctuary-mark.png" style={{ width: '48px', height: '48px', marginBottom: '1.5rem', opacity: 0.9 }} alt="Sanctuary Logo" />
+            <h2 className="font-serif" style={{ fontSize: '2.5rem', color: 'var(--text-main)', marginBottom: '0.5rem', lineHeight: 1.2 }}>Welcome Back</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '1rem' }}>Enter your details to return to your moment of peace.</p>
           </div>
 
-          <div className="auth-stats">
-            <div className="stat-item">
-              <span className="stat-value">50K+</span>
-              <span className="stat-label">Active Users</span>
+          {error && <div style={{ background: '#FEE2E2', color: '#991B1B', padding: '1rem', borderRadius: '8px', marginBottom: '2rem', fontSize: '0.9rem', fontWeight: 500 }}>{error}</div>}
+
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div>
+              <label style={{ fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Email Address</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@sanctuary.com"
+                required
+                style={{ width: '100%', padding: '1rem 1.25rem', background: 'var(--input-bg)', border: '1px solid transparent', borderRadius: '12px', fontSize: '1rem', color: 'var(--text-main)', outline: 'none' }}
+              />
             </div>
-            <div className="stat-item">
-              <span className="stat-value">2M+</span>
-              <span className="stat-label">Conversations</span>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <label style={{ fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600 }}>Password</label>
+                <Link to="/forgot-password" style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500, textDecoration: 'none' }}>Forgot Password?</Link>
+              </div>
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  style={{ width: '100%', padding: '1rem 1.25rem', background: 'var(--input-bg)', border: '1px solid transparent', borderRadius: '12px', fontSize: '1rem', color: 'var(--text-main)', outline: 'none' }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{ position: 'absolute', right: '1.25rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
-            <div className="stat-item">
-              <span className="stat-value">4.9</span>
-              <span className="stat-label">Rating</span>
+
+            <button type="submit" disabled={isLoading} style={{ marginTop: '1.5rem', width: '100%', padding: '1.25rem', borderRadius: '3rem', border: 'none', background: 'var(--brand-solid)', color: 'var(--bg-main)', fontSize: '1.05rem', fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.2s' }}>
+              {isLoading ? 'Signing In...' : 'Sign In'}
+            </button>
+          </form>
+
+          {/* Third Party Layout */}
+          <div style={{ marginTop: '3rem', textAlign: 'center' }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '2rem 0' }}>
+              <div style={{ borderTop: '1px solid var(--border-color)', position: 'absolute', width: '100%' }}></div>
+              <span style={{ background: 'var(--bg-card)', padding: '0 1rem', fontSize: '0.75rem', color: 'var(--text-muted)', zIndex: 1, letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600 }}>OR CONTINUE WITH</span>
             </div>
+
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button style={{ flex: 1, padding: '1rem', background: 'var(--input-bg)', border: 'none', borderRadius: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>
+                Google
+              </button>
+              <button style={{ flex: 1, padding: '1rem', background: 'var(--input-bg)', border: 'none', borderRadius: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>
+                Apple
+              </button>
+            </div>
+
+            <p style={{ marginTop: '3rem', fontSize: '1rem', color: 'var(--text-secondary)' }}>
+              New to the sanctuary? <Link to="/register" style={{ color: 'var(--text-main)', fontWeight: 600, textDecoration: 'none', borderBottom: '1px solid var(--text-main)', paddingBottom: '2px', marginLeft: '0.5rem' }}>Create an account</Link>
+            </p>
           </div>
         </div>
       </div>
-
-      <style>{`
-        :root {
-          --primary: #c9a227;
-          --primary-light: #e6c455;
-          --primary-dark: #a68520;
-          --bg-dark: #0a0a0f;
-          --bg-card: #141418;
-          --text: #f5f5f5;
-          --text-muted: #888;
-          --border: rgba(255, 255, 255, 0.1);
-        }
-
-        html, body {
-          margin: 0;
-          padding: 0;
-          width: 100%;
-          height: 100%;
-        }
-
-        .auth-page {
-          min-height: 100vh;
-          display: flex;
-          background: var(--bg-dark);
-          position: relative;
-          overflow: hidden;
-        }
-
-        .bg-container {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          pointer-events: none;
-          z-index: 0;
-          overflow: hidden;
-        }
-
-        .orb {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(100px);
-          opacity: 0.3;
-          transition: transform 0.2s ease-out;
-        }
-
-        .orb-1 {
-          width: 500px;
-          height: 500px;
-          background: radial-gradient(circle, rgba(79, 70, 229, 0.4) 0%, transparent 70%);
-          top: -150px;
-          left: -100px;
-        }
-
-        .orb-2 {
-          width: 400px;
-          height: 400px;
-          background: radial-gradient(circle, var(--primary-dark) 0%, transparent 70%);
-          bottom: -100px;
-          right: -100px;
-        }
-
-        .auth-form-section {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          position: relative;
-          z-index: 10;
-          padding: 2rem;
-        }
-
-        .auth-form-container {
-          width: 100%;
-          max-width: 420px;
-        }
-
-        .auth-brand {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          margin-bottom: 2.5rem;
-          cursor: pointer;
-        }
-
-        .brand-icon {
-          width: 38px;
-          height: 38px;
-          background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-          border-radius: 10px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #0a0a0f;
-        }
-
-        .brand-name {
-          font-size: 1.5rem;
-          font-weight: 700;
-          color: var(--text);
-        }
-
-        .auth-title {
-          font-size: 2.25rem;
-          font-weight: 700;
-          color: var(--text);
-          margin-bottom: 0.5rem;
-        }
-
-        .auth-subtitle {
-          color: var(--text-muted);
-          font-size: 1rem;
-          margin-bottom: 2rem;
-        }
-
-        .error-message {
-          background: rgba(220, 38, 38, 0.1);
-          border: 1px solid rgba(220, 38, 38, 0.3);
-          border-radius: 0.75rem;
-          padding: 1rem;
-          margin-bottom: 1.5rem;
-          color: #fca5a5;
-          font-size: 0.9rem;
-        }
-
-        .form-group {
-          margin-bottom: 1.25rem;
-        }
-
-        .form-group label {
-          display: block;
-          color: #d4d4d8;
-          margin-bottom: 0.5rem;
-          font-size: 0.9rem;
-          font-weight: 500;
-        }
-
-        .input-wrapper {
-          display: flex;
-          align-items: center;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid var(--border);
-          border-radius: 0.75rem;
-          padding: 0 1rem;
-          transition: all 0.2s;
-        }
-
-        .input-wrapper:focus-within {
-          border-color: rgba(201, 162, 39, 0.5);
-          box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.1);
-        }
-
-        .input-icon {
-          color: #71717a;
-          flex-shrink: 0;
-        }
-
-        .input-wrapper input {
-          flex: 1;
-          background: transparent;
-          border: none;
-          padding: 1rem;
-          color: var(--text);
-          font-size: 1rem;
-          outline: none;
-        }
-
-        .input-wrapper input::placeholder {
-          color: #52525b;
-        }
-
-        .password-toggle {
-          background: none;
-          border: none;
-          cursor: pointer;
-          padding: 0.5rem;
-          color: #71717a;
-          display: flex;
-          align-items: center;
-        }
-
-        .password-toggle:hover {
-          color: var(--text-muted);
-        }
-
-        .form-options {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 1.5rem;
-        }
-
-        .checkbox-label {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          cursor: pointer;
-          color: #a1a1aa;
-          font-size: 0.9rem;
-        }
-
-        .checkbox-label input {
-          width: 16px;
-          height: 16px;
-          accent-color: var(--primary);
-        }
-
-        .forgot-link {
-          color: var(--primary);
-          text-decoration: none;
-          font-size: 0.9rem;
-        }
-
-        .forgot-link:hover {
-          color: var(--primary-light);
-        }
-
-        .btn {
-          padding: 0.875rem 1.5rem;
-          border-radius: 0.75rem;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-          font-size: 1rem;
-          border: none;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.5rem;
-        }
-
-        .btn-primary {
-          background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-          color: #0a0a0f;
-        }
-
-        .btn-primary:hover:not(:disabled) {
-          background: linear-gradient(135deg, var(--primary-light), var(--primary));
-        }
-
-        .btn-full {
-          width: 100%;
-        }
-
-        .btn:disabled {
-          opacity: 0.7;
-          cursor: not-allowed;
-        }
-
-        .loading-spinner {
-          width: 20px;
-          height: 20px;
-          border: 2px solid rgba(0, 0, 0, 0.2);
-          border-top-color: #0a0a0f;
-          border-radius: 50%;
-          animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-
-        .auth-footer-text {
-          text-align: center;
-          margin-top: 1.5rem;
-          color: var(--text-muted);
-        }
-
-        .auth-link {
-          color: var(--primary);
-          text-decoration: none;
-          font-weight: 600;
-        }
-
-        .auth-link:hover {
-          color: var(--primary-light);
-        }
-
-        /* Right Panel */
-        .auth-info-section {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          position: relative;
-          z-index: 10;
-          padding: 3rem;
-          background: rgba(20, 20, 25, 0.5);
-          border-left: 1px solid var(--border);
-        }
-
-        .auth-info-content {
-          max-width: 420px;
-        }
-
-        .auth-quote {
-          background: rgba(79, 70, 229, 0.1);
-          border: 1px solid rgba(79, 70, 229, 0.2);
-          border-radius: 1rem;
-          padding: 1.5rem;
-          margin-bottom: 2rem;
-          color: #e0e7ff;
-          font-size: 1.1rem;
-          font-style: italic;
-          line-height: 1.6;
-        }
-
-        .auth-quote cite {
-          display: block;
-          margin-top: 1rem;
-          color: #818cf8;
-          font-style: normal;
-          font-weight: 600;
-          font-size: 0.9rem;
-        }
-
-        .auth-features {
-          display: flex;
-          flex-direction: column;
-          gap: 1rem;
-          margin-bottom: 2rem;
-        }
-
-        .feature-item {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-          color: #d4d4d8;
-        }
-
-        .feature-icon {
-          width: 40px;
-          height: 40px;
-          background: rgba(201, 162, 39, 0.15);
-          border: 1px solid rgba(201, 162, 39, 0.3);
-          border-radius: 0.75rem;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 1.1rem;
-        }
-
-        .auth-stats {
-          display: flex;
-          gap: 2rem;
-          padding-top: 1.5rem;
-          border-top: 1px solid var(--border);
-        }
-
-        .stat-item {
-          text-align: center;
-        }
-
-        .stat-value {
-          display: block;
-          font-size: 1.5rem;
-          font-weight: 700;
-          color: var(--primary);
-        }
-
-        .stat-label {
-          font-size: 0.8rem;
-          color: var(--text-muted);
-        }
-
-        /* Responsive */
-        @media (max-width: 1024px) {
-          .auth-info-section {
-            display: none;
-          }
-        }
-
-        @media (max-width: 640px) {
-          .auth-form-section {
-            padding: 1.5rem;
-          }
-
-          .auth-title {
-            font-size: 1.75rem;
-          }
-        }
-      `}</style>
     </div>
   )
 }

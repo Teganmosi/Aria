@@ -1,33 +1,65 @@
 import { useState, useEffect } from 'react'
-import { User, Settings, LogOut } from 'lucide-react'
+import {
+  User,
+  Settings,
+  LogOut,
+  ShieldCheck,
+  Bell,
+  Moon,
+  Sun,
+  BookOpen,
+  Clock,
+  Sparkles,
+  ChevronRight
+} from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { profileService } from '../services/api'
+import { AnimatedBackground, ThemeToggle } from './LandingPage'
 
-// Simple animated background
-const AnimatedBackground = () => {
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
-
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      setMousePosition({
-        x: (e.clientX / window.innerWidth - 0.5) * 8,
-        y: (e.clientY / window.innerHeight - 0.5) * 8
-      })
-    }
-    window.addEventListener('mousemove', handleMouseMove)
-    return () => window.removeEventListener('mousemove', handleMouseMove)
-  }, [])
-
-  return (
-    <div className="page-bg">
-      <div className="bg-orb" style={{ transform: `translate(${mousePosition.x}px, ${mousePosition.y}px)` }} />
+const SettingsCard = ({ icon, title, subtitle, action, destructive = false }) => (
+  <div
+    onClick={action}
+    className="glass-panel"
+    style={{
+      padding: '1.5rem',
+      borderRadius: '20px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '1.5rem',
+      cursor: 'pointer',
+      transition: 'all 0.3s ease',
+      border: '1px solid var(--border-color)',
+      marginBottom: '1rem',
+      background: destructive ? 'rgba(239, 68, 68, 0.05)' : 'var(--bg-card)'
+    }}
+  >
+    <div style={{
+      width: '48px',
+      height: '48px',
+      borderRadius: '12px',
+      background: destructive ? 'rgba(239, 68, 68, 0.1)' : 'var(--input-bg)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: destructive ? '#ef4444' : 'var(--brand-solid)'
+    }}>
+      {icon}
     </div>
-  )
-}
+    <div style={{ flex: 1 }}>
+      <h4 style={{ color: destructive ? '#ef4444' : 'var(--text-main)', margin: 0, fontSize: '1rem', fontWeight: 600 }}>{title}</h4>
+      <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.8rem' }}>{subtitle}</p>
+    </div>
+    <ChevronRight size={18} color="var(--text-muted)" />
+  </div>
+)
 
 const Profile = () => {
   const { user, logout } = useAuth()
-  const [displayName, setDisplayName] = useState(user?.display_name || '')
+  const [displayName, setDisplayName] = useState(user?.full_name || '')
   const [email] = useState(user?.email || '')
+  const [ariaCustomPrompt, setAriaCustomPrompt] = useState(user?.aria_custom_prompt || '')
+  const [ariaPersonalContext, setAriaPersonalContext] = useState(user?.aria_personal_context || '')
+  const [ariaVoice, setAriaVoice] = useState(user?.aria_voice || 'verse')
   const [isEditing, setIsEditing] = useState(false)
   const [message, setMessage] = useState(null)
 
@@ -41,9 +73,20 @@ const Profile = () => {
       showMessage('Display name cannot be empty', true)
       return
     }
-    // In a real app, this would call an API to update the profile
-    showMessage('Profile updated successfully!')
-    setIsEditing(false)
+
+    try {
+      await profileService.updateProfile({
+        full_name: displayName,
+        aria_custom_prompt: ariaCustomPrompt,
+        aria_personal_context: ariaPersonalContext,
+        aria_voice: ariaVoice
+      })
+      showMessage('Profile updated successfully!')
+      setIsEditing(false)
+      // Refresh user data if needed? useAuth usually has it
+    } catch (err) {
+      showMessage(err.message || 'Failed to update profile', true)
+    }
   }
 
   const handleLogout = async () => {
@@ -54,369 +97,229 @@ const Profile = () => {
     }
   }
 
-  const memberSince = user?.created_at 
-    ? new Date(user.created_at).toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'long' 
-      })
+  const memberSince = user?.created_at
+    ? new Date(user.created_at).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long'
+    })
     : 'N/A'
 
   return (
-    <div className="page-container">
+    <div style={{ minHeight: '100%', position: 'relative', display: 'flex', flexDirection: 'column', overflowY: 'auto', paddingBottom: '4rem' }}>
       <AnimatedBackground />
-      
-      <div className="page-content">
-        <div className="page-header">
-          <div className="header-icon">
-            <User size={24} />
+
+      {/* Top Header Section */}
+      <header style={{ padding: '4rem 3rem 2rem', textAlign: 'center', zIndex: 10 }}>
+        <div style={{ position: 'relative', width: '120px', height: '120px', margin: '0 auto 2rem' }}>
+          <div style={{
+            width: '100%',
+            height: '100%',
+            borderRadius: '50%',
+            background: 'var(--gradient-card)',
+            border: '4px solid var(--brand-accent)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '3rem',
+            color: 'var(--brand-solid)',
+            boxShadow: 'var(--shadow-main)',
+            overflow: 'hidden'
+          }}>
+            {displayName ? displayName.charAt(0).toUpperCase() : <User size={48} />}
           </div>
-          <h1>Your Profile</h1>
-          <p>Manage your account settings</p>
+          <div style={{
+            position: 'absolute',
+            bottom: '5px',
+            right: '5px',
+            background: 'var(--brand-accent)',
+            width: '28px',
+            height: '28px',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: '2px solid var(--bg-main)'
+          }}>
+            <Sparkles size={14} color="var(--brand-solid)" />
+          </div>
         </div>
-        
-        <div className="content-card">
-          <div className="profile-section">
-            <div className="avatar">
-              {displayName ? displayName.charAt(0).toUpperCase() : 'U'}
+
+        <h1 className="font-serif" style={{ fontSize: '2.5rem', color: 'var(--text-main)', marginBottom: '0.5rem' }}>
+          {displayName || 'Seeker'}
+        </h1>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '1rem', letterSpacing: '0.05em' }}>
+          {email.toUpperCase()} • SANCTUARY MEMBER SINCE {memberSince.toUpperCase()}
+        </p>
+
+        {message && (
+          <div style={{
+            maxWidth: '400px',
+            margin: '1.5rem auto 0',
+            padding: '1rem',
+            borderRadius: '12px',
+            background: message.isError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+            color: message.isError ? '#ef4444' : '#10b981',
+            fontSize: '0.9rem',
+            border: `1px solid ${message.isError ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)'}`
+          }}>
+            {message.text}
+          </div>
+        )}
+      </header>
+
+      {/* Settings Sections */}
+      <div style={{ maxWidth: '800px', margin: '0 auto', width: '100%', padding: '0 2rem', zIndex: 10 }}>
+
+        {/* Section: Spiritual Preferences */}
+        <div style={{ marginBottom: '3rem' }}>
+          <h3 style={{ fontSize: '0.75rem', letterSpacing: '0.2em', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '1.5rem', paddingLeft: '0.5rem' }}>SPIRITUAL PREFERENCES</h3>
+
+          <SettingsCard
+            icon={<BookOpen size={20} />}
+            title="Bible Translation"
+            subtitle="Current: King James Version (KJV)"
+            action={() => showMessage('Translation settings coming soon!')}
+          />
+          <SettingsCard
+            icon={<Clock size={20} />}
+            title="Devotion Reminders"
+            subtitle="Adjust your daily morning reflection time"
+            action={() => showMessage('Notification settings coming soon!')}
+          />
+        </div>
+
+        {/* Section: Aria Customization */}
+        <div style={{ marginBottom: '3rem' }}>
+          <h3 style={{ fontSize: '0.75rem', letterSpacing: '0.2em', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '1.5rem', paddingLeft: '0.5rem' }}>ARIA CUSTOMIZATION</h3>
+
+          <SettingsCard
+            icon={<Sparkles size={20} />}
+            title="AI Persona & Context"
+            subtitle="Tailor Aria's personality and shared context"
+            action={() => setIsEditing(true)}
+          />
+        </div>
+
+        {/* Section: Account & Interface */}
+        <div style={{ marginBottom: '3rem' }}>
+          <h3 style={{ fontSize: '0.75rem', letterSpacing: '0.2em', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '1.5rem', paddingLeft: '0.5rem' }}>ACCOUNT & INTERFACE</h3>
+
+          <div className="glass-panel" style={{ padding: '1.5rem', borderRadius: '20px', border: '1px solid var(--border-color)', marginBottom: '1rem', background: 'var(--bg-card)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+              <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'var(--input-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--brand-solid)' }}>
+                <Moon size={20} />
+              </div>
+              <div>
+                <h4 style={{ color: 'var(--text-main)', margin: 0, fontSize: '1rem', fontWeight: 600 }}>Sanctuary Theme</h4>
+                <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.8rem' }}>Switch between light and dark modes</p>
+              </div>
             </div>
-            
-            <div className="profile-info">
-              {isEditing ? (
-                <div className="edit-form">
-                  <div className="form-group">
-                    <label>Display Name</label>
-                    <input
-                      type="text"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="Your name"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Email</label>
-                    <input
-                      type="email"
-                      value={email}
-                      disabled
-                      className="disabled"
-                    />
-                  </div>
-                  <div className="form-actions">
-                    <button onClick={handleUpdateProfile} className="btn btn-primary">
-                      Save Changes
-                    </button>
-                    <button onClick={() => setIsEditing(false)} className="btn btn-secondary">
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="info-display">
-                  <h2>{displayName || 'Set up your profile'}</h2>
-                  <p className="email">{email}</p>
-                  <p className="member-since">Member since {memberSince}</p>
-                  <button onClick={() => setIsEditing(true)} className="btn btn-secondary">
-                    <Settings size={16} />
-                    Edit Profile
-                  </button>
-                </div>
-              )}
-            </div>
+            <ThemeToggle />
           </div>
 
-          {message && (
-            <div className={`message ${message.isError ? 'error' : 'success'}`}>
-              {message.text}
-            </div>
-          )}
+          <SettingsCard
+            icon={<User size={20} />}
+            title="Personal Details"
+            subtitle="Update your display name and profile image"
+            action={() => setIsEditing(true)}
+          />
+          <SettingsCard
+            icon={<ShieldCheck size={20} />}
+            title="Privacy & Security"
+            subtitle="Manage your password and session data"
+            action={() => showMessage('Security settings coming soon!')}
+          />
+        </div>
 
-          <div className="settings-section">
-            <h3>Account Actions</h3>
-            <div className="actions-list">
-              <button onClick={handleLogout} className="action-btn logout">
-                <LogOut size={18} />
-                <span>Log Out</span>
+        {/* Section: Danger Zone */}
+        <div>
+          <h3 style={{ fontSize: '0.75rem', letterSpacing: '0.2em', color: '#ef4444', fontWeight: 800, marginBottom: '1.5rem', paddingLeft: '0.5rem' }}>EXIT SANCTUARY</h3>
+          <SettingsCard
+            icon={<LogOut size={20} />}
+            title="Sign Out"
+            subtitle="Securely end your current session"
+            destructive
+            action={handleLogout}
+          />
+        </div>
+      </div>
+
+      {/* Edit Modal Placeholder */}
+      {isEditing && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(15px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '500px', background: 'var(--bg-main)', borderRadius: '32px', padding: '3rem', border: '1px solid var(--border-color)' }}>
+            <h2 className="font-serif" style={{ fontSize: '1.75rem', color: 'var(--text-main)', marginBottom: '2rem' }}>Update Profile</h2>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label htmlFor="displayNameInput" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>DISPLAY NAME</label>
+              <input
+                id="displayNameInput"
+                type="text"
+                value={displayName}
+                onChange={e => setDisplayName(e.target.value)}
+                style={{ width: '100%', padding: '1rem', borderRadius: '12px', background: 'var(--input-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '1rem' }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label htmlFor="customVoiceInput" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>ARIA'S VOICE</label>
+              <select
+                id="customVoiceInput"
+                value={ariaVoice}
+                onChange={e => setAriaVoice(e.target.value)}
+                style={{ width: '100%', padding: '1rem', borderRadius: '12px', background: 'var(--input-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '1rem' }}
+              >
+                <option value="alloy">Alloy (Balanced)</option>
+                <option value="ash">Ash (Dynamic)</option>
+                <option value="ballad">Ballad (Warm)</option>
+                <option value="coral">Coral (Bright)</option>
+                <option value="echo">Echo (Low-pitched)</option>
+                <option value="sage">Sage (Peaceful)</option>
+                <option value="shimmer">Shimmer (High-pitched)</option>
+                <option value="verse">Verse (Classic Aria)</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom: '1.5rem' }}>
+              <label htmlFor="customPromptInput" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>ARIA'S CUSTOM PROMPT / PERSONA</label>
+              <textarea
+                id="customPromptInput"
+                placeholder="e.g. Speak like a 19th-century theologian, or use a very encouraging and lighthearted tone."
+                value={ariaCustomPrompt}
+                onChange={e => setAriaCustomPrompt(e.target.value)}
+                style={{ width: '100%', padding: '1rem', borderRadius: '12px', background: 'var(--input-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '1rem', height: '100px', resize: 'none' }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '2rem' }}>
+              <label htmlFor="personalContextInput" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>YOUR PERSONAL CONTEXT</label>
+              <textarea
+                id="personalContextInput"
+                placeholder="Share things you want Aria to know about you, your journey, or your current life situation."
+                value={ariaPersonalContext}
+                onChange={e => setAriaPersonalContext(e.target.value)}
+                style={{ width: '100%', padding: '1rem', borderRadius: '12px', background: 'var(--input-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '1rem', height: '100px', resize: 'none' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button
+                onClick={handleUpdateProfile}
+                style={{ flex: 1, padding: '1rem', background: 'var(--brand-solid)', color: 'var(--bg-main)', border: 'none', borderRadius: '12px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                SAVE CHANGES
+              </button>
+              <button
+                onClick={() => setIsEditing(false)}
+                style={{ flex: 1, padding: '1rem', background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', borderRadius: '12px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                CANCEL
               </button>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
-      <style>{`
-        :root {
-          --primary: #c9a227;
-          --bg-dark: #0a0a0f;
-          --bg-card: #141418;
-          --text: #f5f5f5;
-          --text-muted: #888;
-          --border: rgba(255, 255, 255, 0.1);
-        }
-
-        .page-container {
-          min-height: 100vh;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .page-bg {
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          pointer-events: none;
-          z-index: 0;
-          overflow: hidden;
-        }
-
-        .bg-orb {
-          position: absolute;
-          width: 500px;
-          height: 500px;
-          border-radius: 50%;
-          filter: blur(100px);
-          opacity: 0.15;
-          background: radial-gradient(circle, #ec4899 0%, transparent 70%);
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          transition: transform 0.15s ease-out;
-        }
-
-        .page-content {
-          position: relative;
-          z-index: 1;
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 2rem 1.5rem;
-        }
-
-        .page-header {
-          text-align: center;
-          margin-bottom: 2rem;
-        }
-
-        .header-icon {
-          width: 56px;
-          height: 56px;
-          background: rgba(236, 72, 153, 0.15);
-          border: 1px solid rgba(236, 72, 153, 0.3);
-          border-radius: 16px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #ec4899;
-          margin: 0 auto 1rem;
-        }
-
-        .page-header h1 {
-          font-size: 1.75rem;
-          font-weight: 700;
-          color: var(--text);
-          margin: 0 0 0.5rem;
-        }
-
-        .page-header p {
-          color: var(--text-muted);
-          margin: 0;
-        }
-
-        .content-card {
-          background: var(--bg-card);
-          border: 1px solid var(--border);
-          border-radius: 16px;
-          padding: 1.5rem;
-        }
-
-        .profile-section {
-          display: flex;
-          gap: 1.5rem;
-          align-items: flex-start;
-          margin-bottom: 1.5rem;
-        }
-
-        .avatar {
-          width: 80px;
-          height: 80px;
-          background: linear-gradient(135deg, #ec4899, #db2777);
-          border-radius: 20px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 2rem;
-          font-weight: 700;
-          color: white;
-          flex-shrink: 0;
-        }
-
-        .profile-info {
-          flex: 1;
-        }
-
-        .info-display h2 {
-          font-size: 1.25rem;
-          font-weight: 600;
-          color: var(--text);
-          margin: 0 0 0.25rem;
-        }
-
-        .info-display .email {
-          color: var(--text-muted);
-          font-size: 0.9rem;
-          margin: 0 0 0.25rem;
-        }
-
-        .info-display .member-since {
-          color: var(--text-muted);
-          font-size: 0.8rem;
-          margin: 0 0 1rem;
-        }
-
-        .edit-form .form-group {
-          margin-bottom: 1rem;
-        }
-
-        .edit-form label {
-          display: block;
-          font-size: 0.85rem;
-          color: var(--text-muted);
-          margin-bottom: 0.5rem;
-        }
-
-        .edit-form input {
-          width: 100%;
-          padding: 0.625rem;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid var(--border);
-          border-radius: 8px;
-          font-size: 0.9rem;
-          color: var(--text);
-        }
-
-        .edit-form input:focus {
-          outline: none;
-          border-color: #ec4899;
-        }
-
-        .edit-form input.disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .form-actions {
-          display: flex;
-          gap: 0.75rem;
-        }
-
-        .btn {
-          padding: 0.625rem 1rem;
-          border-radius: 10px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-          font-size: 0.9rem;
-          border: none;
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-        }
-
-        .btn-primary {
-          background: linear-gradient(135deg, #ec4899, #db2777);
-          color: white;
-        }
-
-        .btn-primary:hover {
-          background: linear-gradient(135deg, #f472b6, #ec4899);
-        }
-
-        .btn-secondary {
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid var(--border);
-          color: var(--text);
-        }
-
-        .btn-secondary:hover {
-          background: rgba(255, 255, 255, 0.1);
-        }
-
-        .message {
-          padding: 0.75rem 1rem;
-          border-radius: 8px;
-          margin-bottom: 1.25rem;
-          font-size: 0.9rem;
-        }
-
-        .message.error {
-          background: rgba(220, 38, 38, 0.1);
-          border: 1px solid rgba(220, 38, 38, 0.3);
-          color: #fca5a5;
-        }
-
-        .message.success {
-          background: rgba(34, 197, 94, 0.1);
-          border: 1px solid rgba(34, 197, 94, 0.3);
-          color: #6ee7b7;
-        }
-
-        .settings-section {
-          border-top: 1px solid var(--border);
-          padding-top: 1.25rem;
-        }
-
-        .settings-section h3 {
-          font-size: 1rem;
-          font-weight: 600;
-          color: var(--text);
-          margin: 0 0 1rem;
-        }
-
-        .actions-list {
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-        }
-
-        .action-btn {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          width: 100%;
-          padding: 0.875rem 1rem;
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid var(--border);
-          border-radius: 10px;
-          color: var(--text);
-          font-size: 0.9rem;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .action-btn:hover {
-          background: rgba(255, 255, 255, 0.08);
-        }
-
-        .action-btn.logout {
-          color: #f87171;
-        }
-
-        .action-btn.logout:hover {
-          background: rgba(220, 38, 38, 0.1);
-          border-color: rgba(220, 38, 38, 0.3);
-        }
-
-        @media (max-width: 640px) {
-          .profile-section {
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-          }
-
-          .form-actions {
-            flex-direction: column;
-          }
-        }
-      `}</style>
     </div>
   )
 }
