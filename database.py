@@ -78,6 +78,16 @@ class Database:
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
                 """)
+                # Add is_locked and password_hash to notes if missing
+                try:
+                    cursor.execute("ALTER TABLE notes ADD COLUMN is_locked BOOLEAN DEFAULT 0")
+                except sqlite3.Error:
+                    pass
+                try:
+                    cursor.execute("ALTER TABLE notes ADD COLUMN password_hash TEXT")
+                except sqlite3.Error:
+                    pass
+                
                 conn.commit()
         except Exception as e:
             logger.error(f"Error ensuring tables: {e}")
@@ -400,36 +410,62 @@ class Database:
     # ==================== Bible Operations ====================
 
     async def fetch_bible_chapter_from_api(self, book: str, chapter: int) -> List[Dict[str, Any]]:
-        """Fetch Bible chapter from API.Bible and parse it"""
+        """Fetch Bible chapter from API.Bible or bible-api.com"""
+        # Try bible-api.com first (it's free and no-key required)
         try:
-            book_mapping = {
-                "Genesis": "GEN", "Exodus": "EXO", "Leviticus": "LEV", "Numbers": "NUM", "Deuteronomy": "DEU",
-                "Joshua": "JOS", "Judges": "JDG", "Ruth": "RUT", "1 Samuel": "1SA", "2 Samuel": "2SA",
-                "1 Kings": "1KI", "2 Kings": "2KI", "1 Chronicles": "1CH", "2 Chronicles": "2CH",
-                "Ezra": "EZR", "Nehemiah": "NEH", "Esther": "EST", "Job": "JOB", "Psalms": "PSA",
-                "Proverbs": "PRO", "Ecclesiastes": "ECC", "Song of Solomon": "SNG", "Isaiah": "ISA",
-                "Matthew": "MAT", "Mark": "MRK", "Luke": "LUK", "John": "JHN", "Acts": "ACT", "Romans": "ROM",
-                "1 Corinthians": "1CO", "2 Corinthians": "2CO", "Galatians": "GAL", "Ephesians": "EPH",
-                "Philippians": "PHP", "Colossians": "COL", "1 Thessalonians": "1TH", "2 Thessalonians": "2TH",
-                "1 Timothy": "1TI", "2 Timothy": "2TI", "Titus": "TIT", "Philemon": "PHM", "Hebrews": "HEB",
-                "James": "JAS", "1 Peter": "1PE", "2 Peter": "2PE", "1 John": "1JN", "2 John": "2JN",
-                "3 John": "3JN", "Jude": "JUD", "Revelation": "REV"
-            }
-            api_book = book_mapping.get(book, book.upper()[:3])
-            chapter_id = f"{api_book}.{chapter}"
-            url = f"https://api.scripture.api.bible/v1/bibles/de4e12af7f28f599-02/chapters/{chapter_id}?content-type=json"
-            
             import httpx
+            # Format book name for bible-api.com
+            formatted_book = book.replace(" ", "+")
+            url = f"https://bible-api.com/{formatted_book}+{chapter}"
+            
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(url, headers={"api-key": settings.api_bible_key})
+                response = await client.get(url)
                 if response.status_code == 200:
                     data = response.json()
-                    content = data.get("data", {}).get("content", [])
-                    return self._parse_bible_json(book, chapter, content)
-            return []
+                    verses = []
+                    for v in data.get("verses", []):
+                        verses.append({
+                            "id": f"{book}.{chapter}.{v.get('verse')}",
+                            "number": v.get("verse"),
+                            "text": v.get("text", "").strip(),
+                            "book": book,
+                            "chapter": chapter,
+                            "verse": v.get("verse")
+                        })
+                    return verses
         except Exception as e:
-            logger.error(f"Error fetching from API.Bible: {e}")
-            return []
+            logger.error(f"Error fetching from bible-api.com: {e}")
+
+        # Fallback to API.Bible if key is provided and not placeholder
+        if settings.api_bible_key and settings.api_bible_key != "your_api_bible_key_here":
+            try:
+                book_mapping = {
+                    "Genesis": "GEN", "Exodus": "EXO", "Leviticus": "LEV", "Numbers": "NUM", "Deuteronomy": "DEU",
+                    "Joshua": "JOS", "Judges": "JDG", "Ruth": "RUT", "1 Samuel": "1SA", "2 Samuel": "2SA",
+                    "1 Kings": "1KI", "2 Kings": "2KI", "1 Chronicles": "1CH", "2 Chronicles": "2CH",
+                    "Ezra": "EZR", "Nehemiah": "NEH", "Esther": "EST", "Job": "JOB", "Psalms": "PSA",
+                    "Proverbs": "PRO", "Ecclesiastes": "ECC", "Song of Solomon": "SNG", "Isaiah": "ISA",
+                    "Matthew": "MAT", "Mark": "MRK", "Luke": "LUK", "John": "JHN", "Acts": "ACT", "Romans": "ROM",
+                    "1 Corinthians": "1CO", "2 Corinthians": "2CO", "Galatians": "GAL", "Ephesians": "EPH",
+                    "Philippians": "PHP", "Colossians": "COL", "1 Thessalonians": "1TH", "2 Thessalonians": "2TH",
+                    "1 Timothy": "1TI", "2 Timothy": "2TI", "Titus": "TIT", "Philemon": "PHM", "Hebrews": "HEB",
+                    "James": "JAS", "1 Peter": "1PE", "2 Peter": "2PE", "1 John": "1JN", "2 John": "2JN",
+                    "3 John": "3JN", "Jude": "JUD", "Revelation": "REV"
+                }
+                api_book = book_mapping.get(book, book.upper()[:3])
+                chapter_id = f"{api_book}.{chapter}"
+                url = f"https://api.scripture.api.bible/v1/bibles/de4e12af7f28f599-02/chapters/{chapter_id}?content-type=json"
+                
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.get(url, headers={"api-key": settings.api_bible_key})
+                    if response.status_code == 200:
+                        data = response.json()
+                        content = data.get("data", {}).get("content", [])
+                        return self._parse_bible_json(book, chapter, content)
+            except Exception as e:
+                logger.error(f"Error fetching from API.Bible: {e}")
+        
+        return []
 
     def _parse_bible_json(self, book, chapter, content):
         """Helper to parse API.Bible complex JSON output"""
@@ -554,6 +590,13 @@ class Database:
         except Exception as e:
             logger.error(f"Error deleting note: {e}")
             return False
+
+    def verify_note_password(self, note_id: str, user_id: str, password: str) -> bool:
+        from auth import verify_password
+        note = self.get_note(note_id, user_id)
+        if not note or not note.get('password_hash'):
+            return False
+        return verify_password(password, note['password_hash'])
 
     def update_note(self, note_id: str, user_id: str, note_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:

@@ -57,10 +57,11 @@ class NoteBase(BaseModel):
     )
     source_reference: Optional[str] = None
     tags: List[str] = []
+    is_locked: bool = False
 
 
 class NoteCreate(NoteBase):
-    pass
+    password: Optional[str] = None
 
 
 class NoteUpdate(BaseModel):
@@ -69,6 +70,8 @@ class NoteUpdate(BaseModel):
     source_type: Optional[str] = None
     source_reference: Optional[str] = None
     tags: Optional[List[str]] = None
+    is_locked: Optional[bool] = None
+    password: Optional[str] = None
 
 
 class Note(NoteBase):

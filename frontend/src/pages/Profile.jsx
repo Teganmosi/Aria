@@ -54,9 +54,10 @@ const SettingsCard = ({ icon, title, subtitle, action, destructive = false }) =>
 )
 
 const Profile = () => {
-  const { user, logout } = useAuth()
+  const { user, logout, refreshUser } = useAuth()
   const [displayName, setDisplayName] = useState(user?.full_name || '')
   const [email] = useState(user?.email || '')
+  const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '')
   const [ariaCustomPrompt, setAriaCustomPrompt] = useState(user?.aria_custom_prompt || '')
   const [ariaPersonalContext, setAriaPersonalContext] = useState(user?.aria_personal_context || '')
   const [ariaVoice, setAriaVoice] = useState(user?.aria_voice || 'verse')
@@ -77,12 +78,14 @@ const Profile = () => {
     try {
       await profileService.updateProfile({
         full_name: displayName,
+        avatar_url: avatarUrl,
         aria_custom_prompt: ariaCustomPrompt,
         aria_personal_context: ariaPersonalContext,
         aria_voice: ariaVoice
       })
-      showMessage('Profile updated successfully!')
       setIsEditing(false)
+      await refreshUser()
+      showMessage('Profile updated successfully!')
       // Refresh user data if needed? useAuth usually has it
     } catch (err) {
       showMessage(err.message || 'Failed to update profile', true)
@@ -125,7 +128,11 @@ const Profile = () => {
             boxShadow: 'var(--shadow-main)',
             overflow: 'hidden'
           }}>
-            {displayName ? displayName.charAt(0).toUpperCase() : <User size={48} />}
+            {user?.avatar_url ? (
+              <img src={user.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Avatar" />
+            ) : (
+              displayName ? displayName.charAt(0).toUpperCase() : <User size={48} />
+            )}
           </div>
           <div style={{
             position: 'absolute',
@@ -253,11 +260,22 @@ const Profile = () => {
             <div style={{ marginBottom: '1.5rem' }}>
               <label htmlFor="displayNameInput" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>DISPLAY NAME</label>
               <input
-                id="displayNameInput"
                 type="text"
                 value={displayName}
                 onChange={e => setDisplayName(e.target.value)}
-                style={{ width: '100%', padding: '1rem', borderRadius: '12px', background: 'var(--input-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '1rem' }}
+                placeholder="Display Name"
+                style={{ width: '100%', padding: '1rem', background: 'var(--bg-alt)', border: '1px solid var(--border-color)', borderRadius: '12px', color: 'var(--text-main)', fontSize: '1rem' }}
+              />
+            </div>
+
+            <div style={{ marginBottom: '2rem' }}>
+              <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '0.75rem' }}>PROFILE IMAGE URL</label>
+              <input
+                type="text"
+                value={avatarUrl}
+                onChange={e => setAvatarUrl(e.target.value)}
+                placeholder="https://example.com/image.jpg"
+                style={{ width: '100%', padding: '1rem', background: 'var(--bg-alt)', border: '1px solid var(--border-color)', borderRadius: '12px', color: 'var(--text-main)', fontSize: '1rem' }}
               />
             </div>
 

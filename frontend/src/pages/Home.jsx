@@ -12,8 +12,13 @@ import './Home.css'
 // --- Sub-components matching the Mockup ---
 
 const FaithStreak = ({ days, streak }) => {
+  const today = new Date()
   const dayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-  const todayIndex = new Date().getDay()
+  const todayIndex = today.getDay()
+
+  // Calculate Sunday of current week
+  const sunday = new Date(today)
+  sunday.setDate(today.getDate() - today.getDay())
 
   return (
     <div style={{ background: 'var(--bg-card)', borderRadius: '24px', padding: '1.5rem', boxShadow: 'var(--shadow-main)', minHeight: '180px', border: '1px solid var(--border-color)' }}>
@@ -29,6 +34,10 @@ const FaithStreak = ({ days, streak }) => {
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
         {dayLabels.map((day, i) => {
           const isCompleted = days && days[i]
+          const currentDay = new Date(sunday)
+          currentDay.setDate(sunday.getDate() + i)
+          const displayDate = currentDay.getDate()
+
           return (
             <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--text-muted)' }}>{day}</span>
@@ -38,7 +47,7 @@ const FaithStreak = ({ days, streak }) => {
                 color: isCompleted ? 'var(--text-inverse)' : (i === todayIndex ? 'var(--bg-main)' : 'var(--text-muted)'),
                 display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700
               }}>
-                {i + 14}
+                {displayDate}
               </div>
             </div>
           )
@@ -148,9 +157,22 @@ const Home = () => {
           <h1 className="home-title">Let's walk in faith today.</h1>
         </div>
         <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
-          <Settings size={22} color="var(--text-main)" style={{ cursor: 'pointer' }} />
-          <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'var(--bg-alt)', overflow: 'hidden', border: '2px solid var(--bg-card)', boxShadow: 'var(--shadow-main)' }}>
-            <img src="https://i.pravatar.cc/150?u=aria" style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Profile" />
+          <Settings
+            size={22}
+            color="var(--text-main)"
+            style={{ cursor: 'pointer' }}
+            onClick={() => navigate('/app/profile')}
+          />
+          <div
+            style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'var(--bg-alt)', overflow: 'hidden', border: '2px solid var(--bg-card)', boxShadow: 'var(--shadow-main)', cursor: 'pointer' }}
+            onClick={() => navigate('/app/profile')}
+          >
+            <img
+              src={user?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.full_name || 'U')}&background=random`}
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              alt="Profile"
+              onError={(e) => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.full_name || 'U')}&background=random` }}
+            />
           </div>
         </div>
       </div>
@@ -193,10 +215,10 @@ const Home = () => {
         </div>
 
         <div className="journey-grid">
-          {activities.length > 0 ? activities.slice(0, 2).map((activity, idx) => (
+          {activities.length > 0 ? activities.slice(0, 4).map((activity, idx) => (
             <JourneyCard
               key={activity.id || idx}
-              icon={activity.type === 'bible_study' ? Book : (activity.type === 'support' ? MessageSquare : Sparkles)}
+              icon={activity.type === 'bible_study' ? Book : (activity.type === 'support' || activity.type === 'chat' ? MessageSquare : (activity.type === 'devotion' ? Bookmark : Sparkles))}
               time={getRelativeTime(activity.created_at)}
               title={activity.title}
               desc={activity.subtitle}

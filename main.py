@@ -38,6 +38,8 @@ from auth import (
     get_current_user_websocket,
     blacklist_token,
     decode_access_token,
+    get_password_hash,
+    verify_password,
 )
 from ai_service import ai_service
 import redis
@@ -213,10 +215,18 @@ async def create_note(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Create a new note"""
-    note = db.create_note(current_user["id"], note_data.model_dump())
+    note_dict = note_data.model_dump()
+    if note_dict.get("password"):
+        note_dict["password_hash"] = get_password_hash(note_dict.pop("password"))
+        note_dict["is_locked"] = True
+    else:
+        # Avoid passing password if it's None or empty string if not intended
+        note_dict.pop("password", None)
+
+    note = db.create_note(current_user["id"], note_dict)
     if not note:
         raise HTTPException(
-            status_code=status.HTTP_500_CREATED, detail="Failed to create note"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create note"
         )
     return note
 
@@ -228,7 +238,14 @@ async def get_notes(
 ):
     """Get all notes for the user, optionally filtered by source_type"""
     notes = db.get_notes(current_user["id"], source_type)
-    return notes
+    # Mask content for locked notes in the list view
+    processed_notes = []
+    for note in notes:
+        n = dict(note)
+        if n.get("is_locked"):
+            n["content"] = "This note is locked."
+        processed_notes.append(n)
+    return processed_notes
 
 
 @app.get("/api/v1/notes/{note_id}", response_model=Note)
@@ -242,7 +259,34 @@ async def get_note(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=NOTE_NOT_FOUND
         )
+    
+    # If it's locked, don't return the content
+    if note.get("is_locked"):
+        return {**note, "content": "This note is locked."}
+        
     return note
+
+
+@app.post("/api/v1/notes/{note_id}/unlock", response_model=Note)
+async def unlock_note(
+    note_id: str,
+    password_data: Dict[str, str],
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Unlock a note to view its full content"""
+    password = password_data.get("password")
+    if not password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Password required"
+        )
+        
+    if db.verify_note_password(note_id, current_user["id"], password):
+        note = db.get_note(note_id, current_user["id"])
+        return note
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password"
+        )
 
 
 @app.put("/api/v1/notes/{note_id}", response_model=Note)
@@ -252,9 +296,21 @@ async def update_note(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Update a note"""
-    note = db.update_note(
-        note_id, current_user["id"], note_data.model_dump(exclude_unset=True)
-    )
+    update_dict = note_data.model_dump(exclude_unset=True)
+    
+    # Handle password change/lock status
+    if "password" in update_dict:
+        if update_dict["password"]:
+            update_dict["password_hash"] = get_password_hash(update_dict.pop("password"))
+            update_dict["is_locked"] = True
+        else:
+            # If password is set to empty string or null, unlock it?
+            # Or maybe we need an explicit 'is_locked' = False
+            update_dict.pop("password")
+            if update_dict.get("is_locked") is False:
+                update_dict["password_hash"] = None
+    
+    note = db.update_note(note_id, current_user["id"], update_dict)
     if not note:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=NOTE_NOT_FOUND
@@ -747,7 +803,8 @@ async def generate_ai_response(
             custom_instructions=_get_user_custom_instructions(current_user)
         )
         return AIResponse(
-            content=content, role="assistant", timestamp=datetime.now(timezone.utc)
+            content=content, 
+            mode=request.mode
         )
     except Exception as e:
         logger.error(f"Error generating AI response: {e}")

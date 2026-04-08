@@ -381,4 +381,13 @@ export const notesService = {
     })
     return handleResponse(response)
   },
+
+  unlockNote: async (noteId, password) => {
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}/unlock`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ password }),
+    })
+    return handleResponse(response)
+  },
 }

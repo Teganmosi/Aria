@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { BookOpen, Sparkles, MessageCircle, Play, RefreshCw, Plus, Clock, ArrowRight, Heart, Search, Scroll, X } from 'lucide-react'
+import { BookOpen, Sparkles, MessageCircle, Play, RefreshCw, Plus, Clock, ArrowRight, Heart, Search, Scroll, X, Quote } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
 import { bibleService } from '../services/api'
+import { useAuth } from '../hooks/useAuth'
 import { AnimatedBackground } from './LandingPage'
 
 // Detect input type from user input
@@ -20,6 +22,7 @@ const detectInputType = (input) => {
 }
 
 const BibleStudy = () => {
+  const { user } = useAuth()
   const [mode, setMode] = useState('select') // select, study, pray
   const [userInput, setUserInput] = useState('')
   const [inputType, setInputType] = useState(null)
@@ -192,143 +195,245 @@ const BibleStudy = () => {
     return { icon: Search, label: 'Theological Topic', color: 'var(--text-muted)' }
   })()
 
+  let progressPercent = '30%';
+  if (messages.length > 5) {
+    progressPercent = '90%';
+  } else if (messages.length > 2) {
+    progressPercent = '60%';
+  }
+
   return (
     <div className="study-page">
       <AnimatedBackground />
 
       <div className="study-content-wrapper">
-        {mode === 'select' && (
-          <div className="selection-view">
-            <div className="hero-branding">
-              <div className="sparkle-icon"><Sparkles size={32} /></div>
-              <h1 className="font-serif">Study Sanctuary</h1>
-              <p>Guided reflections through the wisdom of the Word.</p>
-            </div>
-
-            <div className="input-panel glass-panel">
-              <div className="panel-header">
-                <BookOpen size={20} color="var(--brand-accent)" />
-                <span className="font-serif">What shall we explore today?</span>
+        <AnimatePresence mode="wait">
+          {mode === 'select' ? (
+            <motion.div
+              key="select-view"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="selection-view"
+            >
+              <div className="hero-branding">
+                <div className="sparkle-icon"><Sparkles size={32} /></div>
+                <h1 className="font-serif">Bible Study</h1>
+                <p>Guided reflections through the wisdom of the Word.</p>
               </div>
 
-              <div className="search-field">
-                <input
-                  type="text"
-                  value={userInput}
-                  onChange={handleInputChange}
-                  placeholder="Reference a verse, chapter, or topic..."
-                  className="sanctuary-input"
-                  onKeyPress={(e) => e.key === 'Enter' && startStudy()}
-                />
-                {hint && (
-                  <div className="type-hint" style={{ color: hint.color }}>
-                    <hint.icon size={14} />
-                    <span>{hint.label}</span>
-                  </div>
-                )}
-              </div>
-
-              <div className="example-tags">
-                <span className="tag-label">Inspirations:</span>
-                {['Romans 8:28', 'Psalm 23', 'Faith', 'God\'s Love', 'Forgiveness'].map(ex => (
-                  <button key={ex} className="tag-btn glass-panel" onClick={() => { setUserInput(ex); setInputType(detectInputType(ex)); }}>{ex}</button>
-                ))}
-              </div>
-
-              <button
-                onClick={startStudy}
-                className="begin-button"
-                disabled={isLoading || !userInput.trim()}
-              >
-                {isLoading ? <RefreshCw className="spinning" size={20} /> : <Play size={20} />}
-                <span>{isLoading ? 'Preparing Sanctuary...' : 'Begin Study'}</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {(mode === 'study' || mode === 'pray') && studyContent && (
-          <div className="session-view">
-            {/* Header Banner */}
-            <div className="session-banner glass-panel">
-              <div className="banner-info">
-                {studyContent.type === 'topic' ? <Search size={22} color="var(--brand-accent)" /> : <BookOpen size={22} color="var(--brand-accent)" />}
-                <div>
-                  <h2 className="font-serif">{studyContent.reference || studyContent.topic}</h2>
-                  <p>{studyContent.type === 'verse' ? 'Deep Reflection' : studyContent.type === 'chapter' ? 'Chapter Study' : 'Theological Exploration'}</p>
+              <div className="input-panel glass-panel">
+                <div className="panel-header">
+                  <BookOpen size={20} color="var(--brand-accent)" />
+                  <span className="font-serif">What shall we explore today?</span>
                 </div>
-              </div>
-              <button className="close-session" onClick={() => setMode('select')}><X size={20} /></button>
-            </div>
 
-            {/* Scriptural Context for Verses */}
-            {studyContent.text && (
-              <div className="scripture-focus glass-panel">
-                <p className="font-serif italic">"{studyContent.text}"</p>
-              </div>
-            )}
+                <div className="search-field">
+                  <input
+                    type="text"
+                    value={userInput}
+                    onChange={handleInputChange}
+                    placeholder="Reference a verse, chapter, or topic..."
+                    className="sanctuary-input"
+                    onKeyPress={(e) => e.key === 'Enter' && startStudy()}
+                  />
+                  {hint && (
+                    <div className="type-hint" style={{ color: hint.color }}>
+                      <hint.icon size={14} />
+                      <span>{hint.label}</span>
+                    </div>
+                  )}
+                </div>
 
-            {/* Consultation Chat */}
-            <div className="study-chat-container">
-              <div className="messages-list">
-                {messages.map((msg, idx) => (
-                  <div key={idx} className={`msg-row ${msg.role}`}>
-                    <div className={`msg-bubble ${msg.role === 'companion' ? 'glass-panel font-serif' : 'user-bubble'}`}>
-                      {msg.content}
+                <div className="example-tags">
+                  <span className="tag-label">Inspirations:</span>
+                  {['Romans 8:28', 'Psalm 23', 'Faith', 'God\'s Love', 'Forgiveness'].map(ex => (
+                    <button key={ex} className="tag-btn glass-panel" onClick={() => { setUserInput(ex); setInputType(detectInputType(ex)); }}>{ex}</button>
+                  ))}
+                </div>
+
+                <button
+                  onClick={startStudy}
+                  className="begin-button"
+                  disabled={isLoading || !userInput.trim()}
+                >
+                  {isLoading ? <RefreshCw className="spinning" size={20} /> : <Play size={20} />}
+                  <span>{isLoading ? 'Preparing Sanctuary...' : 'Begin Study'}</span>
+                </button>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="session-view"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="revamped-session"
+            >
+              {/* Minimalist Top Nav */}
+              <div className="session-nav">
+                <div className="session-info">
+                  <div className="study-badge">
+                    {studyContent?.type === 'topic' ? <Search size={14} /> : <BookOpen size={14} />}
+                    <span>{studyContent?.type?.toUpperCase()} STUDY</span>
+                  </div>
+                  <h2 className="session-title font-serif">{studyContent?.reference || studyContent?.topic}</h2>
+                </div>
+                <button className="exit-btn" onClick={() => setMode('select')}>
+                  <X size={20} />
+                  <span>EXIT SANCTUARY</span>
+                </button>
+              </div>
+
+              <div className="study-layout">
+                {/* Left Column: Scripture Insight */}
+                <motion.div
+                  initial={{ x: -20, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                  className="content-sidebar"
+                >
+                  <div className="scripture-card glass-panel">
+                    <div className="card-texture"></div>
+                    <Quote size={24} className="quote-icon" />
+                    {studyContent?.text ? (
+                      <div className="scripture-content">
+                        <p className="scripture-text font-serif italic">"{studyContent.text}"</p>
+                        <p className="scripture-ref">— {studyContent.reference}</p>
+                      </div>
+                    ) : (
+                      <div className="topic-content">
+                        <p className="topic-label">EXPLORING</p>
+                        <h3 className="font-serif italic">"{studyContent?.topic}"</h3>
+                        <p className="topic-desc">Seeking wisdom and scriptural truth regarding this journey of faith.</p>
+                      </div>
+                    )}
+
+                    <div className="study-actions">
+                      <p className="action-label">QUICK CONTEMPLATION</p>
+                      <div className="action-btns">
+                        <button onClick={() => { setUserMessage("Summarize the key theological message here."); }} className="action-pill">
+                          <Sparkles size={14} /> THEOLOGICAL SUMMARY
+                        </button>
+                        <button onClick={() => { setUserMessage("How can I apply this to my life practically?"); }} className="action-pill">
+                          <Heart size={14} /> PRACTICAL APPLICATION
+                        </button>
+                        <button onClick={() => { setUserMessage("Describe the historical context of this scripture."); }} className="action-pill">
+                          <Clock size={14} /> HISTORICAL CONTEXT
+                        </button>
+                      </div>
                     </div>
                   </div>
-                ))}
-                {isLoading && (
-                  <div className="msg-row companion">
-                    <div className="msg-bubble glass-panel typing-indicator">
-                      <span></span><span></span><span></span>
+
+                  {/* Progress Card */}
+                  <div className="progress-mini-card glass-panel">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-muted)' }}>REFLECTION PROGRESS</span>
+                      <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--brand-accent)' }}>{progressPercent}</span>
+                    </div>
+                    <div className="progress-bar">
+                      <motion.div
+                        className="progress-fill"
+                        animate={{ width: progressPercent }}
+                        transition={{ type: 'spring', stiffness: 50 }}
+                      ></motion.div>
                     </div>
                   </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
+                </motion.div>
 
-              <div className="chat-controls">
-                {mode === 'study' && (
-                  <div className="input-bar glass-panel">
-                    <input
-                      type="text"
-                      value={userMessage}
-                      onChange={(e) => setUserMessage(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                      placeholder="Share your thoughts or questions..."
-                      disabled={isLoading}
-                    />
-                    <button onClick={sendMessage} disabled={isLoading || !userMessage.trim()} className="send-btn">
-                      <ArrowRight size={20} />
-                    </button>
+                {/* Right Column: Conversation */}
+                <motion.div
+                  initial={{ x: 20, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.4 }}
+                  className="chat-interface"
+                >
+                  <div className="messages-flow">
+                    <AnimatePresence initial={false}>
+                      {messages.map((msg, idx) => (
+                        <motion.div
+                          key={idx}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={`revamped-msg ${msg.role}`}
+                        >
+                          <div className="msg-avatar">
+                            {msg.role === 'companion' ? (
+                              <div className="aria-avatar"><Sparkles size={16} /></div>
+                            ) : (
+                              <div className="user-avatar">{user?.full_name?.charAt(0) || 'U'}</div>
+                            )}
+                          </div>
+                          <div className="msg-bubble-wrap">
+                            <div className="msg-header">
+                              <span className="msg-author">{msg.role === 'companion' ? 'ARIA' : 'YOU'}</span>
+                            </div>
+                            <div className="msg-content-bubble">
+                              {msg.content}
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                    {isLoading && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="revamped-msg companion loading"
+                      >
+                        <div className="msg-avatar">
+                          <div className="aria-avatar spinning"><RefreshCw size={16} /></div>
+                        </div>
+                        <div className="msg-bubble-wrap">
+                          <div className="msg-content-bubble typing">
+                            <span></span><span></span><span></span>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                    <div ref={messagesEndRef} />
                   </div>
-                )}
 
-                {mode === 'study' && messages.length > 2 && !studyComplete && (
-                  <button onClick={endStudy} className="end-session-btn glass-panel font-serif">
-                    <Heart size={18} color="var(--brand-accent)" />
-                    <span>Complete Reflection & Pray</span>
-                  </button>
-                )}
+                  {/* Fixed bottom input bar */}
+                  <div className="floating-input-area">
+                    <div className="input-outer glass-panel">
+                      <input
+                        type="text"
+                        value={userMessage}
+                        onChange={(e) => setUserMessage(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                        placeholder="Share your reflection or ask Aria..."
+                        disabled={isLoading}
+                      />
+                      <div className="input-btns">
+                        <button onClick={sendMessage} disabled={isLoading || !userMessage.trim()} className="send-circle">
+                          <ArrowRight size={20} />
+                        </button>
+                      </div>
+                    </div>
 
-                {isPrayerMode && !studyComplete && (
-                  <button onClick={finishPrayer} className="prayer-button font-serif">
-                    <Sparkles size={20} />
-                    <span>Receive Closing Prayer</span>
-                  </button>
-                )}
-
-                {studyComplete && (
-                  <button onClick={() => setMode('select')} className="new-start-btn glass-panel font-serif">
-                    <Plus size={18} />
-                    <span>Start New Journey</span>
-                  </button>
-                )}
+                    <div className="footer-controls">
+                      {mode === 'study' && messages.length > 1 && !studyComplete && (
+                        <button onClick={endStudy} className="complete-btn">
+                          <Heart size={16} /> COMPLETE & PRAY
+                        </button>
+                      )}
+                      {isPrayerMode && !studyComplete && (
+                        <button onClick={finishPrayer} className="final-prayer-btn">
+                          <Sparkles size={16} /> RECEIVE CLOSING PRAYER
+                        </button>
+                      )}
+                      {studyComplete && (
+                        <button onClick={() => setMode('select')} className="start-new-btn">
+                          <Plus size={16} /> NEW JOURNEY
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
               </div>
-            </div>
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <style>{`
@@ -337,25 +442,335 @@ const BibleStudy = () => {
           background: var(--bg-main);
           position: relative;
           color: var(--text-main);
+          overflow: hidden;
         }
 
         .study-content-wrapper {
-          max-width: 900px;
+          max-width: 1200px;
           margin: 0 auto;
-          padding: 4rem 1.5rem;
+          padding: 2rem 1.5rem;
+          height: 100vh;
+          display: flex;
+          flex-direction: column;
           position: relative;
           z-index: 10;
         }
 
-        /* Selection View */
-        .selection-view {
+        /* Revamped Session Layout */
+        .revamped-session {
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          gap: 1.5rem;
+        }
+
+        .session-nav {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 0.5rem 0;
+        }
+
+        .study-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
+          background: var(--bg-alt);
+          padding: 0.4rem 0.8rem;
+          border-radius: 20px;
+          color: var(--brand-accent);
+          font-size: 0.65rem;
+          font-weight: 800;
+          letter-spacing: 0.1em;
+          margin-bottom: 0.5rem;
+        }
+
+        .session-title {
+          margin: 0;
+          font-size: 1.5rem;
+          color: var(--text-main);
+        }
+
+        .exit-btn {
+          background: transparent;
+          border: 1px solid var(--border-color);
+          padding: 0.6rem 1.2rem;
+          border-radius: 50px;
+          color: var(--text-secondary);
+          font-size: 0.7rem;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          cursor: pointer;
+        }
+
+        .study-layout {
+          display: grid;
+          grid-template-columns: 380px 1fr;
+          gap: 2rem;
+          flex: 1;
+          height: calc(100vh - 160px);
+          min-height: 0;
+        }
+
+        @media (max-width: 900px) {
+          .study-layout { grid-template-columns: 1fr; }
+          .content-sidebar { display: none; }
+        }
+
+        /* Sidebar Content */
+        .content-sidebar {
+          display: flex;
+          flex-direction: column;
+          gap: 1.5rem;
+          height: 100%;
+          overflow-y: auto;
+        }
+
+        .scripture-card {
+          padding: 2.5rem;
+          border-radius: 32px;
+          position: relative;
+          overflow: hidden;
+          background: var(--bg-card);
+        }
+
+        .card-texture {
+          position: absolute;
+          inset: 0;
+          background: url('https://www.transparenttextures.com/patterns/natural-paper.png');
+          opacity: 0.05;
+          pointer-events: none;
+        }
+
+        .quote-icon {
+          color: var(--brand-accent);
+          margin-bottom: 1.5rem;
+          opacity: 0.4;
+        }
+
+        .scripture-text {
+          font-size: 1.4rem;
+          line-height: 1.5;
+          color: var(--text-main);
+          margin-bottom: 1rem;
+        }
+
+        .scripture-ref {
+          font-size: 0.8rem;
+          font-weight: 700;
+          color: var(--brand-accent);
+          letter-spacing: 0.1em;
+        }
+
+        .topic-label {
+          font-size: 0.6rem;
+          font-weight: 900;
+          letter-spacing: 0.2em;
+          color: var(--text-muted);
+          margin-bottom: 1rem;
+        }
+
+        .topic-desc {
+          font-size: 0.9rem;
+          color: var(--text-secondary);
+          line-height: 1.6;
+          margin-top: 1rem;
+        }
+
+        .study-actions {
+          margin-top: 2.5rem;
+          padding-top: 2rem;
+          border-top: 1px solid var(--border-color);
+        }
+
+        .action-label {
+          font-size: 0.6rem;
+          font-weight: 800;
+          color: var(--text-muted);
+          letter-spacing: 0.1em;
+          margin-bottom: 1rem;
+        }
+
+        .action-btns {
+          display: flex;
+          flex-direction: column;
+          gap: 0.75rem;
+        }
+
+        .action-pill {
+          background: var(--bg-alt);
+          border: 1px solid var(--border-color);
+          padding: 0.8rem 1.2rem;
+          border-radius: 14px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--text-secondary);
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          cursor: pointer;
+          transition: all 0.2s;
+          text-align: left;
+        }
+
+        .action-pill:hover {
+          background: var(--bg-hover);
+          color: var(--text-main);
+          border-color: var(--brand-accent);
+          transform: translateX(5px);
+        }
+
+        .progress-mini-card {
+          padding: 1.5rem;
+          border-radius: 20px;
+        }
+
+        .progress-bar {
+          height: 6px;
+          background: var(--bg-alt);
+          border-radius: 3px;
+        }
+
+        .progress-fill {
+          height: 100%;
+          background: var(--brand-accent);
+          border-radius: 3px;
+          transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Chat Interface */
+        .chat-interface {
+          display: flex;
+          flex-direction: column;
+          background: var(--bg-card);
+          border-radius: 32px;
+          border: 1px solid var(--border-color);
+          position: relative;
+          overflow: hidden;
+        }
+
+        .messages-flow {
+          flex: 1;
+          padding: 2rem;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          gap: 2rem;
+          scroll-behavior: smooth;
+        }
+
+        .messages-flow::-webkit-scrollbar { width: 6px; }
+        .messages-flow::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 10px; }
+
+        .revamped-msg {
+          display: flex;
+          gap: 1rem;
+          max-width: 85%;
+        }
+
+        .revamped-msg.companion { align-self: flex-start; }
+        .revamped-msg.user { align-self: flex-end; flex-direction: row-reverse; }
+
+        .aria-avatar {
+          width: 36px; height: 36px; background: var(--brand-solid); color: white;
+          border-radius: 50%; display: flex; align-items: center; justify-content: center;
+        }
+
+        .user-avatar {
+          width: 36px; height: 36px; background: var(--bg-alt); color: var(--text-main);
+          border-radius: 50%; display: flex; align-items: center; justify-content: center;
+          font-size: 0.8rem; font-weight: 700; border: 1px solid var(--border-color);
+        }
+
+        .msg-bubble-wrap { display: flex; flex-direction: column; gap: 0.4rem; max-width: 100%; }
+        .revamped-msg.user .msg-bubble-wrap { align-items: flex-end; }
+
+        .msg-author { font-size: 0.6rem; font-weight: 800; color: var(--text-muted); letter-spacing: 0.1em; }
+        
+        .msg-content-bubble {
+          padding: 1rem 1.5rem;
+          border-radius: 20px;
+          line-height: 1.6;
+          font-size: 1rem;
+        }
+
+        .companion .msg-content-bubble { 
+          background: var(--bg-alt); 
+          color: var(--text-main); 
+          border-top-left-radius: 4px; 
+          font-family: 'Playfair Display', serif;
+        }
+        .user .msg-content-bubble { 
+          background: var(--brand-solid); 
+          color: white; 
+          border-top-right-radius: 4px; 
+        }
+
+        /* Floating Input */
+        .floating-input-area {
+          padding: 1.5rem 2rem;
+          background: var(--bg-card);
+          border-top: 1px solid var(--border-color);
+        }
+
+        .input-outer {
+          display: flex;
+          align-items: center;
+          padding: 0.5rem 0.5rem 0.5rem 1.5rem;
+          border-radius: 100px;
+        }
+
+        .input-outer input {
+          flex: 1;
+          background: none;
+          border: none;
+          color: var(--text-main);
+          font-size: 1rem;
+          outline: none;
+        }
+
+        .send-circle {
+          width: 44px; height: 44px; background: var(--brand-solid); color: white; 
+          border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+          transition: transform 0.2s;
+        }
+        .send-circle:hover:not(:disabled) { transform: scale(1.05); }
+
+        .footer-controls {
+          display: flex;
+          justify-content: center;
+          gap: 1rem;
+          margin-top: 1rem;
+        }
+
+        .complete-btn, .final-prayer-btn, .start-new-btn {
+          background: var(--bg-alt); border: 1px solid var(--border-color); padding: 0.6rem 1.2rem;
+          border-radius: 50px; color: var(--text-main); font-size: 0.7rem; font-weight: 700;
+          display: flex; align-items: center; gap: 0.6rem; cursor: pointer; transition: all 0.2s;
+        }
+        .final-prayer-btn { background: var(--brand-solid); border: none; color: white; }
+
+        .complete-btn:hover { border-color: var(--brand-accent); color: var(--brand-accent); }
+
+        .typing { display: flex; gap: 0.4rem; padding: 0.75rem 0; }
+        .typing span { width: 6px; height: 6px; background: var(--text-muted); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out; }
+        .typing span:nth-child(2) { animation-delay: 0.2s; }
+        .typing span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+        @keyframes spinning { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .spinning { animation: spinning 1.5s linear infinite; }
+
+        /* Legacy compatibility */
+        .hero-branding {
+          text-align: center;
+          margin-bottom: 3rem;
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 3rem;
-          text-align: center;
         }
-
         .hero-branding h1 { font-size: 3.5rem; margin: 1rem 0; }
         .hero-branding p { font-size: 1.25rem; color: var(--text-secondary); }
         .sparkle-icon { 
@@ -363,113 +778,28 @@ const BibleStudy = () => {
           display: flex; align-items: center; justify-content: center; color: var(--brand-accent);
           margin: 0 auto; box-shadow: var(--shadow-main);
         }
-
         .input-panel {
-          width: 100%;
-          padding: 3rem;
-          border-radius: 40px;
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
+          width: 100%; padding: 3rem; border-radius: 40px; display: flex; flex-direction: column; gap: 1.5rem;
         }
-
         .panel-header { display: flex; align-items: center; justify-content: center; gap: 0.75rem; font-size: 1.25rem; }
-
         .search-field { position: relative; width: 100%; }
         .sanctuary-input {
           width: 100%; padding: 1.5rem 2rem; border-radius: 100px; border: 1px solid var(--border-color);
           background: var(--bg-hover); color: var(--text-main); font-size: 1.1rem; outline: none; transition: border-color 0.2s;
         }
-        .sanctuary-input:focus { border-color: var(--brand-accent); }
-
         .type-hint {
           position: absolute; right: 1.5rem; top: 50%; transform: translateY(-50%);
           display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; font-weight: 600;
           text-transform: uppercase; letter-spacing: 0.05em;
         }
-
         .example-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem; margin-top: 0.5rem; }
         .tag-label { color: var(--text-muted); font-size: 0.9rem; align-self: center; }
         .tag-btn { padding: 0.5rem 1.25rem; border-radius: 100px; border: none; cursor: pointer; font-size: 0.9rem; color: var(--text-secondary); }
-        .tag-btn:hover { color: var(--text-main); background: var(--bg-card); }
-
         .begin-button {
           margin-top: 1rem; padding: 1.5rem; border-radius: 100px; border: none;
           background: var(--brand-solid); color: white; font-size: 1.1rem; font-weight: 700;
           cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 1rem;
-          transition: transform 0.2s;
         }
-        .begin-button:hover { transform: scale(1.02); }
-        .begin-button:disabled { opacity: 0.6; cursor: not-allowed; }
-
-        /* Session View */
-        .session-view { display: flex; flexDirection: column; gap: 1.5rem; }
-
-        .session-banner {
-          display: flex; justify-content: space-between; align-items: center;
-          padding: 1.5rem 2rem; border-radius: 24px;
-        }
-        .banner-info { display: flex; align-items: center; gap: 1.25rem; text-align: left; }
-        .banner-info h2 { margin: 0; font-size: 1.5rem; }
-        .banner-info p { margin: 0; font-size: 0.85rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.1em; }
-
-        .close-session {
-          background: var(--bg-hover); border: none; width: 40px; height: 40px; border-radius: 50%;
-          display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-secondary);
-        }
-
-        .scripture-focus { padding: 2.5rem; border-radius: 32px; text-align: center; }
-        .scripture-focus p { font-size: 1.5rem; line-height: 1.6; margin: 0; color: var(--text-main); }
-
-        .study-chat-container { display: flex; flex-direction: column; gap: 2rem; min-height: 400px; }
-        .messages-list { display: flex; flex-direction: column; gap: 1.5rem; }
-
-        .msg-row { display: flex; width: 100%; }
-        .msg-row.companion { justify-content: flex-start; }
-        .msg-row.user { justify-content: flex-end; }
-
-        .msg-bubble { max-width: 85%; padding: 1.5rem; border-radius: 24px; line-height: 1.6; font-size: 1.1rem; }
-        .msg-row.companion .msg-bubble { border-top-left-radius: 4px; color: var(--text-main); }
-        .msg-row.user .msg-bubble { 
-          background: var(--brand-solid); color: white; border-top-right-radius: 4px;
-          box-shadow: 0 10px 20px rgba(0,0,0,0.1);
-        }
-
-        .chat-controls { display: flex; flex-direction: column; gap: 1rem; align-items: center; margin-top: 1rem; }
-
-        .input-bar {
-          width: 100%; display: flex; align-items: center; padding: 0.5rem 0.5rem 0.5rem 2rem; border-radius: 100px;
-        }
-        .input-bar input {
-          flex: 1; background: none; border: none; outline: none; color: var(--text-main); font-size: 1.1rem;
-        }
-        .send-btn {
-          width: 50px; height: 50px; background: var(--brand-solid); border: none; border-radius: 50%;
-          color: white; cursor: pointer; display: flex; align-items: center; justify-content: center;
-        }
-
-        .end-session-btn, .new-start-btn {
-          padding: 1rem 2rem; border-radius: 100px; border: none; cursor: pointer;
-          display: flex; align-items: center; gap: 0.75rem; font-weight: 600; color: var(--text-main);
-          font-size: 1rem;
-        }
-
-        .prayer-button {
-          background: var(--brand-solid); color: white; border: none; border-radius: 100px;
-          padding: 1.25rem 3rem; font-weight: 700; font-size: 1.1rem; cursor: pointer;
-          display: flex; align-items: center; gap: 1rem; box-shadow: 0 15px 30px rgba(201, 162, 39, 0.2);
-        }
-
-        .typing-indicator { display: flex; gap: 0.4rem; padding: 1rem 1.5rem; }
-        .typing-indicator span { 
-          width: 8px; height: 8px; background: var(--text-muted); border-radius: 50%;
-          animation: bounce 1.4s infinite ease-in-out;
-        }
-        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-
-        @keyframes spinning { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .spinning { animation: spinning 1.5s linear infinite; }
       `}</style>
     </div>
   )

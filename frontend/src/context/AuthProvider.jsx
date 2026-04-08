@@ -61,6 +61,15 @@ export const AuthProvider = ({ children }) => {
     setShowAuthModal(true)
   }, [])
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const userData = await authService.getMe()
+      setUser(userData)
+    } catch (error) {
+      console.error('Failed to refresh user:', error)
+    }
+  }, [])
+
   const value = useMemo(() => ({
     user,
     isAuthenticated,
@@ -70,7 +79,8 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     logout,
-  }), [user, isAuthenticated, isLoading, showAuthModal, login, register, logout])
+    refreshUser
+  }), [user, isAuthenticated, isLoading, showAuthModal, login, register, logout, refreshUser])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
