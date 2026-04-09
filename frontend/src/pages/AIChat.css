@@ -137,6 +137,68 @@
     }
 }
 
+/* Perfecting Tap to Call */
+.voice-circle {
+    position: relative;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    z-index: 1;
+}
+
+.voice-circle:hover {
+    transform: scale(1.05);
+    border-color: var(--brand-accent) !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1) !important;
+}
+
+.voice-circle::before,
+.voice-circle::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 50%;
+    border: 1px solid var(--brand-accent);
+    opacity: 0;
+    z-index: -1;
+}
+
+.voice-circle::before {
+    animation: ripple-effect 3s infinite;
+}
+
+.voice-circle::after {
+    animation: ripple-effect 3s infinite 1.5s;
+}
+
+@keyframes ripple-effect {
+    0% {
+        transform: scale(1);
+        opacity: 0.5;
+    }
+
+    100% {
+        transform: scale(1.5);
+        opacity: 0;
+    }
+}
+
+.voice-circle-inner {
+    width: 56px;
+    height: 56px;
+    background: var(--brand-solid);
+    color: var(--bg-main);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+}
+
+.voice-circle:hover .voice-circle-inner {
+    background: var(--brand-accent);
+    color: var(--brand-solid);
+    transform: rotate(15deg);
+}
+
 .session-card {
     padding: 1.25rem 1rem;
     border-radius: 12px;
@@ -167,6 +229,13 @@
     .desktop-only {
         display: none;
     }
+}
+
+.floating-call-btn:hover {
+    transform: scale(1.1) rotate(5deg);
+    background: var(--brand-accent) !important;
+    color: var(--brand-solid) !important;
+    box-shadow: 0 10px 25px rgba(245, 206, 77, 0.3);
 }
 
 .history-overlay {

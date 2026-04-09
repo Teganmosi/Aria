@@ -860,7 +860,7 @@ async def voice_chat(
 
 class VoiceSessionCreate(BaseModel):
     mode: str = Field(
-        default="general", pattern="^(general|bibleStudy|emotionalSupport|devotion)$"
+        default="general", pattern="^(general|bibleStudy|emotionalSupport|devotion|voiceCall)$"
     )
 
 
@@ -933,13 +933,13 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
     from openai import AsyncOpenAI
 
     try:
-        get_current_user_websocket(websocket)
+        user = get_current_user_websocket(websocket)
     except Exception as e:
         logger.error(f"WebSocket authentication failed: {e}")
         await websocket.close(code=4001, reason="Authentication failed")
         return
 
-    user = get_current_user_websocket(websocket)
+    ai_config = ai_service.AI_CONFIGS.get("voiceCall", ai_service.AI_CONFIGS["general"])
     custom_instructions = _get_user_custom_instructions(user) if user else None
     voice_preference = user.get("aria_voice", "verse") if user else "verse"
     instructions = ai_config["system_prompt"]
@@ -947,7 +947,6 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
         instructions = f"{instructions}\n\nUSER CUSTOMIZATION:\n{custom_instructions}"
 
     await voice_call_manager.connect(websocket, call_id)
-    ai_config = ai_service.AI_CONFIGS.get("voiceCall", ai_service.AI_CONFIGS["general"])
     openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
     voice_call_manager.openai_clients[call_id] = openai_client
 

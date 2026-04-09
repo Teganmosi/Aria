@@ -21,7 +21,10 @@ const handleResponse = async (response) => {
     const error = await response.json().catch(() => ({ error: 'Unknown error' }))
     throw new Error(error.error || `HTTP error! status: ${response.status}`)
   }
-  return response.json()
+  
+  // Handle empty bodies (e.g. 204 No Content)
+  if (response.status === 204) return {}
+  return response.json().catch(() => ({}))
 }
 
 // Auth Service
@@ -134,6 +137,15 @@ export const bibleService = {
     })
     return handleResponse(response)
   },
+
+  createStudyMessage: async (sessionId, role, content) => {
+    const response = await fetch(`${API_BASE_URL}/bible-study/sessions/${sessionId}/messages`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ role, content }),
+    })
+    return handleResponse(response)
+  },
 }
 
 // Emotional Support Service
@@ -160,6 +172,15 @@ export const emotionalSupportService = {
   getSessionMessages: async (sessionId) => {
     const response = await fetch(`${API_BASE_URL}/emotional-support/sessions/${sessionId}/messages`, {
       headers: getHeaders(),
+    })
+    return handleResponse(response)
+  },
+
+  createMessage: async (sessionId, role, content) => {
+    const response = await fetch(`${API_BASE_URL}/emotional-support/sessions/${sessionId}/messages`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ role, content }),
     })
     return handleResponse(response)
   },
@@ -209,6 +230,15 @@ export const devotionService = {
     const response = await fetch(`${API_BASE_URL}/devotion/devotions/${devotionId}/complete`, {
       method: 'PUT',
       headers: getHeaders(),
+    })
+    return handleResponse(response)
+  },
+
+  createMessage: async (devotionId, role, content) => {
+    const response = await fetch(`${API_BASE_URL}/devotion/devotions/${devotionId}/messages`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ role, content }),
     })
     return handleResponse(response)
   },

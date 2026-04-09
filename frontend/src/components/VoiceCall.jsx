@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import PropTypes from 'prop-types'
-import { Mic, PhoneOff, Sparkles, Volume2 } from 'lucide-react'
+import { Mic, PhoneOff, Sparkles, Volume2, ShieldCheck, Headphones } from 'lucide-react'
 import { voiceCallService } from '../services/api'
+import './VoiceCall.css'
 
 const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
     const [status, setStatus] = useState('initializing') // initializing, connecting, active, error
     const [transcript, setTranscript] = useState('')
     const [isSpeaking, setIsSpeaking] = useState(false)
+    const [isMuted, setIsMuted] = useState(false)
     const [error, setError] = useState(null)
+    const [volume, setVolume] = useState(0)
 
     const wsRef = useRef(null)
     const audioContextRef = useRef(null)
@@ -15,15 +18,19 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
     const processorRef = useRef(null)
     const audioQueueRef = useRef([])
     const isPlayingRef = useRef(false)
+    const analyserRef = useRef(null)
+    const animationFrameRef = useRef(null)
 
-    // Status title mapping for flattened logic
-    const statusTitle = useMemo(() => {
-        if (status === 'connecting') return 'Connecting to Aria...'
-        if (status === 'error') return 'Sanctuary Interrupted'
-        return 'Real-time Presence'
-    }, [status])
+    // Status label mapping
+    const statusLabel = useMemo(() => {
+        if (status === 'connecting') return 'Establishing Spiritual Bridge'
+        if (status === 'active') return isSpeaking ? 'Aria is speaking' : 'Listening with care'
+        if (status === 'error') return 'Connection Interrupted'
+        return 'Initializing'
+    }, [status, isSpeaking])
 
     const endCall = () => {
+        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
         if (wsRef.current) wsRef.current.close()
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
         if (audioContextRef.current) audioContextRef.current.close()
@@ -31,9 +38,11 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
         wsRef.current = null
         streamRef.current = null
         audioContextRef.current = null
+        analyserRef.current = null
         setStatus('initializing')
         setTranscript('')
         setError(null)
+        setVolume(0)
     }
 
     useEffect(() => {
@@ -57,12 +66,30 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
             audioContextRef.current = new AudioCtx({ sampleRate: 24000 })
             streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true })
 
+            // Add Analyser for visualization
+            analyserRef.current = audioContextRef.current.createAnalyser()
+            analyserRef.current.fftSize = 256
+            const source = audioContextRef.current.createMediaStreamSource(streamRef.current)
+            source.connect(analyserRef.current)
+
+            // Start animation loop for volume
+            const updateVolume = () => {
+                if (analyserRef.current) {
+                    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
+                    analyserRef.current.getByteFrequencyData(dataArray)
+                    const average = dataArray.reduce((p, c) => p + c, 0) / dataArray.length
+                    setVolume(average)
+                }
+                animationFrameRef.current = requestAnimationFrame(updateVolume)
+            }
+            updateVolume()
+
             // 3. Setup WebSocket
             const wsUrl = voiceCallService.getWebSocketUrl(session_id)
             wsRef.current = new WebSocket(wsUrl)
 
             wsRef.current.onopen = () => {
-                setStatus('connecting')
+                setStatus('active')
                 setupAudioProcessor()
             }
 
@@ -98,16 +125,16 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
         processorRef.current.onaudioprocess = (e) => {
             if (wsRef.current?.readyState === WebSocket.OPEN) {
                 const inputData = e.inputBuffer.getChannelData(0)
-                // Convert Float32 to Int16
                 const pcm16 = new Int16Array(inputData.length)
                 for (let i = 0; i < inputData.length; i++) {
                     const s = Math.max(-1, Math.min(1, inputData[i]))
                     pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
                 }
-                // Encode to base64 and send
-                const base64Arr = new Uint8Array(pcm16.buffer)
-                const base64 = btoa(String.fromCodePoint(...base64Arr))
-                wsRef.current.send(JSON.stringify({ type: 'audio_input', audio: base64 }))
+                if (!isMuted) {
+                    const base64Arr = new Uint8Array(pcm16.buffer)
+                    const base64 = btoa(String.fromCodePoint(...base64Arr))
+                    wsRef.current.send(JSON.stringify({ type: 'audio_input', audio: base64 }))
+                }
             }
         }
 
@@ -162,13 +189,13 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
         switch (data.type) {
             case 'conversation_started':
                 setStatus('active')
-                setTranscript('Aria is listening...')
+                setTranscript('')
                 break
             case 'audio_output':
                 queueAudioResponse(data.audio)
                 break
             case 'transcript':
-                setTranscript(prev => prev + data.text)
+                setTranscript(prev => prev + ' ' + data.text)
                 break
             case 'user_speaking':
                 setIsSpeaking(data.speaking)
@@ -188,48 +215,84 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
     if (!isOpen) return null
 
     return (
-        <div style={{
-            position: 'fixed', inset: 0, zIndex: 1000,
-            background: 'rgba(10, 10, 12, 0.95)',
-            backdropFilter: 'blur(20px)',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            padding: '2rem', textAlign: 'center'
-        }}>
-            <AnimatedPulsingCircle active={status === 'active'} speaking={isSpeaking} />
+        <div className="voice-call-overlay">
+            <div className="voice-call-bg">
+                <div className="voice-call-stars"></div>
+                <div className="voice-call-orb orb-gold"></div>
+                <div className="voice-call-orb orb-blue"></div>
+                <div className="voice-call-orb orb-purple"></div>
+            </div>
 
-            <div style={{ maxWidth: '600px', width: '100%', marginTop: '3rem' }}>
-                <h2 className="font-serif" style={{ color: 'var(--text-main)', fontSize: '2rem', marginBottom: '1rem' }}>
-                    {statusTitle}
-                </h2>
-
-                <div style={{
-                    minHeight: '120px', padding: '1.5rem', borderRadius: '24px',
-                    background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                    color: 'var(--text-secondary)', fontSize: '1.1rem', lineHeight: 1.6,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontStyle: 'italic'
-                }}>
-                    {error || transcript || (status === 'connecting' ? 'Preparing the spiritual bridge...' : 'Aria is listening...')}
+            <div className={`avatar-container ${status === 'active' ? 'active' : ''} ${isSpeaking ? 'speaking' : ''}`}>
+                <div className="avatar-glow"></div>
+                <div className="ring ring-1"></div>
+                <div className="ring ring-2"></div>
+                <div className="ring ring-3"></div>
+                
+                <div className="avatar-image-wrapper">
+                    <img
+                        src="/aria_avatar.png"
+                        alt="Aria"
+                        className={`avatar-image ${status !== 'active' ? 'inactive' : ''}`}
+                    />
                 </div>
             </div>
 
-            <div style={{ marginTop: '4rem', display: 'flex', gap: '2rem' }}>
+            <div className="voice-call-info">
+                <span className="status-label">{statusLabel}</span>
+                <h2 className="call-title">Aria</h2>
+
+                <div className="waveform-container">
+                    {[...Array(12)].map((_, i) => (
+                        <div 
+                            key={i} 
+                            className={`wave-bar ${isSpeaking ? 'speaking' : ''}`}
+                            style={{ 
+                                height: `${Math.max(8, (isSpeaking || volume > 10) ? (Math.random() * volume + 10) : 8)}px`,
+                                animationDelay: `${i * 0.1}s`
+                            }}
+                        ></div>
+                    ))}
+                </div>
+
+                <div className="transcript-panel">
+                    {error ? (
+                        <span style={{ color: '#ef4444' }}>{error}</span>
+                    ) : (
+                        transcript || (status === 'connecting' ? 'Preparing the sanctuary...' : 'I am here, listening...')
+                    )}
+                </div>
+            </div>
+
+            <div className="controls-bar">
                 <button
+                    className={`control-btn btn-mute ${isMuted ? 'muted' : ''}`}
+                    onClick={() => setIsMuted(!isMuted)}
+                    title={isMuted ? "Unmute" : "Mute"}
+                >
+                    {isMuted ? <Mic size={24} strokeWidth={2.5} /> : <Mic size={24} />}
+                </button>
+
+                <button
+                    className="control-btn btn-end"
                     onClick={onClose}
-                    style={{
-                        width: '80px', height: '80px', borderRadius: '50%', background: '#ef4444',
-                        border: 'none', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        cursor: 'pointer', boxShadow: '0 0 30px rgba(239, 68, 68, 0.4)', transition: 'transform 0.2s'
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.1)' }}
-                    onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)' }}
+                    title="End Call"
                 >
                     <PhoneOff size={32} />
                 </button>
+
+                <button
+                    className="control-btn btn-mute"
+                    style={{ opacity: 0.6 }}
+                    title="Settings"
+                >
+                    <Headphones size={24} />
+                </button>
             </div>
 
-            <div style={{ position: 'absolute', bottom: '2rem', color: 'var(--text-muted)', fontSize: '0.8rem', letterSpacing: '0.1em' }}>
-                <Sparkles size={14} style={{ display: 'inline', marginRight: '0.5rem', verticalAlign: 'middle' }} />
-                SACRED VOICE CHANNEL ENCRYPTED
+            <div className="encryption-text">
+                <ShieldCheck size={14} className="sparkle-icon" />
+                <span>End-to-end encrypted spiritual guidance</span>
             </div>
         </div>
     )
@@ -239,59 +302,6 @@ VoiceCall.propTypes = {
     isOpen: PropTypes.bool.isRequired,
     onClose: PropTypes.func.isRequired,
     mode: PropTypes.string
-}
-
-const AnimatedPulsingCircle = ({ active, speaking }) => {
-    return (
-        <div style={{ position: 'relative' }}>
-            {/* Outer Glow */}
-            <div style={{
-                position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-                width: '300px', height: '300px', borderRadius: '50%',
-                background: 'radial-gradient(circle, var(--brand-accent) 0%, transparent 70%)',
-                opacity: active ? 0.3 : 0.1, transition: 'opacity 1s ease'
-            }}></div>
-
-            {/* Main Circle */}
-            <div style={{
-                width: '200px', height: '200px', borderRadius: '50%',
-                background: 'var(--bg-card)', border: '2px solid var(--border-color)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                position: 'relative', zIndex: 1, boxShadow: active ? '0 0 50px rgba(139, 92, 246, 0.2)' : 'none'
-            }}>
-                <div style={{
-                    width: speaking ? '100px' : '80px', height: speaking ? '100px' : '80px',
-                    background: 'var(--brand-solid)', borderRadius: '50%',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--bg-main)',
-                    transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
-                }}>
-                    {speaking ? <Volume2 size={40} /> : <Mic size={40} />}
-                </div>
-            </div>
-
-            {/* Ripple Rings */}
-            {active && [1, 2, 3].map(i => (
-                <div key={i} className="ripple" style={{
-                    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-                    width: '200px', height: '200px', borderRadius: '50%',
-                    border: '1px solid var(--brand-solid)', opacity: 0.5,
-                    animation: `ripple 3s infinite ${i}s`
-                }}></div>
-            ))}
-
-            <style>{`
-        @keyframes ripple {
-          0% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
-          100% { transform: translate(-50%, -50%) scale(2); opacity: 0; }
-        }
-      `}</style>
-        </div>
-    )
-}
-
-AnimatedPulsingCircle.propTypes = {
-    active: PropTypes.bool.isRequired,
-    speaking: PropTypes.bool.isRequired
 }
 
 export default VoiceCall

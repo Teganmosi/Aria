@@ -135,11 +135,11 @@ const AIChat = () => {
             <span className="desktop-only">CUSTOMIZE ARIA</span>
           </button>
           <button
-            onClick={() => setIsCustomizing(true)}
+            onClick={() => setIsVoiceCallOpen(true)}
             style={{ background: 'transparent', border: 'none', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.8rem', letterSpacing: '0.05em', fontWeight: 600, cursor: 'pointer' }}
           >
             <Mic size={16} />
-            <span className="desktop-only">SELECT VOICE ({ariaVoice.toUpperCase()})</span>
+            <span className="desktop-only text-brand">CALL ARIA</span>
           </button>
         </div>
       </header>
@@ -211,7 +211,7 @@ const AIChat = () => {
                   className="voice-circle"
                   onClick={() => setIsVoiceCallOpen(true)}
                   style={{ width: '180px', height: '180px', background: 'var(--bg-card)', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow-main)', gap: '1rem', cursor: 'pointer', border: '1px solid var(--border-color)' }}>
-                  <div style={{ width: '48px', height: '48px', background: 'var(--brand-solid)', color: 'var(--bg-main)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div className="voice-circle-inner">
                     <Mic size={24} />
                   </div>
                   <span style={{ fontSize: '0.65rem', letterSpacing: '0.15em', color: 'var(--text-secondary)', fontWeight: 800 }}>TAP TO CALL</span>
@@ -265,6 +265,33 @@ const AIChat = () => {
                   Aria is reflecting...
                 </div>
               )}
+
+              {/* Floating Call Button for active chats */}
+              <button
+                onClick={() => setIsVoiceCallOpen(true)}
+                className="floating-call-btn"
+                style={{
+                  position: 'fixed',
+                  bottom: '8rem',
+                  right: '2rem',
+                  width: '56px',
+                  height: '56px',
+                  borderRadius: '50%',
+                  background: 'var(--brand-solid)',
+                  color: 'var(--bg-main)',
+                  border: 'none',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: 'var(--shadow-main)',
+                  cursor: 'pointer',
+                  zIndex: 90,
+                  transition: 'all 0.3s ease'
+                }}
+              >
+                <Mic size={24} />
+              </button>
+
               <div ref={messagesEndRef} />
             </div>
           )}

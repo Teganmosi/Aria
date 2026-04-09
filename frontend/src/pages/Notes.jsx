@@ -184,8 +184,14 @@ const Notes = () => {
 
   const handleDelete = async (id) => {
     if (confirm('Delete this insight forever?')) {
-      await notesService.deleteNote(id)
-      fetchNotes()
+      try {
+        await notesService.deleteNote(id)
+        // Update local state immediately for better UX
+        setNotes(prevNotes => prevNotes.filter(n => n.id !== id))
+      } catch (e) {
+        console.error('Failed to delete note:', e)
+        alert('Could not delete the note. Please try again.')
+      }
     }
   }
 

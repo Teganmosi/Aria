@@ -5,7 +5,7 @@ import {
   Settings, Bookmark, ArrowRight, Quote, AlignLeft,
   BookOpen, ChevronRight, CheckCircle2
 } from 'lucide-react'
-import { homeService, authService } from '../services/api'
+import { homeService, authService, notesService } from '../services/api'
 
 import './Home.css'
 
@@ -111,6 +111,7 @@ const Home = () => {
     reference: 'Psalm 23:1',
     insight: 'Take a moment to rest in the assurance that your every need is seen and provided for by a Shepherd who knows you by name.'
   })
+  const [isSaved, setIsSaved] = useState(false)
 
   useEffect(() => {
     // Set dynamic greeting based on time
@@ -146,6 +147,22 @@ const Home = () => {
     if (diffHrs < 1) return 'JUST NOW'
     if (diffHrs < 24) return `${diffHrs}H AGO`
     return `${Math.round(diffHrs / 24)}D AGO`
+  }
+  
+  const handleSaveManna = async () => {
+    if (isSaved) return
+    const mannaText = "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."
+    try {
+      await notesService.createNote({
+        title: "Daily Manna Prayer",
+        content: mannaText,
+        source_type: 'devotion',
+        tags: ['manna', 'prayer', 'daily']
+      })
+      setIsSaved(true)
+    } catch (err) {
+      console.error('Failed to save manna:', err)
+    }
   }
 
   return (
@@ -258,11 +275,27 @@ const Home = () => {
         <h2 style={{ fontSize: '1.8rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", maxWidth: '600px', lineHeight: 1.6, marginBottom: '3rem' }}>
           "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."
         </h2>
-        <button style={{
-          background: 'var(--text-main)', color: 'var(--bg-main)', border: 'none', padding: '1.25rem 3rem', borderRadius: '50px',
-          fontSize: '0.8rem', fontWeight: 800, letterSpacing: '0.1em', cursor: 'pointer', transition: 'all 0.3s'
-        }}>
-          SAVE TO DEVOTIONS
+        <button 
+          onClick={handleSaveManna}
+          disabled={isSaved}
+          style={{
+            background: isSaved ? '#10b981' : 'var(--text-main)', 
+            color: 'var(--bg-main)', 
+            border: 'none', 
+            padding: '1.25rem 3rem', 
+            borderRadius: '50px',
+            fontSize: '0.8rem', 
+            fontWeight: 800, 
+            letterSpacing: '0.1em', 
+            cursor: isSaved ? 'default' : 'pointer', 
+            transition: 'all 0.3s',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          {isSaved ? <CheckCircle2 size={18} /> : null}
+          {isSaved ? 'SAVED TO JOURNAL' : 'SAVE TO DEVOTIONS'}
         </button>
       </div>
     </div>

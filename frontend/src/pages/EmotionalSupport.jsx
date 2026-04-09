@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Heart, Sparkles, Play, ArrowRight, HeartHandshake, Mic, Moon, Sun, Cloud, Send } from 'lucide-react'
 import { AnimatedBackground } from './LandingPage'
-import { aiService } from '../services/api'
+import { aiService, emotionalSupportService } from '../services/api'
 
 const SITUATIONS = [
   { id: 'anxious', label: 'Seeking Peace', description: 'When the world feels loud', icon: <Moon size={24} />, color: '#8b5cf6' },
@@ -18,6 +18,7 @@ const EmotionalSupport = () => {
   const [messages, setMessages] = useState([])
   const [userMessage, setUserMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [sessionId, setSessionId] = useState(null)
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -42,12 +43,27 @@ const EmotionalSupport = () => {
     Use a comforting, empathetic tone. Keep it to 1-2 sentences.`
 
     try {
+      // 1. Create a session in the database
+      const session = await emotionalSupportService.createSession(
+        situationInfo.label,
+        situationInfo.description
+      )
+      setSessionId(session.id)
+
+      // 2. Generate initial AI response
       const response = await aiService.generate(
         [{ role: 'user', content: initialPrompt }],
         'emotionalSupport'
       )
-      setMessages([{ role: 'assistant', content: response.content }])
+      
+      const aiWelcome = response.content
+      setMessages([{ role: 'assistant', content: aiWelcome }])
+
+      // 3. Save the welcome message to the session
+      await emotionalSupportService.createMessage(session.id, 'assistant', aiWelcome)
+
     } catch (err) {
+      console.error('Failed to start emotional support session:', err)
       setMessages([{
         role: 'assistant',
         content: `I'm so glad you're here. 🕊️ You don't have to carry this alone. Please share whatever is on your heart today, I am listening.`
@@ -66,12 +82,27 @@ const EmotionalSupport = () => {
     setIsLoading(true)
 
     try {
+      // 1. Save user message to database if we have a session
+      if (sessionId) {
+        await emotionalSupportService.createMessage(sessionId, 'user', userMsg)
+      }
+
+      // 2. Generate AI response
       const response = await aiService.generate(
         [...messages, { role: 'user', content: userMsg }],
         'emotionalSupport'
       )
-      setMessages(prev => [...prev, { role: 'assistant', content: response.content }])
+      
+      const aiResponse = response.content
+      setMessages(prev => [...prev, { role: 'assistant', content: aiResponse }])
+
+      // 3. Save AI response to database
+      if (sessionId) {
+        await emotionalSupportService.createMessage(sessionId, 'assistant', aiResponse)
+      }
+
     } catch (err) {
+      console.error('Failed to send message:', err)
       setMessages(prev => [...prev, { role: 'assistant', content: "I'm here with you, friend. Please tell me more, I'm listening." }])
     } finally {
       setIsLoading(false)

@@ -32,6 +32,7 @@ const BibleStudy = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [studyComplete, setStudyComplete] = useState(false)
   const [isPrayerMode, setIsPrayerMode] = useState(false)
+  const [sessionId, setSessionId] = useState(null)
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -98,28 +99,38 @@ const BibleStudy = () => {
       setStudyContent(content)
       setMode('study')
 
-      if (content.type === 'verse') {
-        setMessages([{ role: 'companion', content: `Welcome to our study! 🕊️ We're looking at ${content.reference}: "${content.text}". What strikes you most about these words?` }])
-      } else if (content.type === 'chapter') {
-        setMessages([{ role: 'companion', content: `Let's dive into ${content.reference} together. It's a powerful chapter with ${content.verses?.length || 0} verses. Is there a specific part you'd like to reflect on first?` }])
-      } else {
-        try {
-          const topicPrompt = `Welcome the user to a Bible study on "${content.topic}". Be warm, faith-filled, and ask what specifically they'd like to explore in scripture about this topic. 2 sentences maximum.`
-          const token = localStorage.getItem('authToken')
-          const headers = { 'Content-Type': 'application/json' }
-          if (token) headers['Authorization'] = `Bearer ${token}`
-          const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8002/api/v1'}/ai/generate`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({ messages: [{ role: 'user', content: topicPrompt }], mode: 'bibleStudy' })
-          })
-          if (response.ok) {
-            const data = await response.json()
-            setMessages([{ role: 'companion', content: data.content }])
+      // Create session in database
+      try {
+        const session = await bibleService.createStudySession(
+          content.book || content.topic || "Unknown",
+          content.chapter || 0,
+          (content.verse ? [content.verse] : []),
+          content.text || content.topic || ""
+        )
+        setSessionId(session.id)
+
+        let initialMsg = ""
+        if (content.type === 'verse') {
+          initialMsg = `Welcome to our study! 🕊️ We're looking at ${content.reference}: "${content.text}". What strikes you most about these words?`
+        } else if (content.type === 'chapter') {
+          initialMsg = `Let's dive into ${content.reference} together. It's a powerful chapter with ${content.verses?.length || 0} verses. Is there a specific part you'd like to reflect on first?`
+        } else {
+          try {
+            const topicPrompt = `Welcome the user to a Bible study on "${content.topic}". Be warm, faith-filled, and ask what specifically they'd like to explore in scripture about this topic. 2 sentences maximum.`
+            const response = await aiService.generate([{ role: 'user', content: topicPrompt }], 'bibleStudy')
+            initialMsg = response.content
+          } catch {
+            initialMsg = `Hello! I'm so glad we're exploring "${content.topic}" together today. Where should we begin our reflection?`
           }
-        } catch {
-          setMessages([{ role: 'companion', content: `Hello! I'm so glad we're exploring "${content.topic}" together today. Where should we begin our reflection?` }])
         }
+        
+        setMessages([{ role: 'companion', content: initialMsg }])
+        // Save initial message to DB
+        await bibleService.createStudyMessage(session.id, 'assistant', initialMsg)
+
+      } catch (dbErr) {
+        console.error('Failed to create study session in DB', dbErr)
+        // Fallback for UI if DB fails
       }
     } catch (err) {
     } finally {
@@ -136,18 +147,16 @@ const BibleStudy = () => {
     try {
       const conversationContext = messages.map(m => `${m.role === 'user' ? 'User' : 'Companion'}: ${m.content}`).join('\n\n')
       let studyContext = studyContent?.type === 'verse' ? `Studying: "${studyContent.text}" (${studyContent.reference})` : `Studying: ${studyContent?.reference || studyContent?.topic}`
-      const token = localStorage.getItem('authToken')
-      const headers = { 'Content-Type': 'application/json' }
-      if (token) headers['Authorization'] = `Bearer ${token}`
       const prompt = `You are a warm, supportive Bible study companion. ${studyContext}. Previous conversation: ${conversationContext}. User just said: "${userMsg}". Respond as a friend in faith, sharing scriptural depth and invting more reflection. Keep it conversational and warm. No bullet points.`
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8002/api/v1'}/ai/generate`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }], mode: 'bibleStudy' })
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setMessages(prev => [...prev, { role: 'companion', content: data.content }])
+      const response = await aiService.generate([{ role: 'user', content: prompt }], 'bibleStudy')
+      
+      const aiResponse = response.content
+      setMessages(prev => [...prev, { role: 'companion', content: aiResponse }])
+      
+      // Save to DB
+      if (sessionId) {
+        await bibleService.createStudyMessage(sessionId, 'user', userMsg)
+        await bibleService.createStudyMessage(sessionId, 'assistant', aiResponse)
       }
     } catch (err) {
       setMessages(prev => [...prev, { role: 'companion', content: "I'm reflecting on what you said. Could you share a bit more of your heart on this?" }])
@@ -166,20 +175,15 @@ const BibleStudy = () => {
     setStudyComplete(true)
     setIsLoading(true)
     const conversationContext = messages.map(m => `${m.role === 'user' ? 'User' : 'Companion'}: ${m.content}`).join('\n\n')
-    const token = localStorage.getItem('authToken')
-    const headers = { 'Content-Type': 'application/json' }
-    if (token) headers['Authorization'] = `Bearer ${token}`
     const studyContext = studyContent?.reference || studyContent?.topic
     const prayerPrompt = `Write a heartfelt closing prayer for a Bible study session on ${studyContext}. Reference the conversation: ${conversationContext}. 3-4 sentences. End with "Amen."`
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8002/api/v1'}/ai/generate`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ messages: [{ role: 'user', content: prayerPrompt }], mode: 'bibleStudy' })
-      })
-      if (response.ok) {
-        const data = await response.json()
-        setMessages(prev => [...prev, { role: 'companion', content: data.content }])
+      const response = await aiService.generate([{ role: 'user', content: prayerPrompt }], 'bibleStudy')
+      const aiResponse = response.content
+      setMessages(prev => [...prev, { role: 'companion', content: aiResponse }])
+      
+      if (sessionId) {
+        await bibleService.createStudyMessage(sessionId, 'assistant', aiResponse)
       }
     } catch (err) {
       setMessages(prev => [...prev, { role: 'companion', content: `Heavenly Father, thank you for this time of study. Bless the seeds sown today and let them grow in this heart. Amen. 🌿` }])

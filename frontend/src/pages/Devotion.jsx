@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Sun, Sparkles, Heart, RefreshCw, Check, Send } from 'lucide-react'
-import { aiService } from '../services/api'
+import { aiService, devotionService } from '../services/api'
 import { AnimatedBackground } from './LandingPage'
 
 const DURATION_OPTIONS = [
@@ -17,6 +17,7 @@ const Devotion = () => {
   const [messages, setMessages] = useState([])
   const [userMessage, setUserMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [devotionId, setDevotionId] = useState(null)
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -42,14 +43,27 @@ const Devotion = () => {
     Format with beautiful typography in mind. No bullet points.`
 
     try {
+      // 1. Create devotion in database
+      const devotion = await devotionService.scheduleDevotion(
+        new Date().toISOString(),
+        dayPlan
+      )
+      setDevotionId(devotion.id)
+
+      // 2. Generate teaching
       const response = await aiService.generate(
         [{ role: 'user', content: teachingPrompt }],
         'devotion'
       )
-      setMessages([
-        { role: 'assistant', content: `Good morning! ☀️ I've prepared a special reflection for your day.\n\n${response.content}\n\nHow does this speak to your heart as you look ahead to your day?` }
-      ])
+      
+      const aiResponse = `Good morning! ☀️ I've prepared a special reflection for your day.\n\n${response.content}\n\nHow does this speak to your heart as you look ahead to your day?`
+      setMessages([{ role: 'assistant', content: aiResponse }])
+
+      // 3. Save teaching to DB
+      await devotionService.createMessage(devotion.id, 'assistant', aiResponse)
+
     } catch (err) {
+      console.error('Failed to start devotion:', err)
       setMessages([
         { role: 'assistant', content: `Good morning! ☀️ Let's focus on Trusting God's Plan today.\n\n**MAIN VERSE:** Proverbs 3:5-6 — "Trust in the Lord with all your heart..."\n\nWhatever your day holds, know that He is walking beside you. How are you feeling about your plans today?` }
       ])
@@ -66,12 +80,26 @@ const Devotion = () => {
     setIsLoading(true)
 
     try {
+      // 1. Save user message to DB
+      if (devotionId) {
+        await devotionService.createMessage(devotionId, 'user', userMsg)
+      }
+
+      // 2. Generate AI response
       const response = await aiService.generate(
         [...messages, { role: 'user', content: userMsg }],
         'devotion'
       )
+      
       setMessages(prev => [...prev, { role: 'assistant', content: response.content }])
+
+      // 3. Save AI response to DB
+      if (devotionId) {
+        await devotionService.createMessage(devotionId, 'assistant', response.content)
+      }
+
     } catch (err) {
+      console.error('Failed to send message:', err)
       setMessages(prev => [...prev, { role: 'assistant', content: "I'm with you in spirit. Tell me more about what you're thinking." }])
     } finally {
       setIsLoading(false)
@@ -88,7 +116,14 @@ const Devotion = () => {
         'devotion'
       )
       setMessages(prev => [...prev, { role: 'assistant', content: response.content }])
+      
+      if (devotionId) {
+        await devotionService.createMessage(devotionId, 'assistant', response.content)
+        await devotionService.completeDevotion(devotionId)
+      }
+
     } catch (err) {
+      console.error('Failed to end with prayer:', err)
       setMessages(prev => [...prev, { role: 'assistant', content: `Father, bless this day and every task within it. May your peace lead the way. Amen.\n\nGo in grace, friend! 💛` }])
     } finally {
       setIsLoading(false)
