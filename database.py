@@ -45,6 +45,12 @@ class Database:
                 except sqlite3.Error:
                     pass
                 
+                # Add daily_manna to cached_verses if missing
+                try:
+                    cursor.execute("ALTER TABLE cached_verses ADD COLUMN daily_manna TEXT")
+                except sqlite3.Error:
+                    pass
+                
                 # Add custom prompt and personal context to profiles if missing
                 try:
                     cursor.execute("ALTER TABLE profiles ADD COLUMN aria_custom_prompt TEXT")
@@ -715,7 +721,7 @@ class Database:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT verse_text as verse, verse_reference as reference, aria_insight as insight FROM cached_verses WHERE user_id = ? AND cached_date = ?",
+                    "SELECT verse_text as verse, verse_reference as reference, aria_insight as insight, daily_manna FROM cached_verses WHERE user_id = ? AND cached_date = ?",
                     (user_id, date_str)
                 )
                 row = cursor.fetchone()
@@ -731,8 +737,8 @@ class Database:
                 # Delete old caches for this user
                 cursor.execute("DELETE FROM cached_verses WHERE user_id = ?", (user_id,))
                 cursor.execute(
-                    "INSERT INTO cached_verses (user_id, verse_text, verse_reference, aria_insight, cached_date) VALUES (?, ?, ?, ?, ?)",
-                    (user_id, verse_data["verse"], verse_data["reference"], verse_data.get("insight"), date_str)
+                    "INSERT INTO cached_verses (user_id, verse_text, verse_reference, aria_insight, daily_manna, cached_date) VALUES (?, ?, ?, ?, ?, ?)",
+                    (user_id, verse_data["verse"], verse_data["reference"], verse_data.get("insight"), verse_data.get("daily_manna"), date_str)
                 )
                 conn.commit()
                 return True

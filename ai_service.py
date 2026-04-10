@@ -303,6 +303,37 @@ Choose from these themes or similar encouraging verses: peace, comfort, hope, st
                 "insight": "As you wind down, let His peace settle over your heart. It's a gift that remains even when the world is loud."
             }
 
+    def get_daily_manna(self, verse_data: Dict[str, str]) -> str:
+        """Generate a short 'Daily Manna' prayer or reflection based on a verse"""
+        try:
+            prompt = f"""Based on this Bible verse:
+"{verse_data.get('verse')}" ({verse_data.get('reference')})
+
+Please write a short, one-sentence personal prayer or 'Daily Manna' reflection (max 25 words). 
+It should be in the first person ("I", "me", "my") and feel like a humble petition or a statement of faith.
+
+Respond with ONLY the prayer text, no quotes or additional formatting."""
+            
+            messages = [{'role': 'user', 'content': prompt}]
+            
+            response = self._client.chat.completions.create(
+                model='gpt-4o',
+                messages=[
+                    {'role': 'system', 'content': 'You are a compassionate spiritual companion. Keep responses brief and humble.'},
+                    *messages
+                ],
+                temperature=0.7,
+                max_tokens=100
+            )
+            
+            content = response.choices[0].message.content
+            if content:
+                return content.strip().strip('"')
+        except Exception as e:
+            logger.error(f"Error generating daily manna: {e}")
+        
+        # Fallback
+        return "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."
 
 # Singleton instance
 ai_service = AIService()

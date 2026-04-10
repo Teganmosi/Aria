@@ -150,14 +150,14 @@ const Home = () => {
   }
   
   const handleSaveManna = async () => {
-    if (isSaved) return
-    const mannaText = "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."
+    if (isSaved || !verseObj.daily_manna) return
+    const mannaText = verseObj.daily_manna
     try {
       await notesService.createNote({
         title: "Daily Manna Prayer",
         content: mannaText,
         source_type: 'devotion',
-        tags: ['manna', 'prayer', 'daily']
+        tags: ['manna', 'prayer', 'daily', verseObj.reference]
       })
       setIsSaved(true)
     } catch (err) {
@@ -273,7 +273,7 @@ const Home = () => {
         </div>
         <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.2em', marginBottom: '1.5rem' }}>DAILY MANNA</p>
         <h2 style={{ fontSize: '1.8rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", maxWidth: '600px', lineHeight: 1.6, marginBottom: '3rem' }}>
-          "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."
+          "{verseObj.daily_manna || "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."}"
         </h2>
         <button 
           onClick={handleSaveManna}

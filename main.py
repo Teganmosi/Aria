@@ -1248,6 +1248,9 @@ async def get_home_data(current_user: Dict[str, Any] = Depends(get_current_user)
             # Generate personalized verse with insight
             verse = ai_service.get_personalized_verse(recent_moods)
             
+            # Generate Daily Manna based on the verse
+            verse["daily_manna"] = ai_service.get_daily_manna(verse)
+            
             # Save to database cache
             db.save_cached_verse(user_id, today, verse)
     except Exception as e:
@@ -1256,7 +1259,8 @@ async def get_home_data(current_user: Dict[str, Any] = Depends(get_current_user)
         verse = {
             "verse": "For I know the plans I have for you, declares the LORD, plans to prosper you and not to harm you, plans to give you hope and a future.",
             "reference": "Jeremiah 29:11",
-            "insight": "Even in uncertain times, God's promise of a hopeful future stands as an anchor for your soul."
+            "insight": "Even in uncertain times, God's promise of a hopeful future stands as an anchor for your soul.",
+            "daily_manna": "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."
         }
 
     return {
@@ -1290,6 +1294,9 @@ async def get_personalized_verse(
                     recent_moods.append(a.get("title", ""))
 
             verse = ai_service.get_personalized_verse(recent_moods)
+            
+            # Generate Daily Manna based on the verse
+            verse["daily_manna"] = ai_service.get_daily_manna(verse)
             
             # Save to database cache
             db.save_cached_verse(user_id, today, verse)

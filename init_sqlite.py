@@ -190,6 +190,8 @@ def init_db():
         user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
         verse_text TEXT NOT NULL,
         verse_reference TEXT NOT NULL,
+        aria_insight TEXT,
+        daily_manna TEXT,
         cached_date TEXT NOT NULL
     );
     """)
