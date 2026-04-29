@@ -28,9 +28,9 @@ services:
     #     sizeGB: 1
 
   # 2. Frontend Static Site (React/Vite)
-  - type: static_site
+  - type: web
     name: aria-frontend
-    env: static
+    runtime: static
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: ./frontend/dist
     envVars:
