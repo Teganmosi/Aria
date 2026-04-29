@@ -35,16 +35,9 @@ services:
     staticPublishPath: ./frontend/dist
     envVars:
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: aria-backend
-          property: url
-        # Append /api/v1 to the backend URL
+        sync: false # Set this manually to https://aria-backend-xxx.onrender.com/api/v1
       - key: VITE_WS_URL
-        fromService:
-          type: web
-          name: aria-backend
-          property: url
+        sync: false # Set this manually to ws://aria-backend-xxx.onrender.com
     routes:
       - type: rewrite
         source: /*
