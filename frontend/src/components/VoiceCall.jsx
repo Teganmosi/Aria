@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import PropTypes from 'prop-types'
-import { Mic, PhoneOff, Sparkles, Volume2, ShieldCheck, Headphones } from 'lucide-react'
+import { Mic, PhoneOff, ShieldCheck, Headphones } from 'lucide-react'
 import { voiceCallService } from '../services/api'
 import './VoiceCall.css'
 
 const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
     const [status, setStatus] = useState('initializing') // initializing, connecting, active, error
     const [transcript, setTranscript] = useState('')
-    const [isSpeaking, setIsSpeaking] = useState(false)
+    const [isUserSpeaking, setIsUserSpeaking] = useState(false)
+    const [isAriaSpeaking, setIsAriaSpeaking] = useState(false)
     const [isMuted, setIsMuted] = useState(false)
     const [error, setError] = useState(null)
     const [volume, setVolume] = useState(0)
@@ -18,31 +19,42 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
     const processorRef = useRef(null)
     const audioQueueRef = useRef([])
     const isPlayingRef = useRef(false)
+    const currentSourceRef = useRef(null)
     const analyserRef = useRef(null)
     const animationFrameRef = useRef(null)
 
     // Status label mapping
     const statusLabel = useMemo(() => {
         if (status === 'connecting') return 'Establishing Spiritual Bridge'
-        if (status === 'active') return isSpeaking ? 'Aria is speaking' : 'Listening with care'
+        if (status === 'active') {
+            if (isAriaSpeaking) return 'Aria is speaking'
+            if (isUserSpeaking) return 'Listening to you'
+            return 'Aria is listening'
+        }
         if (status === 'error') return 'Connection Interrupted'
         return 'Initializing'
-    }, [status, isSpeaking])
+    }, [status, isAriaSpeaking, isUserSpeaking])
 
     const endCall = () => {
         if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
         if (wsRef.current) wsRef.current.close()
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
         if (audioContextRef.current) audioContextRef.current.close()
+        if (currentSourceRef.current) {
+            try { currentSourceRef.current.stop() } catch (e) { /* ignore */ }
+        }
 
         wsRef.current = null
         streamRef.current = null
         audioContextRef.current = null
         analyserRef.current = null
+        currentSourceRef.current = null
         setStatus('initializing')
         setTranscript('')
         setError(null)
         setVolume(0)
+        setIsUserSpeaking(false)
+        setIsAriaSpeaking(false)
     }
 
     useEffect(() => {
@@ -119,7 +131,7 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
         const context = audioContextRef.current
         const source = context.createMediaStreamSource(streamRef.current)
 
-        // Using ScriptProcessorNode as per legacy fallback strategy
+        // Using ScriptProcessorNode for legacy fallback strategy
         processorRef.current = context.createScriptProcessor(4096, 1, 1)
 
         processorRef.current.onaudioprocess = (e) => {
@@ -131,8 +143,8 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
                     pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
                 }
                 if (!isMuted) {
-                    const base64Arr = new Uint8Array(pcm16.buffer)
-                    const base64 = btoa(String.fromCodePoint(...base64Arr))
+                    // Optimized base64 conversion
+                    const base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(pcm16.buffer)))
                     wsRef.current.send(JSON.stringify({ type: 'audio_input', audio: base64 }))
                 }
             }
@@ -144,11 +156,19 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
 
     const clearAudioQueue = () => {
         audioQueueRef.current = []
+        if (currentSourceRef.current) {
+            try {
+                currentSourceRef.current.stop()
+            } catch (e) { /* ignore */ }
+            currentSourceRef.current = null
+        }
+        isPlayingRef.current = false
     }
 
     const playNextInQueue = () => {
         if (audioQueueRef.current.length === 0) {
             isPlayingRef.current = false
+            currentSourceRef.current = null
             return
         }
 
@@ -163,6 +183,7 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
         source.buffer = buffer
         source.connect(context.destination)
         source.onended = playNextInQueue
+        currentSourceRef.current = source
         source.start()
     }
 
@@ -170,7 +191,7 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
         const binary = atob(base64Audio)
         const bytes = new Uint8Array(binary.length)
         for (let i = 0; i < binary.length; i++) {
-            bytes[i] = binary.codePointAt(i)
+            bytes[i] = binary.charCodeAt(i)
         }
 
         const pcm16 = new Int16Array(bytes.buffer)
@@ -198,10 +219,13 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
                 setTranscript(prev => prev + ' ' + data.text)
                 break
             case 'user_speaking':
-                setIsSpeaking(data.speaking)
+                setIsUserSpeaking(data.speaking)
                 if (data.speaking) {
                     clearAudioQueue()
                 }
+                break
+            case 'aria_speaking':
+                setIsAriaSpeaking(data.speaking)
                 break
             case 'error':
                 setError(data.message)
@@ -223,7 +247,7 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
                 <div className="voice-call-orb orb-purple"></div>
             </div>
 
-            <div className={`avatar-container ${status === 'active' ? 'active' : ''} ${isSpeaking ? 'speaking' : ''}`}>
+            <div className={`avatar-container ${status === 'active' ? 'active' : ''} ${isAriaSpeaking ? 'speaking' : ''}`}>
                 <div className="avatar-glow"></div>
                 <div className="ring ring-1"></div>
                 <div className="ring ring-2"></div>
@@ -246,9 +270,9 @@ const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
                     {[...Array(12)].map((_, i) => (
                         <div 
                             key={i} 
-                            className={`wave-bar ${isSpeaking ? 'speaking' : ''}`}
+                            className={`wave-bar ${(isUserSpeaking || isAriaSpeaking) ? 'speaking' : ''}`}
                             style={{ 
-                                height: `${Math.max(8, (isSpeaking || volume > 10) ? (Math.random() * volume + 10) : 8)}px`,
+                                height: `${Math.max(8, (isUserSpeaking ? volume : (isAriaSpeaking ? (Math.random() * 40 + 20) : 8)))}px`,
                                 animationDelay: `${i * 0.1}s`
                             }}
                         ></div>

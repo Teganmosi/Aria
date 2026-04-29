@@ -95,10 +95,34 @@ const BookCard = ({ book, isSelected, onClick }) => (
 
 const VerseCard = ({ verse }) => {
   const [isSaved, setIsSaved] = useState(false)
+  const [isPlaying, setIsPlaying] = useState(false)
+
+  const handlePlayAudio = () => {
+    if (!('speechSynthesis' in window)) {
+      alert('Text to speech is not supported in your browser.')
+      return
+    }
+
+    if (isPlaying) {
+      window.speechSynthesis.cancel()
+      setIsPlaying(false)
+      return
+    }
+
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(verse.text)
+    utterance.rate = 0.9
+    
+    utterance.onend = () => setIsPlaying(false)
+    utterance.onerror = () => setIsPlaying(false)
+    
+    window.speechSynthesis.speak(utterance)
+    setIsPlaying(true)
+  }
 
   return (
     <div className="verse-card">
-      <span className="verse-number">{verse.verse}</span>
+      <span className="verse-number">{verse.verse || verse.number}</span>
       <p className="verse-text font-serif">{verse.text}</p>
       <div className="verse-actions">
         <button
@@ -110,7 +134,12 @@ const VerseCard = ({ verse }) => {
         <button className="verse-action">
           <Share2 size={16} />
         </button>
-        <button className="verse-action">
+        <button 
+          className={`verse-action ${isPlaying ? 'saved' : ''}`}
+          onClick={handlePlayAudio}
+          title={isPlaying ? "Stop playing" : "Listen to verse"}
+          style={isPlaying ? { color: 'var(--brand-accent)', borderColor: 'var(--brand-accent)' } : {}}
+        >
           <Volume2 size={16} />
         </button>
       </div>

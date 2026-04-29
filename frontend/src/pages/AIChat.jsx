@@ -19,7 +19,7 @@ const AIChat = () => {
   const [isCustomizing, setIsCustomizing] = useState(false)
   const [ariaCustomPrompt, setAriaCustomPrompt] = useState(user?.aria_custom_prompt || '')
   const [ariaPersonalContext, setAriaPersonalContext] = useState(user?.aria_personal_context || '')
-  const [ariaVoice, setAriaVoice] = useState(user?.aria_voice || 'verse')
+  const [ariaVoice, setAriaVoice] = useState(user?.aria_voice || 'sage')
   const [message, setMessage] = useState(null)
 
   const messagesEndRef = useRef(null)
@@ -344,8 +344,7 @@ const AIChat = () => {
                 <option value="coral">Coral (Bright)</option>
                 <option value="echo">Echo (Low-pitched)</option>
                 <option value="sage">Sage (Peaceful)</option>
-                <option value="shimmer">Shimmer (High-pitched)</option>
-                <option value="verse">Verse (Classic Aria)</option>
+                <option value="stella">Stella (Warm)</option>
               </select>
             </div>
 

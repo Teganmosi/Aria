@@ -19,7 +19,7 @@ class ProfileBase(BaseModel):
     spiritual_journey_notes: Optional[str] = None
     aria_custom_prompt: Optional[str] = None
     aria_personal_context: Optional[str] = None
-    aria_voice: str = "verse"
+    aria_voice: str = "sage"
 
 
 class ProfileCreate(ProfileBase):

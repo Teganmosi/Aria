@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  aria:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - API_BIBLE_KEY=${API_BIBLE_KEY}
+      - REDIS_ENABLED=${REDIS_ENABLED:-false}
+      - DEBUG=false
+      - APP_NAME=Aria Production
+    volumes:
+      - ./aria.db:/app/aria.db
+      - ./static:/app/static
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: always
+    # Add security and resource limits for production
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'

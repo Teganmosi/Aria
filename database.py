@@ -1,4 +1,5 @@
 import sqlite3
+import os
 import json
 import logging
 import asyncio
@@ -9,7 +10,7 @@ from config import settings
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-DB_NAME = "aria.db"
+DB_NAME = os.getenv("DATABASE_PATH", "aria.db")
 
 class Database:
     _instance: Optional["Database"] = None
@@ -61,7 +62,7 @@ class Database:
                 except sqlite3.Error:
                     pass
                 try:
-                    cursor.execute("ALTER TABLE profiles ADD COLUMN aria_voice TEXT DEFAULT 'verse'")
+                    cursor.execute("ALTER TABLE profiles ADD COLUMN aria_voice TEXT DEFAULT 'sage'")
                 except sqlite3.Error:
                     pass
                 
@@ -114,6 +115,20 @@ class Database:
                     d[field] = json.loads(d[field])
                 except json.JSONDecodeError:
                     pass
+        
+        # Handle comma-separated integers (specifically for BibleStudySession.verses)
+        if 'verses' in d:
+            if isinstance(d['verses'], str) and d['verses'].strip():
+                try:
+                    d['verses'] = [int(v.strip()) for v in d['verses'].split(',') if v.strip()]
+                except (ValueError, TypeError):
+                    d['verses'] = []
+            elif not d['verses']:
+                d['verses'] = []
+            elif not isinstance(d['verses'], list):
+                # Fallback if somehow it's already a list or other type
+                d['verses'] = []
+
         return d
 
     # ==================== Auth & Profile Operations ====================

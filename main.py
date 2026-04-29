@@ -5,6 +5,8 @@ from fastapi import (
     status,
     WebSocket,
     WebSocketDisconnect,
+    UploadFile,
+    File,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -18,16 +20,39 @@ import json
 
 from config import settings
 from models import (
-    UserRegister, UserResponse, UserLogin, Token,
-    Note, NoteUpdate, NoteCreate,
-    BibleStudySession, BibleStudySessionCreate, BibleStudyMessage, BibleStudyMessageCreate,
-    EmotionalSupportSession, EmotionalSupportSessionCreate, EmotionalSupportMessage, EmotionalSupportMessageCreate,
-    Devotion, DevotionCreate, DevotionSettings, DevotionSettingsUpdate, DevotionSettingsCreate,
-    BibleVerse, JournalEntry, JournalEntryCreate, ScriptureReference,
-    Prayer, PrayerCreate,
-    AIRequest, AIResponse,
-    AIChatSession, AIChatSessionCreate, AIChatMessage,
-    ProfileUpdate, Profile
+    UserRegister,
+    UserResponse,
+    UserLogin,
+    Token,
+    Note,
+    NoteUpdate,
+    NoteCreate,
+    BibleStudySession,
+    BibleStudySessionCreate,
+    BibleStudyMessage,
+    BibleStudyMessageCreate,
+    EmotionalSupportSession,
+    EmotionalSupportSessionCreate,
+    EmotionalSupportMessage,
+    EmotionalSupportMessageCreate,
+    Devotion,
+    DevotionCreate,
+    DevotionSettings,
+    DevotionSettingsUpdate,
+    DevotionSettingsCreate,
+    BibleVerse,
+    JournalEntry,
+    JournalEntryCreate,
+    ScriptureReference,
+    Prayer,
+    PrayerCreate,
+    AIRequest,
+    AIResponse,
+    AIChatSession,
+    AIChatSessionCreate,
+    AIChatMessage,
+    ProfileUpdate,
+    Profile,
 )
 from database import db
 from auth import (
@@ -44,6 +69,7 @@ from auth import (
 from ai_service import ai_service
 import redis
 import os
+import tempfile
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -62,6 +88,7 @@ def _get_user_custom_instructions(user_profile: Dict[str, Any]) -> Optional[str]
     if user_profile.get("aria_personal_context"):
         parts.append(f"User Personal Context: {user_profile['aria_personal_context']}")
     return "\n".join(parts) if parts else None
+
 
 # Initialize Redis client
 redis_client = None
@@ -140,9 +167,7 @@ async def register(user_data: UserRegister):
 @app.post("/api/v1/auth/login", response_model=Dict[str, Any])
 async def login(user_data: UserLogin):
     """Login a user"""
-    result = supabase_auth_login(
-        email=user_data.email, password=user_data.password
-    )
+    result = supabase_auth_login(email=user_data.email, password=user_data.password)
 
     if not result.get("success"):
         raise HTTPException(
@@ -226,7 +251,8 @@ async def create_note(
     note = db.create_note(current_user["id"], note_dict)
     if not note:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create note"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create note",
         )
     return note
 
@@ -259,11 +285,11 @@ async def get_note(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=NOTE_NOT_FOUND
         )
-    
+
     # If it's locked, don't return the content
     if note.get("is_locked"):
         return {**note, "content": "This note is locked."}
-        
+
     return note
 
 
@@ -279,7 +305,7 @@ async def unlock_note(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Password required"
         )
-        
+
     if db.verify_note_password(note_id, current_user["id"], password):
         note = db.get_note(note_id, current_user["id"])
         return note
@@ -297,11 +323,13 @@ async def update_note(
 ):
     """Update a note"""
     update_dict = note_data.model_dump(exclude_unset=True)
-    
+
     # Handle password change/lock status
     if "password" in update_dict:
         if update_dict["password"]:
-            update_dict["password_hash"] = get_password_hash(update_dict.pop("password"))
+            update_dict["password_hash"] = get_password_hash(
+                update_dict.pop("password")
+            )
             update_dict["is_locked"] = True
         else:
             # If password is set to empty string or null, unlock it?
@@ -309,7 +337,7 @@ async def update_note(
             update_dict.pop("password")
             if update_dict.get("is_locked") is False:
                 update_dict["password_hash"] = None
-    
+
     note = db.update_note(note_id, current_user["id"], update_dict)
     if not note:
         raise HTTPException(
@@ -358,12 +386,10 @@ async def create_bible_study_session(
             chapter=session_data.chapter,
             verses=session_data.verses,
             selected_text=session_data.selected_text,
-            custom_instructions=_get_user_custom_instructions(current_user)
+            custom_instructions=_get_user_custom_instructions(current_user),
         )
 
-        db.update_bible_study_session(
-            session["id"], {"ai_explanation": explanation}
-        )
+        db.update_bible_study_session(session["id"], {"ai_explanation": explanation})
         session["ai_explanation"] = explanation
     except Exception as e:
         logger.error(f"Error generating AI explanation: {e}")
@@ -392,9 +418,7 @@ async def get_bible_study_session(
         )
 
     if session["user_id"] != current_user["id"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=ACCESS_DENIED
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ACCESS_DENIED)
 
     return session
 
@@ -412,9 +436,7 @@ async def create_bible_study_message(
     # Verify session ownership
     session = db.get_bible_study_session(session_id)
     if not session or session["user_id"] != current_user["id"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=ACCESS_DENIED
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ACCESS_DENIED)
 
     message_dict = message_data.model_dump()
     message_dict["session_id"] = session_id
@@ -440,9 +462,7 @@ async def get_bible_study_messages(
     # Verify session ownership
     session = db.get_bible_study_session(session_id)
     if not session or session["user_id"] != current_user["id"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=ACCESS_DENIED
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ACCESS_DENIED)
 
     messages = db.get_bible_study_messages(session_id)
     return messages
@@ -470,14 +490,12 @@ async def create_emotional_support_session(
     # Generate AI response
     try:
         response = ai_service.provide_emotional_support(
-            mood=session_data.mood, 
+            mood=session_data.mood,
             situation=session_data.situation_description or "",
-            custom_instructions=_get_user_custom_instructions(current_user)
+            custom_instructions=_get_user_custom_instructions(current_user),
         )
 
-        db.update_emotional_support_session(
-            session["id"], {"ai_response": response}
-        )
+        db.update_emotional_support_session(session["id"], {"ai_response": response})
         session["ai_response"] = response
     except Exception as e:
         logger.error(f"Error generating AI response: {e}")
@@ -509,9 +527,7 @@ async def create_emotional_support_message(
     # Verify session ownership
     session = db.get_emotional_support_session(session_id)
     if not session or session["user_id"] != current_user["id"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=ACCESS_DENIED
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ACCESS_DENIED)
 
     message_dict = message_data.model_dump()
     message_dict["session_id"] = session_id
@@ -537,9 +553,7 @@ async def get_emotional_support_messages(
     # Verify session ownership
     session = db.get_emotional_support_session(session_id)
     if not session or session["user_id"] != current_user["id"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail=ACCESS_DENIED
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ACCESS_DENIED)
 
     messages = db.get_emotional_support_messages(session_id)
     return messages
@@ -742,22 +756,24 @@ async def get_bible_verse(book: str, chapter: int, verse: int):
             }
 
             api_book = book_mapping.get(book.lower(), book.lower().replace(" ", ""))
-            url = f"{BIBLE_API_URL}/{api_book}.{chapter}?translation=kjv"
+            # Use + for spaces and : for verse to directly fetch the single verse
+            formatted_query = f"{api_book}+{chapter}:{verse}"
+            url = f"{BIBLE_API_URL}/{formatted_query}?translation=kjv"
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(url)
                 if response.status_code == 200:
                     data = response.json()
                     verses = data.get("verses", [])
-                    for v in verses:
-                        if v.get("verse") == verse:
-                            return {
-                                "book": book,
-                                "chapter": chapter,
-                                "verse": verse,
-                                "text": v.get("text", ""),
-                                "version": "KJV",
-                            }
+                    if verses:
+                        v = verses[0]
+                        return {
+                            "book": book,
+                            "chapter": chapter,
+                            "verse": verse,
+                            "text": v.get("text", "").strip(),
+                            "version": "KJV",
+                        }
         except Exception as e:
             logger.error(f"Error fetching verse from API: {e}")
 
@@ -798,14 +814,11 @@ async def generate_ai_response(
     """Generate AI response for any mode"""
     try:
         content = ai_service.generate_response(
-            request.messages, 
+            request.messages,
             request.mode,
-            custom_instructions=_get_user_custom_instructions(current_user)
+            custom_instructions=_get_user_custom_instructions(current_user),
         )
-        return AIResponse(
-            content=content, 
-            mode=request.mode
-        )
+        return AIResponse(content=content, mode=request.mode)
     except Exception as e:
         logger.error(f"Error generating AI response: {e}")
         raise HTTPException(
@@ -822,9 +835,9 @@ async def chat(
     try:
         # Use the requested mode for chat
         content = ai_service.generate_response(
-            request.messages, 
+            request.messages,
             request.mode,
-            custom_instructions=_get_user_custom_instructions(current_user)
+            custom_instructions=_get_user_custom_instructions(current_user),
         )
         return ChatResponse(
             content=content, role="assistant", timestamp=datetime.now(timezone.utc)
@@ -839,17 +852,57 @@ async def chat(
 
 @app.post("/api/v1/ai/voice-chat")
 async def voice_chat(
-    audio: bytes, current_user: Dict[str, Any] = Depends(get_current_user)
+    audio_file: UploadFile = File(...),
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Voice chat endpoint - transcribes audio and returns AI response"""
     try:
-        # For now, return a placeholder response
-        # In production, this would use OpenAI's Whisper for transcription
-        return {
-            "transcription": "Voice message received",
-            "response": "I'm here to listen and support you. How can I help you today?",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
+        from openai import OpenAI
+
+        # Validate file type
+        if not audio_file.content_type.startswith("audio/"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid file type. Please upload an audio file.",
+            )
+
+        # Read audio content
+        audio_content = await audio_file.read()
+
+        # Save to temporary file for OpenAI API
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
+            temp_file.write(audio_content)
+            temp_file_path = temp_file.name
+
+        try:
+            # Initialize OpenAI client
+            client = OpenAI(api_key=settings.openai_api_key)
+
+            # Transcribe audio using Whisper
+            with open(temp_file_path, "rb") as audio_file_obj:
+                transcription_response = client.audio.transcriptions.create(
+                    model="whisper-1", file=audio_file_obj, response_format="text"
+                )
+
+            transcription = transcription_response.strip()
+
+            # Generate AI response based on transcription
+            custom_instructions = _get_user_custom_instructions(current_user)
+            response = ai_service.generate_response(
+                messages=[{"role": "user", "content": transcription}],
+                mode="general",
+                custom_instructions=custom_instructions,
+            )
+
+            return {
+                "transcription": transcription,
+                "response": response,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        finally:
+            # Clean up temporary file
+            os.unlink(temp_file_path)
+
     except Exception as e:
         logger.error(f"Error in voice chat: {e}")
         raise HTTPException(
@@ -860,7 +913,8 @@ async def voice_chat(
 
 class VoiceSessionCreate(BaseModel):
     mode: str = Field(
-        default="general", pattern="^(general|bibleStudy|emotionalSupport|devotion|voiceCall)$"
+        default="general",
+        pattern="^(general|bibleStudy|emotionalSupport|devotion|voiceCall)$",
     )
 
 
@@ -951,35 +1005,67 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
     voice_call_manager.openai_clients[call_id] = openai_client
 
     try:
-        async with openai_client.beta.realtime.connect(model="gpt-4o-realtime-preview-2024-10-01") as session:
-            await session.session.update(session={
-                "modalities": ["text", "audio"],
-                "instructions": instructions,
-                "voice": voice_preference,
-                "input_audio_format": "pcm16",
-                "output_audio_format": "pcm16",
-                "turn_detection": {"type": "server_vad"},
-            })
+        async with openai_client.beta.realtime.connect(
+            model=ai_config['model']
+        ) as session:
+            await session.session.update(
+                session={
+                    "modalities": ["text", "audio"],
+                    "instructions": instructions,
+                    "voice": voice_preference,
+                    "input_audio_format": "pcm16",
+                    "output_audio_format": "pcm16",
+                    "turn_detection": {"type": "server_vad"},
+                }
+            )
 
-            await voice_call_manager.send_message(call_id, {"type": "conversation_started", "message": "Connected to Aria."})
-            frontend_task = asyncio.create_task(handle_voice_frontend(websocket, session, call_id))
+            await voice_call_manager.send_message(
+                call_id,
+                {"type": "conversation_started", "message": "Connected to Aria."},
+            )
+            frontend_task = asyncio.create_task(
+                handle_voice_frontend(websocket, session, call_id)
+            )
 
             async for event in session:
                 if event.type == "response.audio.delta":
-                    await voice_call_manager.send_message(call_id, {"type": "audio_output", "audio": event.delta})
+                    await voice_call_manager.send_message(
+                        call_id, {"type": "audio_output", "audio": event.delta}
+                    )
+                elif event.type == "response.created":
+                    await voice_call_manager.send_message(
+                        call_id, {"type": "aria_speaking", "speaking": True}
+                    )
+                elif event.type == "response.done":
+                    await voice_call_manager.send_message(
+                        call_id, {"type": "aria_speaking", "speaking": False}
+                    )
                 elif event.type == "response.audio_transcript.delta":
-                    await voice_call_manager.send_message(call_id, {"type": "transcript", "text": event.delta, "role": "assistant"})
+                    await voice_call_manager.send_message(
+                        call_id,
+                        {
+                            "type": "transcript",
+                            "text": event.delta,
+                            "role": "assistant",
+                        },
+                    )
                 elif event.type == "input_audio_buffer.speech_started":
-                    await voice_call_manager.send_message(call_id, {"type": "user_speaking", "speaking": True})
+                    await voice_call_manager.send_message(
+                        call_id, {"type": "user_speaking", "speaking": True}
+                    )
                 elif event.type == "input_audio_buffer.speech_stopped":
-                    await voice_call_manager.send_message(call_id, {"type": "user_speaking", "speaking": False})
+                    await voice_call_manager.send_message(
+                        call_id, {"type": "user_speaking", "speaking": False}
+                    )
                 elif event.type == "error":
                     logger.error(f"OpenAI error: {event.error}")
-            
+
             frontend_task.cancel()
     except Exception as e:
         logger.error(f"Voice call error: {e}")
-        await voice_call_manager.send_message(call_id, {"type": "error", "message": "Connection error."})
+        await voice_call_manager.send_message(
+            call_id, {"type": "error", "message": "Connection error."}
+        )
     finally:
         voice_call_manager.disconnect(call_id)
         if websocket.client_state.name != "DISCONNECTED":
@@ -1015,24 +1101,38 @@ async def process_bible_study_ai(session_id: str):
     """Helper to process AI interaction for Bible study"""
     try:
         messages = db.get_bible_study_messages(session_id)
-        conversation_history = [{"role": m["role"], "content": m["content"]} for m in reversed(messages)]
+        conversation_history = [
+            {"role": m["role"], "content": m["content"]} for m in reversed(messages)
+        ]
         # Use reversed messages to get history in correct order if get_bible_study_messages returns chronological
-        
+
         session = db.get_bible_study_session(session_id)
         if session:
             user_profile = db.get_profile(session["user_id"])
-            custom_instructions = _get_user_custom_instructions(user_profile) if user_profile else None
-            
-            response = ai_service.explain_bible_verse(
-                book=session["book"], chapter=session["chapter"], verses=session["verses"],
-                selected_text=session["selected_text"], conversation_history=conversation_history,
-                custom_instructions=custom_instructions
+            custom_instructions = (
+                _get_user_custom_instructions(user_profile) if user_profile else None
             )
-            db.create_bible_study_message({"session_id": session_id, "role": "assistant", "content": response})
-            await manager.send_message(session_id, {"type": "message", "role": "assistant", "content": response})
+
+            response = ai_service.explain_bible_verse(
+                book=session["book"],
+                chapter=session["chapter"],
+                verses=session["verses"],
+                selected_text=session["selected_text"],
+                conversation_history=conversation_history,
+                custom_instructions=custom_instructions,
+            )
+            db.create_bible_study_message(
+                {"session_id": session_id, "role": "assistant", "content": response}
+            )
+            await manager.send_message(
+                session_id,
+                {"type": "message", "role": "assistant", "content": response},
+            )
     except Exception as e:
         logger.error(f"Error in Bible study AI: {e}")
-        await manager.send_message(session_id, {"type": "error", "message": FAILED_TO_GENERATE_RESPONSE})
+        await manager.send_message(
+            session_id, {"type": "error", "message": FAILED_TO_GENERATE_RESPONSE}
+        )
 
 
 @app.websocket("/ws/bible-study/{session_id}")
@@ -1042,16 +1142,22 @@ async def websocket_bible_study(websocket: WebSocket, session_id: str):
         user = get_current_user_websocket(websocket)
         session = db.get_bible_study_session(session_id)
         if not session or session.get("user_id") != user.get("id"):
-            await websocket.close(code=4003, reason="Access denied: Session ownership failed")
+            await websocket.close(
+                code=4003, reason="Access denied: Session ownership failed"
+            )
             return
 
         await manager.connect(websocket, session_id)
         while True:
             data = await websocket.receive_json()
             if data.get("type") == "message":
-                db.create_bible_study_message({
-                    "session_id": session_id, "role": data.get("role", "user"), "content": data.get("content", "")
-                })
+                db.create_bible_study_message(
+                    {
+                        "session_id": session_id,
+                        "role": data.get("role", "user"),
+                        "content": data.get("content", ""),
+                    }
+                )
                 if data.get("role") == "user":
                     await process_bible_study_ai(session_id)
     except WebSocketDisconnect:
@@ -1064,21 +1170,32 @@ async def process_emotional_support_ai(session_id: str):
     """Helper to process AI interaction for emotional support"""
     try:
         messages = db.get_emotional_support_messages(session_id)
-        conversation_history = [{"role": m["role"], "content": m["content"]} for m in reversed(messages)]
-        
+        conversation_history = [
+            {"role": m["role"], "content": m["content"]} for m in reversed(messages)
+        ]
+
         session = db.get_emotional_support_session(session_id)
         user_profile = db.get_profile(session["user_id"]) if session else None
-        custom_instructions = _get_user_custom_instructions(user_profile) if user_profile else None
-        
-        response = ai_service.generate_response(
-            conversation_history, "emotionalSupport",
-            custom_instructions=custom_instructions
+        custom_instructions = (
+            _get_user_custom_instructions(user_profile) if user_profile else None
         )
-        db.create_emotional_support_message({"session_id": session_id, "role": "assistant", "content": response})
-        await manager.send_message(session_id, {"type": "message", "role": "assistant", "content": response})
+
+        response = ai_service.generate_response(
+            conversation_history,
+            "emotionalSupport",
+            custom_instructions=custom_instructions,
+        )
+        db.create_emotional_support_message(
+            {"session_id": session_id, "role": "assistant", "content": response}
+        )
+        await manager.send_message(
+            session_id, {"type": "message", "role": "assistant", "content": response}
+        )
     except Exception as e:
         logger.error(f"Error in emotional support AI: {e}")
-        await manager.send_message(session_id, {"type": "error", "message": FAILED_TO_GENERATE_RESPONSE})
+        await manager.send_message(
+            session_id, {"type": "error", "message": FAILED_TO_GENERATE_RESPONSE}
+        )
 
 
 @app.websocket("/ws/emotional-support/{session_id}")
@@ -1089,16 +1206,22 @@ async def websocket_emotional_support(websocket: WebSocket, session_id: str):
         sessions = db.get_emotional_support_sessions(user.get("id"))
         session = next((s for s in sessions if s.get("id") == session_id), None)
         if not session:
-            await websocket.close(code=4003, reason="Access denied: Session ownership failed")
+            await websocket.close(
+                code=4003, reason="Access denied: Session ownership failed"
+            )
             return
 
         await manager.connect(websocket, session_id)
         while True:
             data = await websocket.receive_json()
             if data.get("type") == "message":
-                db.create_emotional_support_message({
-                    "session_id": session_id, "role": data.get("role", "user"), "content": data.get("content", "")
-                })
+                db.create_emotional_support_message(
+                    {
+                        "session_id": session_id,
+                        "role": data.get("role", "user"),
+                        "content": data.get("content", ""),
+                    }
+                )
                 if data.get("role") == "user":
                     await process_emotional_support_ai(session_id)
     except WebSocketDisconnect:
@@ -1109,6 +1232,7 @@ async def websocket_emotional_support(websocket: WebSocket, session_id: str):
 
 # ==================== AI Chat Endpoints ====================
 
+
 @app.get("/api/v1/ai-chat/sessions", response_model=List[AIChatSession])
 async def get_chat_sessions(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get all chat sessions for the current user"""
@@ -1118,7 +1242,7 @@ async def get_chat_sessions(current_user: Dict[str, Any] = Depends(get_current_u
 @app.post("/api/v1/ai-chat/sessions", response_model=AIChatSession)
 async def create_chat_session(
     session_data: AIChatSessionCreate,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Create a new chat session"""
     session = db.create_chat_session(current_user["id"], session_data.title)
@@ -1127,10 +1251,11 @@ async def create_chat_session(
     return session
 
 
-@app.get("/api/v1/ai-chat/sessions/{session_id}/messages", response_model=List[AIChatMessage])
+@app.get(
+    "/api/v1/ai-chat/sessions/{session_id}/messages", response_model=List[AIChatMessage]
+)
 async def get_chat_messages(
-    session_id: str,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Get all messages for a chat session"""
     return db.get_chat_session_messages(session_id)
@@ -1140,53 +1265,57 @@ async def get_chat_messages(
 async def chat_with_aria(
     request: AIRequest,
     session_id: Optional[str] = None,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Chat with Aria and save to history"""
     try:
         user_id = current_user["id"]
-        
+
         # If no session_id provided, create a new one
         if not session_id:
             # Try to extract a title from the first message
-            title = request.messages[-1].content[:30] if request.messages else "New Conversation"
+            title = (
+                request.messages[-1].content[:30]
+                if request.messages
+                else "New Conversation"
+            )
             session = db.create_chat_session(user_id, title)
             if not session:
                 raise HTTPException(status_code=500, detail="Failed to create session")
             session_id = session["id"]
-        
+
         # Save user message
         user_message = request.messages[-1].content if request.messages else ""
         if user_message:
-            db.create_chat_message({
-                "session_id": session_id,
-                "role": "user",
-                "content": user_message
-            })
-        
+            db.create_chat_message(
+                {"session_id": session_id, "role": "user", "content": user_message}
+            )
+
         # Get custom instructions
         profile = db.get_profile(user_id)
-        custom_instructions = _get_user_custom_instructions(profile) if profile else None
-        
+        custom_instructions = (
+            _get_user_custom_instructions(profile) if profile else None
+        )
+
         # Prepare full context for AI
-        full_context = [{"role": m.role, "content": m.content} for m in request.messages]
-        
+        full_context = [
+            {"role": m.role, "content": m.content} for m in request.messages
+        ]
+
         # Generate response
         response_content = ai_service.generate_response(
             messages=full_context,
             mode=request.mode or "general",
-            custom_instructions=custom_instructions
+            custom_instructions=custom_instructions,
         )
-        
+
         # Save assistant message
-        db.create_chat_message({
-            "session_id": session_id,
-            "role": "assistant",
-            "content": response_content
-        })
-        
+        db.create_chat_message(
+            {"session_id": session_id, "role": "assistant", "content": response_content}
+        )
+
         return AIResponse(content=response_content, mode=request.mode or "general")
-        
+
     except Exception as e:
         logger.error(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1247,10 +1376,10 @@ async def get_home_data(current_user: Dict[str, Any] = Depends(get_current_user)
 
             # Generate personalized verse with insight
             verse = ai_service.get_personalized_verse(recent_moods)
-            
+
             # Generate Daily Manna based on the verse
             verse["daily_manna"] = ai_service.get_daily_manna(verse)
-            
+
             # Save to database cache
             db.save_cached_verse(user_id, today, verse)
     except Exception as e:
@@ -1260,7 +1389,7 @@ async def get_home_data(current_user: Dict[str, Any] = Depends(get_current_user)
             "verse": "For I know the plans I have for you, declares the LORD, plans to prosper you and not to harm you, plans to give you hope and a future.",
             "reference": "Jeremiah 29:11",
             "insight": "Even in uncertain times, God's promise of a hopeful future stands as an anchor for your soul.",
-            "daily_manna": "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."
+            "daily_manna": "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead.",
         }
 
     return {
@@ -1294,10 +1423,10 @@ async def get_personalized_verse(
                     recent_moods.append(a.get("title", ""))
 
             verse = ai_service.get_personalized_verse(recent_moods)
-            
+
             # Generate Daily Manna based on the verse
             verse["daily_manna"] = ai_service.get_daily_manna(verse)
-            
+
             # Save to database cache
             db.save_cached_verse(user_id, today, verse)
 
@@ -1310,15 +1439,14 @@ async def get_personalized_verse(
             "verse": {
                 "verse": "The LORD is my shepherd; I shall not want.",
                 "reference": "Psalm 23:1",
-                "insight": "When the day feels overwhelming, find rest in the truth that you are fully seen and perfectly cared for by your Shepherd."
+                "insight": "When the day feels overwhelming, find rest in the truth that you are fully seen and perfectly cared for by your Shepherd.",
             },
         }
 
 
 @app.get("/api/v1/home/activity")
 async def get_home_activity(
-    limit: int = 5,
-    current_user: Dict[str, Any] = Depends(get_current_user)
+    limit: int = 5, current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Get user's recent activity for the home page or full list"""
     try:
@@ -1330,6 +1458,7 @@ async def get_home_activity(
 
 
 # ==================== Notes Endpoints ====================
+
 
 @app.get("/api/v1/notes", response_model=List[Note])
 async def get_notes(

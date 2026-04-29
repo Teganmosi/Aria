@@ -61,7 +61,6 @@ const LandingPage = () => {
         <div style={{ display: 'flex', gap: '4rem', fontSize: '1.05rem', color: 'var(--text-secondary)' }}>
           <a href="#product" style={{ color: 'var(--text-main)', fontWeight: 500 }}>The Product</a>
           <a href="#features">Features</a>
-          <a href="#pricing">Pricing</a>
           <a href="#about">About Us</a>
         </div>
 
@@ -155,7 +154,7 @@ const LandingPage = () => {
           <div style={{ background: 'var(--brand-solid)', borderRadius: '32px', padding: '4rem', color: 'var(--text-inverse)', display: 'flex', flexDirection: 'column' }}>
             <BookOpen size={36} style={{ marginBottom: '2.5rem' }} color="var(--brand-accent)" />
             <h3 className="font-serif" style={{ fontSize: '2.5rem', marginBottom: '1.5rem' }}>In-Depth Bible Study</h3>
-            <p style={{ color: 'rgba(255,255,255,0.7)', marginBottom: '4rem', lineHeight: 1.6, fontSize: '1.1rem' }}>Select any verse to receive AI-powered explanations. Uncover original context, theology, and historical background instantly.</p>
+            <p style={{ color: 'inherit', opacity: 0.7, marginBottom: '4rem', lineHeight: 1.6, fontSize: '1.1rem' }}>Select any verse to receive AI-powered explanations. Uncover original context, theology, and historical background instantly.</p>
             <button
               style={{
                 marginTop: 'auto', display: 'flex', alignItems: 'center', gap: '0.75rem',
@@ -186,40 +185,6 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* Pricing Section */}
-      <section id="pricing" style={{ maxWidth: '1200px', margin: '0 auto', padding: '4rem 4rem 10rem', position: 'relative', zIndex: 10, scrollMarginTop: '6rem' }}>
-        <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
-          <h2 className="font-serif" style={{ fontSize: '3.5rem', color: 'var(--text-main)', marginBottom: '1rem' }}>Access the Sanctuary</h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '1.2rem', maxWidth: '600px', margin: '0 auto' }}>Choose the path that best supports your spiritual journey today.</p>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3rem', alignItems: 'center' }}>
-          <div style={{ background: 'var(--bg-card)', borderRadius: '24px', padding: '3rem', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-main)' }}>
-            <h3 style={{ fontSize: '1.5rem', color: 'var(--text-main)', marginBottom: '0.5rem' }}>Seeker</h3>
-            <div style={{ fontSize: '3rem', color: 'var(--text-main)', fontWeight: 700, marginBottom: '2rem', fontFamily: "'Playfair Display', serif" }}>Free</div>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 3rem 0', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text-secondary)' }}><CheckCircle2 size={20} color="var(--brand-accent-hover)" /> 1 Daily Devotional</li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text-secondary)' }}><CheckCircle2 size={20} color="var(--brand-accent-hover)" /> Standard AI Responses</li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text-secondary)' }}><CheckCircle2 size={20} color="var(--brand-accent-hover)" /> Bible Study Search</li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem', color: 'var(--text-muted)' }}><CheckCircle2 size={20} color="var(--border-color)" /> <del>Real-time Voice Calls</del></li>
-            </ul>
-            <button onClick={() => navigate('/register')} style={{ width: '100%', background: 'var(--input-bg)', color: 'var(--text-main)', padding: '1rem', borderRadius: '12px', border: 'none', fontSize: '1rem', fontWeight: 600, cursor: 'pointer' }}>Get Started</button>
-          </div>
-
-          <div style={{ background: 'var(--brand-solid)', borderRadius: '24px', padding: '4rem 3rem', color: 'var(--text-inverse)', position: 'relative', overflow: 'hidden', transform: 'scale(1.05)' }}>
-            <div style={{ position: 'absolute', top: '2rem', right: '2rem', background: 'var(--brand-accent)', color: '#0B192C', padding: '0.25rem 1rem', borderRadius: '2rem', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recommended</div>
-            <h3 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Sanctuary Pass</h3>
-            <div style={{ fontSize: '3rem', fontWeight: 700, marginBottom: '2rem', fontFamily: "'Playfair Display', serif" }}>$12<span style={{ fontSize: '1.25rem', fontWeight: 400, color: 'rgba(255,255,255,0.7)' }}>/mo</span></div>
-            <ul style={{ listStyle: 'none', padding: 0, margin: '0 0 3rem 0', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}><CheckCircle2 size={20} color="var(--brand-accent)" /> Unlimited Devotionals</li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}><CheckCircle2 size={20} color="var(--brand-accent)" /> Deep Theological Context</li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}><CheckCircle2 size={20} color="var(--brand-accent)" /> Advanced Bible Study Tools</li>
-              <li style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}><CheckCircle2 size={20} color="var(--brand-accent)" /> Real-time Voice Chat</li>
-            </ul>
-            <button onClick={() => navigate('/register')} style={{ width: '100%', background: 'var(--brand-accent)', color: '#0B192C', padding: '1rem', borderRadius: '12px', border: 'none', fontSize: '1rem', fontWeight: 600, cursor: 'pointer', transition: 'filter 0.2s' }}>Upgrade to Premium</button>
-          </div>
-        </div>
-      </section>
 
       {/* About Us Section */}
       <section id="about" style={{ background: 'var(--bg-card)', padding: '8rem 4rem', position: 'relative', zIndex: 10, borderTop: '1px solid var(--border-color)' }}>
@@ -227,7 +192,7 @@ const LandingPage = () => {
           <Sparkles size={48} color="var(--brand-accent-hover)" style={{ marginBottom: '2rem' }} />
           <h2 className="font-serif" style={{ fontSize: '3.5rem', color: 'var(--text-main)', marginBottom: '2rem' }}>Our Mission</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '1.25rem', lineHeight: 1.8, marginBottom: '2rem' }}>
-            We developed Aria with a profound belief: Technology should not distance us from our faith; it should bring us closer to it. In a world full of noise, Aria was built to be a quiet place—a digital sanctuary.
+            We developed Aria with a profound belief: Technology should not distance us from our faith; it should bring us closer to it. In a world full of noise, Aria was built to be a quiet place—a digital companion.
           </p>
           <p style={{ color: 'var(--text-secondary)', fontSize: '1.25rem', lineHeight: 1.8 }}>
             Our team of technologists and theologians carefully crafted every interaction to be empathetic, biblically accurate, and deeply reflective. We invite you to join us in making spiritual growth more accessible than ever before.
@@ -240,7 +205,7 @@ const LandingPage = () => {
       <footer style={{ padding: '4rem 6rem', display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border-color)', flexWrap: 'wrap', position: 'relative', zIndex: 10, background: 'var(--bg-main)' }}>
         <div style={{ width: '300px' }}>
           <span className="font-serif" style={{ fontStyle: 'italic', fontSize: '1.75rem', fontWeight: 700, color: 'var(--text-main)', display: 'block', marginBottom: '1rem' }}>Aria</span>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.6 }}>Crafting a digital sanctuary where faith meets modern intelligence. Designed to nourish the soul and enlighten the mind.</p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.6 }}>Crafting a digital companion where faith meets modern intelligence. Designed to nourish the soul and enlighten the mind.</p>
         </div>
 
         <div style={{ display: 'flex', gap: '6rem' }}>
@@ -257,7 +222,6 @@ const LandingPage = () => {
             <h5 style={{ fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-main)', marginBottom: '1.5rem' }}>Company</h5>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
               <a href="#about">About Us</a>
-              <a href="#pricing">Pricing</a>
               <button
                 onClick={() => { }}
                 style={{ background: 'none', border: 'none', padding: 0, color: 'inherit', fontSize: 'inherit', textAlign: 'left', cursor: 'pointer' }}

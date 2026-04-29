@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
+import { useLocation } from 'react-router-dom'
 import { BookOpen, Sparkles, MessageCircle, Play, RefreshCw, Plus, Clock, ArrowRight, Heart, Search, Scroll, X, Quote } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { bibleService } from '../services/api'
+import { bibleService, aiService } from '../services/api'
 import { useAuth } from '../hooks/useAuth'
 import { AnimatedBackground } from './LandingPage'
 
@@ -23,6 +24,7 @@ const detectInputType = (input) => {
 
 const BibleStudy = () => {
   const { user } = useAuth()
+  const location = useLocation()
   const [mode, setMode] = useState('select') // select, study, pray
   const [userInput, setUserInput] = useState('')
   const [inputType, setInputType] = useState(null)
@@ -42,6 +44,41 @@ const BibleStudy = () => {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  useEffect(() => {
+    if (location.state?.selectedText && mode === 'select') {
+      const { book, chapter, selectedText } = location.state
+      handleSelectionStudy(book, chapter, selectedText)
+      // Clear location state
+      window.history.replaceState({}, document.title)
+    }
+  }, [location.state])
+
+  const handleSelectionStudy = async (book, chapter, text) => {
+    setIsLoading(true)
+    const content = {
+      type: 'selection',
+      reference: `${book} ${chapter}`,
+      text: text,
+      book: book,
+      chapter: chapter
+    }
+    setStudyContent(content)
+    setMode('study')
+
+    try {
+      const session = await bibleService.createStudySession(book, chapter, [], text)
+      setSessionId(session.id)
+      
+      const initialMsg = `Welcome! 🕊️ I see you've selected a specific passage from ${book} ${chapter}: "${text}". It's a beautiful selection. What speaks to your heart about these specific words?`
+      setMessages([{ role: 'companion', content: initialMsg }])
+      await bibleService.createStudyMessage(session.id, 'assistant', initialMsg)
+    } catch (err) {
+      console.error('Failed to start selection study', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const handleInputChange = (e) => {
     const value = e.target.value
@@ -146,8 +183,10 @@ const BibleStudy = () => {
     setIsLoading(true)
     try {
       const conversationContext = messages.map(m => `${m.role === 'user' ? 'User' : 'Companion'}: ${m.content}`).join('\n\n')
-      let studyContext = studyContent?.type === 'verse' ? `Studying: "${studyContent.text}" (${studyContent.reference})` : `Studying: ${studyContent?.reference || studyContent?.topic}`
-      const prompt = `You are a warm, supportive Bible study companion. ${studyContext}. Previous conversation: ${conversationContext}. User just said: "${userMsg}". Respond as a friend in faith, sharing scriptural depth and invting more reflection. Keep it conversational and warm. No bullet points.`
+      let studyContext = (studyContent?.type === 'verse' || studyContent?.type === 'selection') 
+        ? `Studying: "${studyContent.text}" (${studyContent.reference})` 
+        : `Studying: ${studyContent?.reference || studyContent?.topic}`
+      const prompt = `You are a warm, supportive Bible study companion. ${studyContext}. Previous conversation: ${conversationContext}. User just said: "${userMsg}". Respond as a friend in faith, sharing scriptural depth and inviting more reflection. Keep it conversational and warm. No bullet points.`
       const response = await aiService.generate([{ role: 'user', content: prompt }], 'bibleStudy')
       
       const aiResponse = response.content

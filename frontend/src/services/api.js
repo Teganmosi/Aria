@@ -104,13 +104,20 @@ export const bibleService = {
   },
 
   createStudySession: async (book, chapter, verses, selectedText) => {
+    let verseList = []
+    if (Array.isArray(verses)) {
+      verseList = verses.map(v => parseInt(v)).filter(v => !isNaN(v))
+    } else if (typeof verses === 'string' && verses.trim()) {
+      verseList = verses.split('-').map(v => parseInt(v.trim())).filter(v => !isNaN(v))
+    }
+
     const response = await fetch(`${API_BASE_URL}/bible-study/sessions`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({
         book: book.trim(),
         chapter: parseInt(chapter),
-        verses: verses.split('-').map(v => parseInt(v.trim())),
+        verses: verseList,
         selected_text: selectedText,
       }),
     })
