@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List, Optional
 import json
 import os
@@ -6,6 +6,7 @@ import os
 class Settings(BaseSettings):
     # API Keys (Still needed)
     openai_api_key: str = ""
+    nvidia_api_key: str = ""
     api_bible_key: str = ""
     
     # Supabase (Legacy/Empty)
@@ -38,13 +39,15 @@ class Settings(BaseSettings):
         super().__init__(**kwargs)
         # Pull from OS ENV if available
         self.openai_api_key = os.getenv('OPENAI_API_KEY', self.openai_api_key)
+        self.nvidia_api_key = os.getenv('NVIDIA_API_KEY', self.nvidia_api_key)
         self.api_bible_key = os.getenv('API_BIBLE_KEY', self.api_bible_key)
         self.secret_key = os.getenv('SECRET_KEY', self.secret_key)
         self.redis_enabled = os.getenv('REDIS_ENABLED', str(self.redis_enabled)).lower() == 'true'
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-        extra = 'ignore'
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=False,
+        extra='ignore'
+    )
 
 settings = Settings()

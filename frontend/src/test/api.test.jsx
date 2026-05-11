@@ -21,7 +21,14 @@ describe('API Service Exports', () => {
     const { aiService } = await import('../services/api')
     expect(aiService).toBeDefined()
     expect(typeof aiService.generate).toBe('function')
-    expect(typeof aiService.chat).toBe('function')
+  })
+
+  it('should export aiChatService', async () => {
+    const { aiChatService } = await import('../services/api')
+    expect(aiChatService).toBeDefined()
+    expect(typeof aiChatService.chat).toBe('function')
+    expect(typeof aiChatService.getSessions).toBe('function')
+    expect(typeof aiChatService.getMessages).toBe('function')
   })
 
   it('should export homeService', async () => {

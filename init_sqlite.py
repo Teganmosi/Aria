@@ -131,6 +131,17 @@ def init_db():
     );
     """)
 
+    # 8a. Devotion Messages
+    cursor.execute("""
+    CREATE TABLE devotion_messages (
+        id TEXT PRIMARY KEY,
+        devotion_id TEXT NOT NULL REFERENCES devotions(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+        content TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+
     # 9. Bible Verses
     cursor.execute("""
     CREATE TABLE bible_verses (
@@ -216,6 +227,7 @@ def init_db():
     cursor.execute("CREATE INDEX idx_bible_study_messages_session_id ON bible_study_messages (session_id);")
     cursor.execute("CREATE INDEX idx_emotional_support_sessions_user_id ON emotional_support_sessions (user_id);")
     cursor.execute("CREATE INDEX idx_devotions_user_id ON devotions (user_id);")
+    cursor.execute("CREATE INDEX idx_devotion_messages_devotion_id ON devotion_messages (devotion_id);")
 
     # 15. AI Chat Sessions
     cursor.execute("""

@@ -40,6 +40,8 @@ from models import (
     DevotionSettings,
     DevotionSettingsUpdate,
     DevotionSettingsCreate,
+    DevotionMessage,
+    DevotionMessageCreate,
     BibleVerse,
     JournalEntry,
     JournalEntryCreate,
@@ -94,7 +96,13 @@ def _get_user_custom_instructions(user_profile: Dict[str, Any]) -> Optional[str]
 redis_client = None
 if settings.redis_enabled:
     try:
-        redis_client = redis.from_url(settings.redis_url, decode_responses=True)
+        redis_client = redis.from_url(
+            settings.redis_url, 
+            socket_timeout=2, 
+            socket_connect_timeout=2,
+            retry_on_timeout=True,
+            decode_responses=True
+        )
         redis_client.ping()
         logger.info(f"✅ Redis connected: {settings.redis_url}")
     except Exception as e:
@@ -642,16 +650,171 @@ async def complete_devotion(
     return devotion
 
 
+@app.post(
+    "/api/v1/devotion/devotions/{devotion_id}/messages",
+    response_model=DevotionMessage,
+)
+async def create_devotion_message(
+    devotion_id: str,
+    message_data: DevotionMessageCreate,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Create a message in a devotion session"""
+    # Verify devotion ownership
+    devotions = db.get_devotions(current_user["id"])
+    devotion = next((d for d in devotions if d["id"] == devotion_id), None)
+    if not devotion:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Devotion not found")
+
+    message_dict = message_data.model_dump()
+    message_dict["devotion_id"] = devotion_id
+
+    message = db.create_devotion_message(message_dict)
+    if not message:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create message",
+        )
+
+    return message
+
+
+@app.get(
+    "/api/v1/devotion/devotions/{devotion_id}/messages",
+    response_model=List[DevotionMessage],
+)
+async def get_devotion_messages(
+    devotion_id: str, current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Get all messages for a devotion session"""
+    # Verify devotion ownership
+    devotions = db.get_devotions(current_user["id"])
+    devotion = next((d for d in devotions if d["id"] == devotion_id), None)
+    if not devotion:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Devotion not found")
+
+    messages = db.get_devotion_messages(devotion_id)
+    return messages
+
+
+async def process_devotion_ai(devotion_id: str):
+    """Helper to process AI interaction for daily devotion"""
+    try:
+        messages = db.get_devotion_messages(devotion_id)
+        conversation_history = [
+            {"role": m["role"], "content": m["content"]} for m in messages
+        ]
+
+        # Get devotion context
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT user_id, day_plan_summary FROM devotions WHERE id = ?", (devotion_id,))
+            row = cursor.fetchone()
+            if not row: return
+            user_id = row['user_id']
+
+        user_profile = db.get_profile(user_id)
+        custom_instructions = (
+            _get_user_custom_instructions(user_profile) if user_profile else None
+        )
+
+        response = ai_service.generate_response(
+            conversation_history,
+            "devotion",
+            custom_instructions=custom_instructions,
+        )
+        
+        db.create_devotion_message(
+            {"devotion_id": devotion_id, "role": "assistant", "content": response}
+        )
+        
+        # If there's an active websocket, send it
+        await manager.send_message(
+            devotion_id, {"type": "message", "role": "assistant", "content": response}
+        )
+    except Exception as e:
+        logger.error(f"Error in devotion AI: {e}")
+        await manager.send_message(
+            devotion_id, {"type": "error", "message": FAILED_TO_GENERATE_RESPONSE}
+        )
+
+
+@app.websocket("/ws/devotion/{devotion_id}")
+async def websocket_devotion(websocket: WebSocket, devotion_id: str):
+    """WebSocket endpoint for real-time devotion chat with authentication"""
+    try:
+        user = get_current_user_websocket(websocket)
+        devotions = db.get_devotions(user.get("id"))
+        devotion = next((d for d in devotions if d.get("id") == devotion_id), None)
+        if not devotion:
+            await websocket.close(
+                code=4003, reason="Access denied: Devotion ownership failed"
+            )
+            return
+
+        await manager.connect(websocket, devotion_id)
+        while True:
+            data = await websocket.receive_json()
+            if data.get("type") == "message":
+                db.create_devotion_message(
+                    {
+                        "devotion_id": devotion_id,
+                        "role": data.get("role", "user"),
+                        "content": data.get("content", ""),
+                    }
+                )
+                if data.get("role") == "user":
+                    await process_devotion_ai(devotion_id)
+    except WebSocketDisconnect:
+        manager.disconnect(devotion_id)
+    except Exception as e:
+        logger.error(f"Devotion WebSocket error: {e}")
+
+
 # ==================== Bible Endpoints ====================
 
 
 @app.get("/api/v1/bible/chapter/{book}/{chapter}")
-async def get_bible_chapter(book: str, chapter: int):
-    """Get all verses in a Bible chapter"""
+async def get_bible_chapter(book: str, chapter: int, version: str = "KJV"):
+    """Get all verses in a Bible chapter with Redis + SQLite caching"""
+    cache_key = f"bible:chapter:{version.lower()}:{book.lower().replace(' ', '_')}:{chapter}"
+    
+    # 1. Try Redis (L1 Cache)
+    if settings.redis_enabled and redis_client:
+        try:
+            cached_data = redis_client.get(cache_key)
+            if cached_data:
+                logger.info(f"🚀 Redis HIT: {cache_key}")
+                return json.loads(cached_data)
+        except Exception as e:
+            logger.error(f"Redis error: {e}")
+
     try:
-        verses = await db.fetch_bible_chapter_from_api(book, chapter)
+        # 2. Try SQLite or API (L2/L3 Cache)
+        verses = await db.fetch_bible_chapter_from_api(book, chapter, version)
         if verses:
-            return {"success": True, "book": book, "chapter": chapter, "verses": verses}
+            result = {
+                "success": True, 
+                "book": book, 
+                "chapter": chapter, 
+                "version": version.upper(),
+                "verses": verses
+            }
+            
+            # 3. Save to Redis for next time
+            if settings.redis_enabled and redis_client:
+                try:
+                    redis_client.setex(
+                        cache_key, 
+                        3600 * 24 * 7, # Cache for 1 week
+                        json.dumps(result)
+                    )
+                    logger.info(f"📝 Redis SET: {cache_key}")
+                except Exception as e:
+                    logger.error(f"Redis set error: {e}")
+                    
+            return result
+
         else:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -673,92 +836,58 @@ async def search_bible(query: str):
 
 
 @app.get("/api/v1/bible/verses/{book}/{chapter}/{verse}", response_model=BibleVerse)
-async def get_bible_verse(book: str, chapter: int, verse: int):
-    """Get a specific Bible verse - first from DB, then from external API"""
-    # First try to get from database
-    verse_data = db.get_bible_verse(book.lower(), chapter, verse)
+async def get_bible_verse(book: str, chapter: int, verse: int, version: str = "KJV"):
+    """Get a specific Bible verse with Redis + SQLite caching"""
+    cache_key = f"bible:verse:{version.lower()}:{book.lower().replace(' ', '_')}:{chapter}:{verse}"
+    
+    # 1. Try Redis (L1 Cache)
+    if settings.redis_enabled and redis_client:
+        try:
+            cached_data = redis_client.get(cache_key)
+            if cached_data:
+                logger.info(f"🚀 Redis HIT: {cache_key}")
+                return json.loads(cached_data)
+        except Exception as e:
+            logger.error(f"Redis error: {e}")
+
+    # 2. Try SQLite (L2 Cache)
+    verse_data = db.get_bible_verse(book.lower(), chapter, verse, version)
 
     if not verse_data:
-        # Try fetching from external API (bible-api.com)
+        # 3. Try fetching from external API (L3 Fallback)
         try:
             import httpx
-
             BIBLE_API_URL = "https://bible-api.com"
-
-            # Map book name
+            # (Mapping logic remains same...)
             book_mapping = {
-                "genesis": "genesis",
-                "exodus": "exodus",
-                "leviticus": "leviticus",
-                "numbers": "numbers",
-                "deuteronomy": "deuteronomy",
-                "joshua": "joshua",
-                "judges": "judges",
-                "ruth": "ruth",
-                "1 samuel": "1samuel",
-                "2 samuel": "2samuel",
-                "1 kings": "1kings",
-                "2 kings": "2kings",
-                "1 chronicles": "1chronicles",
-                "2 chronicles": "2chronicles",
-                "ezra": "ezra",
-                "nehemiah": "nehemiah",
-                "esther": "esther",
-                "job": "job",
-                "psalms": "psalms",
-                "proverbs": "proverbs",
-                "ecclesiastes": "ecclesiastes",
-                "song of solomon": "songofsongs",
-                "isaiah": "isaiah",
-                "jeremiah": "jeremiah",
-                "lamentations": "lamentations",
-                "ezekiel": "ezekiel",
-                "daniel": "daniel",
-                "hosea": "hosea",
-                "joel": "joel",
-                "amos": "amos",
-                "obadiah": "obadiah",
-                "jonah": "jonah",
-                "micah": "micah",
-                "nahum": "nahum",
-                "habakkuk": "habakkuk",
-                "zephaniah": "zephaniah",
-                "haggai": "haggai",
-                "zechariah": "zechariah",
-                "malachi": "malachi",
-                "matthew": "matthew",
-                "mark": "mark",
-                "luke": "luke",
-                "john": "john",
-                "acts": "acts",
-                "romans": "romans",
-                "1 corinthians": "1corinthians",
-                "2 corinthians": "2corinthians",
-                "galatians": "galatians",
-                "ephesians": "ephesians",
-                "philippians": "philippians",
-                "colossians": "colossians",
-                "1 thessalonians": "1thessalonians",
-                "2 thessalonians": "2thessalonians",
-                "1 timothy": "1timothy",
-                "2 timothy": "2timothy",
-                "titus": "titus",
-                "philemon": "philemon",
-                "hebrews": "hebrews",
-                "james": "james",
-                "1 peter": "1peter",
-                "2 peter": "2peter",
-                "1 john": "1john",
-                "2 john": "2john",
-                "3 john": "3john",
-                "jude": "jude",
-                "revelation": "revelation",
+                "genesis": "genesis", "exodus": "exodus", "leviticus": "leviticus",
+                "numbers": "numbers", "deuteronomy": "deuteronomy", "joshua": "joshua",
+                "judges": "judges", "ruth": "ruth", "1 samuel": "1samuel",
+                "2 samuel": "2samuel", "1 kings": "1kings", "2 kings": "2kings",
+                "1 chronicles": "1chronicles", "2 chronicles": "2chronicles",
+                "ezra": "ezra", "nehemiah": "nehemiah", "esther": "esther",
+                "job": "job", "psalms": "psalms", "proverbs": "proverbs",
+                "ecclesiastes": "ecclesiastes", "song of solomon": "songofsongs",
+                "isaiah": "isaiah", "jeremiah": "jeremiah", "lamentations": "lamentations",
+                "ezekiel": "ezekiel", "daniel": "daniel", "hosea": "hosea",
+                "joel": "joel", "amos": "amos", "obadiah": "obadiah",
+                "jonah": "jonah", "micah": "micah", "nahum": "nahum",
+                "habakkuk": "habakkuk", "zephaniah": "zephaniah", "haggai": "haggai",
+                "zechariah": "zechariah", "malachi": "malachi", "matthew": "matthew",
+                "mark": "mark", "luke": "luke", "john": "john", "acts": "acts",
+                "romans": "romans", "1 corinthians": "1corinthians", "2 corinthians": "2corinthians",
+                "galatians": "galatians", "ephesians": "ephesians", "philippians": "philippians",
+                "colossians": "colossians", "1 thessalonians": "1thessalonians",
+                "2 thessalonians": "2thessalonians", "1 timothy": "1timothy",
+                "2 timothy": "2timothy", "titus": "titus", "philemon": "philemon",
+                "hebrews": "hebrews", "james": "james", "1 peter": "1peter",
+                "2 peter": "2peter", "1 john": "1john", "2 john": "2john",
+                "3 john": "3john", "jude": "jude", "revelation": "revelation",
             }
 
             api_book = book_mapping.get(book.lower(), book.lower().replace(" ", ""))
-            # Use + for spaces and : for verse to directly fetch the single verse
             formatted_query = f"{api_book}+{chapter}:{verse}"
-            url = f"{BIBLE_API_URL}/{formatted_query}?translation=kjv"
+            url = f"{BIBLE_API_URL}/{formatted_query}?translation={version.lower()}"
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(url)
@@ -767,21 +896,28 @@ async def get_bible_verse(book: str, chapter: int, verse: int):
                     verses = data.get("verses", [])
                     if verses:
                         v = verses[0]
-                        return {
+                        verse_data = {
                             "book": book,
                             "chapter": chapter,
                             "verse": verse,
                             "text": v.get("text", "").strip(),
-                            "version": "KJV",
+                            "version": version.upper(),
                         }
+                        # Cache in SQLite
+                        db.save_bible_verses([verse_data])
         except Exception as e:
             logger.error(f"Error fetching verse from API: {e}")
 
-        # If still not found, return 404
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Verse not found"
-        )
-    return verse_data
+    if verse_data:
+        # 4. Save to Redis for next time
+        if settings.redis_enabled and redis_client:
+            try:
+                redis_client.setex(cache_key, 3600 * 24 * 7, json.dumps(verse_data))
+            except Exception as e:
+                logger.error(f"Redis set error: {e}")
+        return verse_data
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Verse not found")
 
 
 @app.get("/api/v1/bible/scriptures/{category}", response_model=List[ScriptureReference])
@@ -957,7 +1093,16 @@ class VoiceCallManager:
 
     async def send_message(self, call_id: str, message: Dict[str, Any]):
         if call_id in self.active_calls:
-            await self.active_calls[call_id].send_json(message)
+            websocket = self.active_calls[call_id]
+            try:
+                # Check if socket is still open
+                from starlette.websockets import WebSocketState
+                if websocket.client_state == WebSocketState.CONNECTED:
+                    await websocket.send_json(message)
+            except Exception as e:
+                # If sending fails, assume disconnected and cleanup silently
+                logger.debug(f"Silent send failure for {call_id}: {e}")
+                self.disconnect(call_id)
 
 
 voice_call_manager = VoiceCallManager()
@@ -1062,14 +1207,31 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
 
             frontend_task.cancel()
     except Exception as e:
-        logger.error(f"Voice call error: {e}")
-        await voice_call_manager.send_message(
-            call_id, {"type": "error", "message": "Connection error."}
-        )
+        # Check if it's just a normal disconnect
+        from starlette.websockets import WebSocketDisconnect
+        if not isinstance(e, (WebSocketDisconnect, RuntimeError)):
+            logger.error(f"Voice call error: {e}")
+            # Only try to send error if still connected
+            await voice_call_manager.send_message(
+                call_id, {"type": "error", "message": "Connection error."}
+            )
     finally:
         voice_call_manager.disconnect(call_id)
-        if websocket.client_state.name != "DISCONNECTED":
-            await websocket.close()
+        # Final cleanup for OpenAI client
+        if call_id in voice_call_manager.openai_clients:
+            try:
+                await voice_call_manager.openai_clients[call_id].close()
+                del voice_call_manager.openai_clients[call_id]
+            except:
+                pass
+                
+        # Only close if not already closed
+        try:
+            from starlette.websockets import WebSocketState
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.close()
+        except:
+            pass
         logger.info(f"Voice call {call_id} ended")
 
 
@@ -1275,7 +1437,7 @@ async def chat_with_aria(
         if not session_id:
             # Try to extract a title from the first message
             title = (
-                request.messages[-1].content[:30]
+                request.messages[-1].get("content", "")[:30]
                 if request.messages
                 else "New Conversation"
             )
@@ -1285,7 +1447,7 @@ async def chat_with_aria(
             session_id = session["id"]
 
         # Save user message
-        user_message = request.messages[-1].content if request.messages else ""
+        user_message = request.messages[-1].get("content", "") if request.messages else ""
         if user_message:
             db.create_chat_message(
                 {"session_id": session_id, "role": "user", "content": user_message}
@@ -1299,7 +1461,7 @@ async def chat_with_aria(
 
         # Prepare full context for AI
         full_context = [
-            {"role": m.role, "content": m.content} for m in request.messages
+            {"role": m.get("role", "user"), "content": m.get("content", "")} for m in request.messages
         ]
 
         # Generate response
@@ -1318,6 +1480,57 @@ async def chat_with_aria(
 
     except Exception as e:
         logger.error(f"Chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+from fastapi.responses import StreamingResponse
+
+@app.post("/api/v1/ai/chat/stream")
+async def chat_with_aria_stream(
+    request: AIRequest,
+    session_id: Optional[str] = None,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    """Stream chat with Aria and save to history"""
+    try:
+        user_id = current_user["id"]
+
+        if not session_id:
+            title = request.messages[-1].get("content", "")[:30] if request.messages else "New Conversation"
+            session = db.create_chat_session(user_id, title)
+            if not session:
+                raise HTTPException(status_code=500, detail="Failed to create session")
+            session_id = session["id"]
+
+        user_message = request.messages[-1].get("content", "") if request.messages else ""
+        if user_message:
+            db.create_chat_message(
+                {"session_id": session_id, "role": "user", "content": user_message}
+            )
+
+        profile = db.get_profile(user_id)
+        custom_instructions = _get_user_custom_instructions(profile) if profile else None
+        full_context = [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in request.messages]
+
+        def generate():
+            full_content = ""
+            for chunk in ai_service.generate_response_stream(
+                messages=full_context,
+                mode=request.mode or "general",
+                custom_instructions=custom_instructions,
+            ):
+                full_content += chunk
+                yield chunk
+            
+            if full_content:
+                db.create_chat_message(
+                    {"session_id": session_id, "role": "assistant", "content": full_content}
+                )
+
+        return StreamingResponse(generate(), media_type="text/plain")
+
+    except Exception as e:
+        logger.error(f"Chat stream error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1457,6 +1670,17 @@ async def get_home_activity(
         return {"success": False, "activity": [], "error": str(e)}
 
 
+@app.get("/api/v1/home/stats")
+async def get_home_stats(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Get user stats for spiritual growth"""
+    try:
+        stats = db.get_user_stats(current_user["id"])
+        return {"success": True, "stats": stats}
+    except Exception as e:
+        logger.error(f"Error getting stats: {e}")
+        return {"success": False, "stats": {}, "error": str(e)}
+
+
 # ==================== Notes Endpoints ====================
 
 
@@ -1552,11 +1776,11 @@ async def delete_prayer(
     prayer_id: str, current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Delete a prayer"""
-    success = db.delete_prayer(prayer_id)
+    success = db.delete_prayer(prayer_id, current_user["id"])
     if not success:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete prayer",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Prayer not found or failed to delete",
         )
     return {"success": True, "message": "Prayer deleted"}
 

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -42,8 +42,7 @@ class Profile(ProfileBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== Notes Models ====================
@@ -80,8 +79,7 @@ class Note(NoteBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== Bible Study Models ====================
@@ -115,8 +113,7 @@ class BibleStudySession(BibleStudySessionBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BibleStudyMessageBase(BaseModel):
@@ -125,7 +122,7 @@ class BibleStudyMessageBase(BaseModel):
 
 
 class BibleStudyMessageCreate(BibleStudyMessageBase):
-    session_id: str
+    session_id: Optional[str] = None
 
 
 class BibleStudyMessage(BibleStudyMessageBase):
@@ -133,8 +130,7 @@ class BibleStudyMessage(BibleStudyMessageBase):
     session_id: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== Emotional Support Models ====================
@@ -165,8 +161,7 @@ class EmotionalSupportSession(EmotionalSupportSessionBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class EmotionalSupportMessageBase(BaseModel):
@@ -175,7 +170,7 @@ class EmotionalSupportMessageBase(BaseModel):
 
 
 class EmotionalSupportMessageCreate(EmotionalSupportMessageBase):
-    session_id: str
+    session_id: Optional[str] = None
 
 
 class EmotionalSupportMessage(EmotionalSupportMessageBase):
@@ -183,8 +178,7 @@ class EmotionalSupportMessage(EmotionalSupportMessageBase):
     session_id: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== Devotion Models ====================
@@ -215,8 +209,7 @@ class DevotionSettings(DevotionSettingsBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DevotionStatus(str, Enum):
@@ -255,8 +248,7 @@ class Devotion(DevotionBase):
     ai_prayer: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DevotionMessageBase(BaseModel):
@@ -265,7 +257,7 @@ class DevotionMessageBase(BaseModel):
 
 
 class DevotionMessageCreate(DevotionMessageBase):
-    devotion_id: str
+    devotion_id: Optional[str] = None
 
 
 class DevotionMessage(DevotionMessageBase):
@@ -273,8 +265,7 @@ class DevotionMessage(DevotionMessageBase):
     devotion_id: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== Bible Models ====================
@@ -288,8 +279,7 @@ class BibleVerse(BaseModel):
     text: str
     version: str = "NIV"
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ScriptureReference(BaseModel):
@@ -300,8 +290,7 @@ class ScriptureReference(BaseModel):
     context_description: Optional[str] = None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== Favorites Models ====================
@@ -328,8 +317,7 @@ class UserFavorite(UserFavoriteBase):
     user_id: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== Journal Models ====================
@@ -359,8 +347,7 @@ class JournalEntry(JournalEntryBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== Prayer Models ====================
@@ -381,8 +368,7 @@ class Prayer(PrayerBase):
     user_id: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== AI Models ====================
@@ -457,5 +443,4 @@ class UserResponse(BaseModel):
     full_name: Optional[str] = None
     avatar_url: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

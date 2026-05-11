@@ -50,6 +50,7 @@ const AIChat = () => {
 
       const history = await aiChatService.getMessages(session.id)
       setMessages(history.map(m => ({
+        id: m.id || `msg-${Date.now()}-${Math.random()}`,
         role: m.role,
         content: m.content
       })))
@@ -65,17 +66,31 @@ const AIChat = () => {
 
     const userMessage = chatInput
     setChatInput('')
-    const newMessages = [...messages, { role: 'user', content: userMessage }]
+    const newMessages = [...messages, { id: `user-${Date.now()}`, role: 'user', content: userMessage }]
     setMessages(newMessages)
     setIsLoading(true)
 
     try {
-      const response = await aiChatService.chat(
+      const assistantId = `assistant-${Date.now()}`;
+      setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '' }]);
+      
+      let fullResponse = '';
+      let isFirstChunk = true;
+      
+      const stream = aiChatService.chatStream(
         newMessages,
         currentSessionId,
         'general'
       )
-      setMessages(prev => [...prev, { role: 'assistant', content: response.content }])
+
+      for await (const chunk of stream) {
+        if (isFirstChunk) {
+            setIsLoading(false);
+            isFirstChunk = false;
+        }
+        fullResponse += chunk;
+        setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: fullResponse } : m));
+      }
 
       // If it was a new session, refresh history to show it
       if (!currentSessionId) {
@@ -146,7 +161,15 @@ const AIChat = () => {
 
       <div className="chat-main">
         {/* Mobile History Overlay */}
-        {showHistory && <div className="history-overlay" onClick={() => setShowHistory(false)} />}
+        {showHistory && (
+          <button 
+            className="history-overlay" 
+            onClick={() => setShowHistory(false)} 
+            onKeyDown={(e) => e.key === 'Escape' && setShowHistory(false)}
+            aria-label="Close history sidebar"
+            style={{ border: 'none', padding: 0 }}
+          />
+        )}
 
         {/* Sidebar - History */}
         <div className={`chat-sidebar ${showHistory ? 'open' : ''}`}>
@@ -176,10 +199,13 @@ const AIChat = () => {
               <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No past reflections yet.</p>
             ) : (
               sessions.map(session => (
-                <div
+                <button
                   key={session.id}
                   onClick={() => loadSession(session)}
+                  onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && loadSession(session)}
                   className={`session-card ${currentSessionId === session.id ? 'active' : ''}`}
+                  aria-label={`Select conversation: ${session.title || 'Conversation'}`}
+                  style={{ background: 'transparent', textAlign: 'left', width: '100%' }}
                 >
                   <h4 className="font-serif" style={{
                     fontStyle: 'italic',
@@ -194,7 +220,7 @@ const AIChat = () => {
                   <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', margin: 0 }}>
                     {new Date(session.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </p>
-                </div>
+                </button>
               ))
             )}
           </div>
@@ -207,15 +233,17 @@ const AIChat = () => {
           {messages.length === 0 ? (
             <div style={{ marginTop: 'auto', marginBottom: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 1, textAlign: 'center', padding: '0 1rem' }}>
               <div style={{ position: 'relative', marginBottom: '3rem' }}>
-                <div
+                <button
                   className="voice-circle"
                   onClick={() => setIsVoiceCallOpen(true)}
-                  style={{ width: '180px', height: '180px', background: 'var(--bg-card)', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow-main)', gap: '1rem', cursor: 'pointer', border: '1px solid var(--border-color)' }}>
+                  onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setIsVoiceCallOpen(true)}
+                  aria-label="Tap to call Aria"
+                  style={{ width: '180px', height: '180px', background: 'var(--bg-card)', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow-main)', gap: '1rem', cursor: 'pointer', border: '1px solid var(--border-color)', padding: 0 }}>
                   <div className="voice-circle-inner">
                     <Mic size={24} />
                   </div>
                   <span style={{ fontSize: '0.65rem', letterSpacing: '0.15em', color: 'var(--text-secondary)', fontWeight: 800 }}>TAP TO CALL</span>
-                </div>
+                </button>
               </div>
 
               <div style={{ maxWidth: '600px', marginBottom: '3rem' }}>
@@ -244,8 +272,8 @@ const AIChat = () => {
             </div>
           ) : (
             <div style={{ width: '100%', maxWidth: '800px', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingBottom: '12rem' }}>
-              {messages.map((msg, i) => (
-                <div key={i} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }} className="message-bubble">
+              {messages.map((msg) => (
+                <div key={msg.id} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }} className="message-bubble">
                   <div style={{
                     padding: '1.25rem 1.5rem',
                     borderRadius: '1.5rem',
@@ -303,7 +331,7 @@ const AIChat = () => {
                 placeholder="Talk to Aria..."
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
               />
               <button
                 onClick={handleSend}
@@ -332,8 +360,9 @@ const AIChat = () => {
             <h2 className="font-serif" style={{ fontSize: '1.75rem', color: 'var(--text-main)', marginBottom: '2rem' }}>Customize Aria</h2>
 
             <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>ARIA'S VOICE</label>
+              <label htmlFor="aria-voice-select" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>ARIA'S VOICE</label>
               <select
+                id="aria-voice-select"
                 value={ariaVoice}
                 onChange={e => setAriaVoice(e.target.value)}
                 style={{ width: '100%', padding: '1rem', borderRadius: '12px', background: 'var(--input-bg)', border: '1px solid var(--border-color)', color: 'var(--text-main)', fontSize: '1rem' }}
@@ -349,8 +378,9 @@ const AIChat = () => {
             </div>
 
             <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>ARIA'S CUSTOM PERSONA</label>
+              <label htmlFor="aria-custom-persona" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>ARIA'S CUSTOM PERSONA</label>
               <textarea
+                id="aria-custom-persona"
                 placeholder="e.g. Speak like a 19th-century theologian, or use a very encouraging and lighthearted tone."
                 value={ariaCustomPrompt}
                 onChange={e => setAriaCustomPrompt(e.target.value)}
@@ -359,8 +389,9 @@ const AIChat = () => {
             </div>
 
             <div style={{ marginBottom: '2rem' }}>
-              <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>TELL ARIA ABOUT YOU</label>
+              <label htmlFor="aria-personal-context" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>TELL ARIA ABOUT YOU</label>
               <textarea
+                id="aria-personal-context"
                 placeholder="Share things you want Aria to remember about you or your current situation."
                 value={ariaPersonalContext}
                 onChange={e => setAriaPersonalContext(e.target.value)}

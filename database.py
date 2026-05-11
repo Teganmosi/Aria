@@ -95,6 +95,17 @@ class Database:
                 except sqlite3.Error:
                     pass
                 
+                # New table for Devotion Messages
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS devotion_messages (
+                    id TEXT PRIMARY KEY,
+                    devotion_id TEXT NOT NULL REFERENCES devotions(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                    content TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                
                 conn.commit()
         except Exception as e:
             logger.error(f"Error ensuring tables: {e}")
@@ -428,65 +439,102 @@ class Database:
             logger.error(f"Error updating devotion: {e}")
             return None
 
+    def create_devotion_message(self, message_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        try:
+            data = message_data.copy()
+            import uuid
+            if 'id' not in data: data['id'] = str(uuid.uuid4())
+            columns = ', '.join(data.keys())
+            placeholders = ', '.join(['?'] * len(data))
+            query = f"INSERT INTO devotion_messages ({columns}) VALUES ({placeholders})"
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, list(data.values()))
+                conn.commit()
+                cursor.execute("SELECT * FROM devotion_messages WHERE id = ?", (data['id'],))
+                return self.to_dict(cursor.fetchone())
+        except Exception as e:
+            logger.error(f"Error creating devotion message: {e}")
+            return None
+
+    def get_devotion_messages(self, devotion_id: str) -> List[Dict[str, Any]]:
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM devotion_messages WHERE devotion_id = ? ORDER BY created_at ASC", (devotion_id,))
+                return [self.to_dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Error getting devotion messages: {e}")
+            return []
+
     # ==================== Bible Operations ====================
 
-    async def fetch_bible_chapter_from_api(self, book: str, chapter: int) -> List[Dict[str, Any]]:
-        """Fetch Bible chapter from API.Bible or bible-api.com"""
-        # Try bible-api.com first (it's free and no-key required)
+    async def fetch_bible_chapter_from_api(self, book: str, chapter: int, version: str = "KJV") -> List[Dict[str, Any]]:
+        """Fetch Bible chapter from API and cache it locally"""
+        # 1. Try local cache first
+        local_verses = self.get_bible_chapter_local(book, chapter, version)
+        if local_verses:
+            logger.info(f"📚 Loaded {book} {chapter} from local cache")
+            return local_verses
+
+        # 2. Fetch from API if not found locally
+        logger.info(f"🌐 Fetching {book} {chapter} from external API...")
+        fetched_verses = []
         try:
             import httpx
             # Format book name for bible-api.com
             formatted_book = book.replace(" ", "+")
-            url = f"https://bible-api.com/{formatted_book}+{chapter}"
+            url = f"https://bible-api.com/{formatted_book}+{chapter}?translation={version.lower()}"
             
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(url)
                 if response.status_code == 200:
                     data = response.json()
-                    verses = []
                     for v in data.get("verses", []):
-                        verses.append({
-                            "id": f"{book}.{chapter}.{v.get('verse')}",
-                            "number": v.get("verse"),
-                            "text": v.get("text", "").strip(),
+                        fetched_verses.append({
                             "book": book,
                             "chapter": chapter,
-                            "verse": v.get("verse")
+                            "verse": v.get("verse"),
+                            "text": v.get("text", "").strip(),
+                            "version": version.upper()
                         })
-                    return verses
+                    
+                    # 3. Save to local cache for next time
+                    if fetched_verses:
+                        self.save_bible_verses(fetched_verses)
+                        
+                    return fetched_verses
         except Exception as e:
-            logger.error(f"Error fetching from bible-api.com: {e}")
+            logger.error(f"Error fetching from API: {e}")
 
-        # Fallback to API.Bible if key is provided and not placeholder
-        if settings.api_bible_key and settings.api_bible_key != "your_api_bible_key_here":
-            try:
-                book_mapping = {
-                    "Genesis": "GEN", "Exodus": "EXO", "Leviticus": "LEV", "Numbers": "NUM", "Deuteronomy": "DEU",
-                    "Joshua": "JOS", "Judges": "JDG", "Ruth": "RUT", "1 Samuel": "1SA", "2 Samuel": "2SA",
-                    "1 Kings": "1KI", "2 Kings": "2KI", "1 Chronicles": "1CH", "2 Chronicles": "2CH",
-                    "Ezra": "EZR", "Nehemiah": "NEH", "Esther": "EST", "Job": "JOB", "Psalms": "PSA",
-                    "Proverbs": "PRO", "Ecclesiastes": "ECC", "Song of Solomon": "SNG", "Isaiah": "ISA",
-                    "Matthew": "MAT", "Mark": "MRK", "Luke": "LUK", "John": "JHN", "Acts": "ACT", "Romans": "ROM",
-                    "1 Corinthians": "1CO", "2 Corinthians": "2CO", "Galatians": "GAL", "Ephesians": "EPH",
-                    "Philippians": "PHP", "Colossians": "COL", "1 Thessalonians": "1TH", "2 Thessalonians": "2TH",
-                    "1 Timothy": "1TI", "2 Timothy": "2TI", "Titus": "TIT", "Philemon": "PHM", "Hebrews": "HEB",
-                    "James": "JAS", "1 Peter": "1PE", "2 Peter": "2PE", "1 John": "1JN", "2 John": "2JN",
-                    "3 John": "3JN", "Jude": "JUD", "Revelation": "REV"
-                }
-                api_book = book_mapping.get(book, book.upper()[:3])
-                chapter_id = f"{api_book}.{chapter}"
-                url = f"https://api.scripture.api.bible/v1/bibles/de4e12af7f28f599-02/chapters/{chapter_id}?content-type=json"
-                
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.get(url, headers={"api-key": settings.api_bible_key})
-                    if response.status_code == 200:
-                        data = response.json()
-                        content = data.get("data", {}).get("content", [])
-                        return self._parse_bible_json(book, chapter, content)
-            except Exception as e:
-                logger.error(f"Error fetching from API.Bible: {e}")
-        
         return []
+
+    def get_bible_chapter_local(self, book: str, chapter: int, version: str = "KJV") -> List[Dict[str, Any]]:
+        """Get all verses in a chapter from local DB"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM bible_verses WHERE LOWER(book) = LOWER(?) AND chapter = ? AND version = ? ORDER BY verse ASC",
+                (book, chapter, version.upper())
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
+    def save_bible_verses(self, verses: List[Dict[str, Any]]):
+        """Save multiple verses to local DB"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                for v in verses:
+                    cursor.execute(
+                        """INSERT OR IGNORE INTO bible_verses 
+                           (book, chapter, verse, text, version) 
+                           VALUES (?, ?, ?, ?, ?)""",
+                        (v['book'], v['chapter'], v['verse'], v['text'], v.get('version', 'KJV').upper())
+                    )
+                conn.commit()
+                logger.info(f"💾 Cached {len(verses)} verses locally")
+        except Exception as e:
+            logger.error(f"Error saving verses to cache: {e}")
 
     def _parse_bible_json(self, book, chapter, content):
         """Helper to parse API.Bible complex JSON output"""
@@ -504,10 +552,13 @@ class Database:
                     })
         return verses
 
-    def get_bible_verse(self, book: str, chapter: int, verse: int) -> Optional[Dict[str, Any]]:
+    def get_bible_verse(self, book: str, chapter: int, verse: int, version: str = "KJV") -> Optional[Dict[str, Any]]:
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM bible_verses WHERE book = ? AND chapter = ? AND verse = ?", (book, chapter, verse))
+            cursor.execute(
+                "SELECT * FROM bible_verses WHERE LOWER(book) = LOWER(?) AND chapter = ? AND verse = ? AND version = ?", 
+                (book, chapter, verse, version.upper())
+            )
             return self.to_dict(cursor.fetchone())
 
     def search_bible_verses(self, query: str) -> List[Dict[str, Any]]:
@@ -655,11 +706,11 @@ class Database:
             logger.error(f"Error creating prayer: {e}")
             return None
 
-    def delete_prayer(self, prayer_id: str) -> bool:
+    def delete_prayer(self, prayer_id: str, user_id: str) -> bool:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM prayers WHERE id = ?", (prayer_id,))
+                cursor.execute("DELETE FROM prayers WHERE id = ? AND user_id = ?", (prayer_id, user_id))
                 conn.commit()
                 return cursor.rowcount > 0
         except Exception as e:
@@ -721,12 +772,11 @@ class Database:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                # Get emotional sessions that resulted in a prayer suggestion
                 cursor.execute(
-                    "SELECT id, prayer_suggestion as content, created_at FROM emotional_support_sessions WHERE user_id = ? AND prayer_suggestion IS NOT NULL ORDER BY created_at DESC", 
+                    "SELECT * FROM prayers WHERE user_id = ? ORDER BY created_at DESC", 
                     (user_id,)
                 )
-                return [dict(row) for row in cursor.fetchall()]
+                return [self.to_dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Error getting prayers: {e}")
             return []

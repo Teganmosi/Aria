@@ -290,6 +290,38 @@ export const aiChatService = {
     })
     return handleResponse(response)
   },
+
+  chatStream: async function* (messages, sessionId = null, mode = 'general') {
+    const url = sessionId
+      ? `${API_BASE_URL}/ai/chat/stream?session_id=${sessionId}`
+      : `${API_BASE_URL}/ai/chat/stream`
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ messages, mode }),
+    })
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        localStorage.removeItem('authToken')
+        if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/register')) {
+          window.location.href = '/login'
+        }
+      }
+      const error = await response.json().catch(() => ({ error: 'Unknown error' }))
+      throw new Error(error.error || `HTTP error! status: ${response.status}`)
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      yield decoder.decode(value, { stream: true });
+    }
+  },
 }
 
 // Voice Call Service - WebSocket-based real-time voice

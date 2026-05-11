@@ -179,6 +179,9 @@ const Bible = () => {
           if (response.verses) {
             setVerses(response.verses)
             setReadingProgress(0)
+            // Reset scroll position on chapter change
+            const container = document.getElementById('verses-container')
+            if (container) container.scrollTop = 0
           }
         } catch (error) {
           setVerses([])
@@ -251,6 +254,40 @@ const Bible = () => {
     }
     return acc
   }, {})
+
+  const getAllBooks = () => {
+    return [...BIBLE_BOOKS['Old Testament'], ...BIBLE_BOOKS['New Testament']]
+  }
+
+  const handleNextChapter = () => {
+    if (selectedChapter < selectedBook.chapters) {
+      setSelectedChapter(prev => prev + 1)
+    } else {
+      // Go to next book
+      const allBooks = getAllBooks()
+      const currentIndex = allBooks.findIndex(b => b.name === selectedBook.name)
+      if (currentIndex < allBooks.length - 1) {
+        const nextBook = allBooks[currentIndex + 1]
+        setSelectedBook(nextBook)
+        setSelectedChapter(1)
+      }
+    }
+  }
+
+  const handlePrevChapter = () => {
+    if (selectedChapter > 1) {
+      setSelectedChapter(prev => prev - 1)
+    } else {
+      // Go to previous book
+      const allBooks = getAllBooks()
+      const currentIndex = allBooks.findIndex(b => b.name === selectedBook.name)
+      if (currentIndex > 0) {
+        const prevBook = allBooks[currentIndex - 1]
+        setSelectedBook(prevBook)
+        setSelectedChapter(prevBook.chapters)
+      }
+    }
+  }
 
   return (
     <div className="page-container">
@@ -386,8 +423,8 @@ const Bible = () => {
               <div className="reading-footer-nav glass-panel">
                 <button
                   className="nav-btn"
-                  disabled={selectedChapter <= 1}
-                  onClick={() => setSelectedChapter(prev => prev - 1)}
+                  onClick={handlePrevChapter}
+                  disabled={selectedBook.name === 'Genesis' && selectedChapter === 1}
                 >
                   <ChevronLeft size={20} />
                   <span>Previous Chapter</span>
@@ -395,8 +432,8 @@ const Bible = () => {
                 <div className="nav-divider"></div>
                 <button
                   className="nav-btn"
-                  disabled={selectedChapter >= selectedBook.chapters}
-                  onClick={() => setSelectedChapter(prev => prev + 1)}
+                  onClick={handleNextChapter}
+                  disabled={selectedBook.name === 'Revelation' && selectedChapter === 22}
                 >
                   <span>Next Chapter</span>
                   <ChevronRight size={20} />
