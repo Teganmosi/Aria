@@ -7,13 +7,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_MODEL = 'nvidia/nemotron-mini-4b-instruct'
+
+
 class AIService:
     _instance: Optional['AIService'] = None
     _client: Optional[OpenAI] = None
     
     AI_CONFIGS = {
         'general': {
-            'model': 'nvidia/nemotron-mini-4b-instruct',
+            'model': DEFAULT_MODEL,
             'temperature': 0.7,
             'max_tokens': 1000,
             'system_prompt': """You are a compassionate, wise spiritual companion. Your role is to:
@@ -26,7 +29,7 @@ class AIService:
 Be warm, conversational, and supportive. Draw from the Bible and Christian tradition when helpful."""
         },
         'bibleStudy': {
-            'model': 'nvidia/nemotron-mini-4b-instruct',
+            'model': DEFAULT_MODEL,
             'temperature': 0.3,
             'max_tokens': 1000,
             'system_prompt': """You are a compassionate, knowledgeable Bible study assistant. Your role is to:
@@ -39,7 +42,7 @@ Be warm, conversational, and supportive. Draw from the Bible and Christian tradi
 Always cite verses in format: Book Chapter:Verse (e.g., John 3:16)"""
         },
         'emotionalSupport': {
-            'model': 'nvidia/nemotron-mini-4b-instruct',
+            'model': DEFAULT_MODEL,
             'temperature': 0.7,
             'max_tokens': 800,
             'system_prompt': """You are an empathetic spiritual companion. Your role is to:
@@ -53,7 +56,7 @@ Always cite verses in format: Book Chapter:Verse (e.g., John 3:16)"""
 Be warm, encouraging, and supportive while maintaining appropriate boundaries."""
         },
         'devotion': {
-            'model': 'nvidia/nemotron-mini-4b-instruct',
+            'model': DEFAULT_MODEL,
             'temperature': 0.5,
             'max_tokens': 600,
             'system_prompt': """You are a devotion guide helping users start their day with God. Your role is to:
@@ -127,8 +130,8 @@ You are currently in a sacred space of reflection. Speak as one who carries the 
                 return "I apologize, but I was unable to generate a response. Please try again."
             
             return content
-        except Exception as e:
-            logger.error(f"Error generating AI response: {e}")
+        except Exception:
+            logger.exception("Error generating AI response")
             return "I apologize, but I encountered an error. Please try again."
     
     def generate_response_stream(
@@ -164,8 +167,8 @@ You are currently in a sacred space of reflection. Speak as one who carries the 
             for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
-        except Exception as e:
-            logger.error(f"Error generating AI response stream: {e}")
+        except Exception:
+            logger.exception("Error generating AI response stream")
             yield "I apologize, but I encountered an error. Please try again."
     
     def explain_bible_verse(
@@ -269,7 +272,7 @@ Choose from these themes or similar encouraging verses: peace, comfort, hope, st
                 messages = [{'role': 'user', 'content': prompt}]
                 
                 response = self._client.chat.completions.create(
-                    model='nvidia/nemotron-mini-4b-instruct',
+                    model=DEFAULT_MODEL,
                     messages=[
                         {'role': 'system', 'content': 'You are a compassionate spiritual companion. Always respond with valid JSON only.'},
                         *messages
@@ -287,8 +290,8 @@ Choose from these themes or similar encouraging verses: peace, comfort, hope, st
                     if json_match:
                         verse_data = json.loads(json_match.group())
                         return verse_data
-            except Exception as e:
-                logger.error(f"Error generating personalized verse: {e}")
+            except Exception:
+                logger.exception("Error generating personalized verse")
         
         # Fallback: return a verse based on time of day
         from datetime import datetime
@@ -327,7 +330,7 @@ Respond with ONLY the prayer text, no quotes or additional formatting."""
             messages = [{'role': 'user', 'content': prompt}]
             
             response = self._client.chat.completions.create(
-                model='nvidia/nemotron-mini-4b-instruct',
+                model=DEFAULT_MODEL,
                 messages=[
                     {'role': 'system', 'content': 'You are a compassionate spiritual companion. Keep responses brief and humble.'},
                     *messages
@@ -339,8 +342,8 @@ Respond with ONLY the prayer text, no quotes or additional formatting."""
             content = response.choices[0].message.content
             if content:
                 return content.strip().strip('"')
-        except Exception as e:
-            logger.error(f"Error generating daily manna: {e}")
+        except Exception:
+            logger.exception("Error generating daily manna")
         
         # Fallback
         return "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."

@@ -17,6 +17,9 @@ from pydantic import BaseModel, Field
 from datetime import datetime, timezone
 import logging
 import json
+import aiofiles
+import aiofiles.os
+import uuid
 
 from config import settings
 from models import (
@@ -80,6 +83,110 @@ logger = logging.getLogger(__name__)
 NOTE_NOT_FOUND = "Note not found"
 ACCESS_DENIED = "Access denied"
 FAILED_TO_GENERATE_RESPONSE = "Failed to generate response"
+FAILED_TO_CREATE_SESSION = "Failed to create session"
+FAILED_TO_CREATE_MESSAGE = "Failed to create message"
+DEVOTION_NOT_FOUND = "Devotion not found"
+
+
+BIBLE_BOOK_MAPPING = {
+    "genesis": "genesis", "exodus": "exodus", "leviticus": "leviticus",
+    "numbers": "numbers", "deuteronomy": "deuteronomy", "joshua": "joshua",
+    "judges": "judges", "ruth": "ruth", "1 samuel": "1samuel",
+    "2 samuel": "2samuel", "1 kings": "1kings", "2 kings": "2kings",
+    "1 chronicles": "1chronicles", "2 chronicles": "2chronicles",
+    "ezra": "ezra", "nehemiah": "nehemiah", "esther": "esther",
+    "job": "job", "psalms": "psalms", "proverbs": "proverbs",
+    "ecclesiastes": "ecclesiastes", "song of solomon": "songofsongs",
+    "isaiah": "isaiah", "jeremiah": "jeremiah", "lamentations": "lamentations",
+    "ezekiel": "ezekiel", "daniel": "daniel", "hosea": "hosea",
+    "joel": "joel", "amos": "amos", "obadiah": "obadiah",
+    "jonah": "jonah", "micah": "micah", "nahum": "nahum",
+    "habakkuk": "habakkuk", "zephaniah": "zephaniah", "haggai": "haggai",
+    "zechariah": "zechariah", "malachi": "malachi", "matthew": "matthew",
+    "mark": "mark", "luke": "luke", "john": "john", "acts": "acts",
+    "romans": "romans", "1 corinthians": "1corinthians", "2 corinthians": "2corinthians",
+    "galatians": "galatians", "ephesians": "ephesians", "philippians": "philippians",
+    "colossians": "colossians", "1 thessalonians": "1thessalonians",
+    "2 thessalonians": "2thessalonians", "1 timothy": "1timothy",
+    "2 timothy": "2timothy", "titus": "titus", "philemon": "philemon",
+    "hebrews": "hebrews", "james": "james", "1 peter": "1peter",
+    "2 peter": "2peter", "1 john": "1john", "2 john": "2john",
+    "3 john": "3john", "jude": "jude", "revelation": "revelation",
+}
+
+BIBLE_API_URL = "https://bible-api.com"
+
+
+async def _handle_voice_realtime_event(event, call_id: str):
+    """Helper to handle OpenAI Realtime API events"""
+    if event.type == "response.audio.delta":
+        await voice_call_manager.send_message(
+            call_id, {"type": "audio_output", "audio": event.delta}
+        )
+    elif event.type == "response.created":
+        await voice_call_manager.send_message(
+            call_id, {"type": "aria_speaking", "speaking": True}
+        )
+    elif event.type == "response.done":
+        await voice_call_manager.send_message(
+            call_id, {"type": "aria_speaking", "speaking": False}
+        )
+    elif event.type == "response.audio_transcript.delta":
+        await voice_call_manager.send_message(
+            call_id,
+            {
+                "type": "transcript",
+                "text": event.delta,
+                "role": "assistant",
+            },
+        )
+    elif event.type == "input_audio_buffer.speech_started":
+        await voice_call_manager.send_message(
+            call_id, {"type": "user_speaking", "speaking": True}
+        )
+    elif event.type == "input_audio_buffer.speech_stopped":
+        await voice_call_manager.send_message(
+            call_id, {"type": "user_speaking", "speaking": False}
+        )
+    elif event.type == "error":
+        logger.error(f"OpenAI error: {event.error}")
+
+
+def _cache_in_redis(key: str, data: Any, expire_seconds: int = 3600 * 24 * 7):
+    """Helper to cache data in Redis if enabled"""
+    if settings.redis_enabled and redis_client:
+        try:
+            redis_client.setex(key, expire_seconds, json.dumps(data))
+            logger.info(f"📝 Redis SET: {key}")
+        except Exception:
+            logger.exception(f"Redis set error for key: {key}")
+
+
+async def _fetch_verse_from_api(book: str, chapter: int, verse: int, version: str) -> Optional[Dict[str, Any]]:
+    """Helper to fetch a specific verse from the external API"""
+    try:
+        import httpx
+        api_book = BIBLE_BOOK_MAPPING.get(book.lower(), book.lower().replace(" ", ""))
+        formatted_query = f"{api_book}+{chapter}:{verse}"
+        url = f"{BIBLE_API_URL}/{formatted_query}?translation={version.lower()}"
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(url)
+            if response.status_code == 200:
+                data = response.json()
+                verses = data.get("verses", [])
+                if verses:
+                    v = verses[0]
+                    return {
+                        "book": book,
+                        "chapter": chapter,
+                        "verse": verse,
+                        "text": v.get("text", "").strip(),
+                        "version": version.upper(),
+                    }
+    except Exception:
+        logger.exception(f"Error fetching verse {book} {chapter}:{verse} from API")
+    return None
 
 
 def _get_user_custom_instructions(user_profile: Dict[str, Any]) -> Optional[str]:
@@ -384,7 +491,7 @@ async def create_bible_study_session(
     if not session:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create session",
+            detail=FAILED_TO_CREATE_SESSION,
         )
 
     # Generate AI explanation
@@ -399,8 +506,8 @@ async def create_bible_study_session(
 
         db.update_bible_study_session(session["id"], {"ai_explanation": explanation})
         session["ai_explanation"] = explanation
-    except Exception as e:
-        logger.error(f"Error generating AI explanation: {e}")
+    except Exception:
+        logger.exception("Error generating AI explanation")
 
     return session
 
@@ -453,7 +560,7 @@ async def create_bible_study_message(
     if not message:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create message",
+            detail=FAILED_TO_CREATE_MESSAGE,
         )
 
     return message
@@ -492,7 +599,7 @@ async def create_emotional_support_session(
     if not session:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create session",
+            detail=FAILED_TO_CREATE_SESSION,
         )
 
     # Generate AI response
@@ -505,8 +612,8 @@ async def create_emotional_support_session(
 
         db.update_emotional_support_session(session["id"], {"ai_response": response})
         session["ai_response"] = response
-    except Exception as e:
-        logger.error(f"Error generating AI response: {e}")
+    except Exception:
+        logger.exception("Error generating AI response")
 
     return session
 
@@ -544,7 +651,7 @@ async def create_emotional_support_message(
     if not message:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create message",
+            detail=FAILED_TO_CREATE_MESSAGE,
         )
 
     return message
@@ -645,7 +752,7 @@ async def complete_devotion(
     )
     if not devotion:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Devotion not found"
+            status_code=status.HTTP_404_NOT_FOUND, detail=DEVOTION_NOT_FOUND
         )
     return devotion
 
@@ -664,7 +771,7 @@ async def create_devotion_message(
     devotions = db.get_devotions(current_user["id"])
     devotion = next((d for d in devotions if d["id"] == devotion_id), None)
     if not devotion:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Devotion not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=DEVOTION_NOT_FOUND)
 
     message_dict = message_data.model_dump()
     message_dict["devotion_id"] = devotion_id
@@ -673,7 +780,7 @@ async def create_devotion_message(
     if not message:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create message",
+            detail=FAILED_TO_CREATE_MESSAGE,
         )
 
     return message
@@ -691,7 +798,7 @@ async def get_devotion_messages(
     devotions = db.get_devotions(current_user["id"])
     devotion = next((d for d in devotions if d["id"] == devotion_id), None)
     if not devotion:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Devotion not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=DEVOTION_NOT_FOUND)
 
     messages = db.get_devotion_messages(devotion_id)
     return messages
@@ -732,8 +839,8 @@ async def process_devotion_ai(devotion_id: str):
         await manager.send_message(
             devotion_id, {"type": "message", "role": "assistant", "content": response}
         )
-    except Exception as e:
-        logger.error(f"Error in devotion AI: {e}")
+    except Exception:
+        logger.exception("Error in devotion AI")
         await manager.send_message(
             devotion_id, {"type": "error", "message": FAILED_TO_GENERATE_RESPONSE}
         )
@@ -767,8 +874,8 @@ async def websocket_devotion(websocket: WebSocket, devotion_id: str):
                     await process_devotion_ai(devotion_id)
     except WebSocketDisconnect:
         manager.disconnect(devotion_id)
-    except Exception as e:
-        logger.error(f"Devotion WebSocket error: {e}")
+    except Exception:
+        logger.exception("Devotion WebSocket error")
 
 
 # ==================== Bible Endpoints ====================
@@ -786,8 +893,8 @@ async def get_bible_chapter(book: str, chapter: int, version: str = "KJV"):
             if cached_data:
                 logger.info(f"🚀 Redis HIT: {cache_key}")
                 return json.loads(cached_data)
-        except Exception as e:
-            logger.error(f"Redis error: {e}")
+        except Exception:
+            logger.exception("Redis error")
 
     try:
         # 2. Try SQLite or API (L2/L3 Cache)
@@ -810,8 +917,8 @@ async def get_bible_chapter(book: str, chapter: int, version: str = "KJV"):
                         json.dumps(result)
                     )
                     logger.info(f"📝 Redis SET: {cache_key}")
-                except Exception as e:
-                    logger.error(f"Redis set error: {e}")
+                except Exception:
+                    logger.exception("Redis set error")
                     
             return result
 
@@ -820,8 +927,8 @@ async def get_bible_chapter(book: str, chapter: int, version: str = "KJV"):
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Chapter not found or could not be fetched",
             )
-    except Exception as e:
-        logger.error(f"Error fetching Bible chapter: {e}")
+    except Exception:
+        logger.exception("Error fetching Bible chapter")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch Bible chapter",
@@ -847,74 +954,21 @@ async def get_bible_verse(book: str, chapter: int, verse: int, version: str = "K
             if cached_data:
                 logger.info(f"🚀 Redis HIT: {cache_key}")
                 return json.loads(cached_data)
-        except Exception as e:
-            logger.error(f"Redis error: {e}")
+        except Exception:
+            logger.exception("Redis error")
 
     # 2. Try SQLite (L2 Cache)
     verse_data = db.get_bible_verse(book.lower(), chapter, verse, version)
-
-    if not verse_data:
-        # 3. Try fetching from external API (L3 Fallback)
-        try:
-            import httpx
-            BIBLE_API_URL = "https://bible-api.com"
-            # (Mapping logic remains same...)
-            book_mapping = {
-                "genesis": "genesis", "exodus": "exodus", "leviticus": "leviticus",
-                "numbers": "numbers", "deuteronomy": "deuteronomy", "joshua": "joshua",
-                "judges": "judges", "ruth": "ruth", "1 samuel": "1samuel",
-                "2 samuel": "2samuel", "1 kings": "1kings", "2 kings": "2kings",
-                "1 chronicles": "1chronicles", "2 chronicles": "2chronicles",
-                "ezra": "ezra", "nehemiah": "nehemiah", "esther": "esther",
-                "job": "job", "psalms": "psalms", "proverbs": "proverbs",
-                "ecclesiastes": "ecclesiastes", "song of solomon": "songofsongs",
-                "isaiah": "isaiah", "jeremiah": "jeremiah", "lamentations": "lamentations",
-                "ezekiel": "ezekiel", "daniel": "daniel", "hosea": "hosea",
-                "joel": "joel", "amos": "amos", "obadiah": "obadiah",
-                "jonah": "jonah", "micah": "micah", "nahum": "nahum",
-                "habakkuk": "habakkuk", "zephaniah": "zephaniah", "haggai": "haggai",
-                "zechariah": "zechariah", "malachi": "malachi", "matthew": "matthew",
-                "mark": "mark", "luke": "luke", "john": "john", "acts": "acts",
-                "romans": "romans", "1 corinthians": "1corinthians", "2 corinthians": "2corinthians",
-                "galatians": "galatians", "ephesians": "ephesians", "philippians": "philippians",
-                "colossians": "colossians", "1 thessalonians": "1thessalonians",
-                "2 thessalonians": "2thessalonians", "1 timothy": "1timothy",
-                "2 timothy": "2timothy", "titus": "titus", "philemon": "philemon",
-                "hebrews": "hebrews", "james": "james", "1 peter": "1peter",
-                "2 peter": "2peter", "1 john": "1john", "2 john": "2john",
-                "3 john": "3john", "jude": "jude", "revelation": "revelation",
-            }
-
-            api_book = book_mapping.get(book.lower(), book.lower().replace(" ", ""))
-            formatted_query = f"{api_book}+{chapter}:{verse}"
-            url = f"{BIBLE_API_URL}/{formatted_query}?translation={version.lower()}"
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(url)
-                if response.status_code == 200:
-                    data = response.json()
-                    verses = data.get("verses", [])
-                    if verses:
-                        v = verses[0]
-                        verse_data = {
-                            "book": book,
-                            "chapter": chapter,
-                            "verse": verse,
-                            "text": v.get("text", "").strip(),
-                            "version": version.upper(),
-                        }
-                        # Cache in SQLite
-                        db.save_bible_verses([verse_data])
-        except Exception as e:
-            logger.error(f"Error fetching verse from API: {e}")
-
     if verse_data:
-        # 4. Save to Redis for next time
-        if settings.redis_enabled and redis_client:
-            try:
-                redis_client.setex(cache_key, 3600 * 24 * 7, json.dumps(verse_data))
-            except Exception as e:
-                logger.error(f"Redis set error: {e}")
+        _cache_in_redis(cache_key, verse_data)
+        return verse_data
+
+    # 3. Try fetching from external API (L3 Fallback)
+    verse_data = await _fetch_verse_from_api(book, chapter, verse, version)
+    if verse_data:
+        # Cache in SQLite and Redis
+        db.save_bible_verses([verse_data])
+        _cache_in_redis(cache_key, verse_data)
         return verse_data
 
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Verse not found")
@@ -955,8 +1009,8 @@ async def generate_ai_response(
             custom_instructions=_get_user_custom_instructions(current_user),
         )
         return AIResponse(content=content, mode=request.mode)
-    except Exception as e:
-        logger.error(f"Error generating AI response: {e}")
+    except Exception:
+        logger.exception("Error generating AI response")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=FAILED_TO_GENERATE_RESPONSE,
@@ -978,8 +1032,8 @@ async def chat(
         return ChatResponse(
             content=content, role="assistant", timestamp=datetime.now(timezone.utc)
         )
-    except Exception as e:
-        logger.error(f"Error in chat: {e}")
+    except Exception:
+        logger.exception("Error in chat")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=FAILED_TO_GENERATE_RESPONSE,
@@ -1005,42 +1059,34 @@ async def voice_chat(
         # Read audio content
         audio_content = await audio_file.read()
 
-        # Save to temporary file for OpenAI API
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
-            temp_file.write(audio_content)
-            temp_file_path = temp_file.name
+        # Initialize OpenAI client
+        client = OpenAI(api_key=settings.openai_api_key)
 
-        try:
-            # Initialize OpenAI client
-            client = OpenAI(api_key=settings.openai_api_key)
+        # Transcribe audio using Whisper directly from memory
+        transcription_response = client.audio.transcriptions.create(
+            model="whisper-1", 
+            file=("audio.wav", audio_content), 
+            response_format="text"
+        )
 
-            # Transcribe audio using Whisper
-            with open(temp_file_path, "rb") as audio_file_obj:
-                transcription_response = client.audio.transcriptions.create(
-                    model="whisper-1", file=audio_file_obj, response_format="text"
-                )
+        transcription = transcription_response.strip()
 
-            transcription = transcription_response.strip()
+        # Generate AI response based on transcription
+        custom_instructions = _get_user_custom_instructions(current_user)
+        response = ai_service.generate_response(
+            messages=[{"role": "user", "content": transcription}],
+            mode="general",
+            custom_instructions=custom_instructions,
+        )
 
-            # Generate AI response based on transcription
-            custom_instructions = _get_user_custom_instructions(current_user)
-            response = ai_service.generate_response(
-                messages=[{"role": "user", "content": transcription}],
-                mode="general",
-                custom_instructions=custom_instructions,
-            )
+        return {
+            "transcription": transcription,
+            "response": response,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
 
-            return {
-                "transcription": transcription,
-                "response": response,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
-        finally:
-            # Clean up temporary file
-            os.unlink(temp_file_path)
-
-    except Exception as e:
-        logger.error(f"Error in voice chat: {e}")
+    except Exception:
+        logger.exception("Error in voice chat")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to process voice message",
@@ -1121,8 +1167,8 @@ async def handle_voice_frontend(websocket: WebSocket, session, call_id: str):
                 await voice_call_manager.send_message(call_id, {"type": "pong"})
             elif data["type"] == "close":
                 break
-    except Exception as e:
-        logger.error(f"Frontend receive error for {call_id}: {e}")
+    except Exception:
+        logger.exception("Frontend receive error")
 
 
 @app.websocket("/ws/voice-call/{call_id}")
@@ -1133,8 +1179,8 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
 
     try:
         user = get_current_user_websocket(websocket)
-    except Exception as e:
-        logger.error(f"WebSocket authentication failed: {e}")
+    except Exception:
+        logger.exception("WebSocket authentication failed")
         await websocket.close(code=4001, reason="Authentication failed")
         return
 
@@ -1173,44 +1219,14 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
             )
 
             async for event in session:
-                if event.type == "response.audio.delta":
-                    await voice_call_manager.send_message(
-                        call_id, {"type": "audio_output", "audio": event.delta}
-                    )
-                elif event.type == "response.created":
-                    await voice_call_manager.send_message(
-                        call_id, {"type": "aria_speaking", "speaking": True}
-                    )
-                elif event.type == "response.done":
-                    await voice_call_manager.send_message(
-                        call_id, {"type": "aria_speaking", "speaking": False}
-                    )
-                elif event.type == "response.audio_transcript.delta":
-                    await voice_call_manager.send_message(
-                        call_id,
-                        {
-                            "type": "transcript",
-                            "text": event.delta,
-                            "role": "assistant",
-                        },
-                    )
-                elif event.type == "input_audio_buffer.speech_started":
-                    await voice_call_manager.send_message(
-                        call_id, {"type": "user_speaking", "speaking": True}
-                    )
-                elif event.type == "input_audio_buffer.speech_stopped":
-                    await voice_call_manager.send_message(
-                        call_id, {"type": "user_speaking", "speaking": False}
-                    )
-                elif event.type == "error":
-                    logger.error(f"OpenAI error: {event.error}")
+                await _handle_voice_realtime_event(event, call_id)
 
             frontend_task.cancel()
     except Exception as e:
         # Check if it's just a normal disconnect
         from starlette.websockets import WebSocketDisconnect
         if not isinstance(e, (WebSocketDisconnect, RuntimeError)):
-            logger.error(f"Voice call error: {e}")
+            logger.exception("Voice call error")
             # Only try to send error if still connected
             await voice_call_manager.send_message(
                 call_id, {"type": "error", "message": "Connection error."}
@@ -1222,7 +1238,7 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
             try:
                 await voice_call_manager.openai_clients[call_id].close()
                 del voice_call_manager.openai_clients[call_id]
-            except:
+            except Exception:
                 pass
                 
         # Only close if not already closed
@@ -1230,7 +1246,7 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
             from starlette.websockets import WebSocketState
             if websocket.client_state == WebSocketState.CONNECTED:
                 await websocket.close()
-        except:
+        except Exception:
             pass
         logger.info(f"Voice call {call_id} ended")
 
@@ -1290,8 +1306,8 @@ async def process_bible_study_ai(session_id: str):
                 session_id,
                 {"type": "message", "role": "assistant", "content": response},
             )
-    except Exception as e:
-        logger.error(f"Error in Bible study AI: {e}")
+    except Exception:
+        logger.exception("Error in Bible study AI")
         await manager.send_message(
             session_id, {"type": "error", "message": FAILED_TO_GENERATE_RESPONSE}
         )
@@ -1324,8 +1340,8 @@ async def websocket_bible_study(websocket: WebSocket, session_id: str):
                     await process_bible_study_ai(session_id)
     except WebSocketDisconnect:
         manager.disconnect(session_id)
-    except Exception as e:
-        logger.error(f"Bible study WebSocket error: {e}")
+    except Exception:
+        logger.exception("Bible study WebSocket error")
 
 
 async def process_emotional_support_ai(session_id: str):
@@ -1353,8 +1369,8 @@ async def process_emotional_support_ai(session_id: str):
         await manager.send_message(
             session_id, {"type": "message", "role": "assistant", "content": response}
         )
-    except Exception as e:
-        logger.error(f"Error in emotional support AI: {e}")
+    except Exception:
+        logger.exception("Error in emotional support AI")
         await manager.send_message(
             session_id, {"type": "error", "message": FAILED_TO_GENERATE_RESPONSE}
         )
@@ -1388,8 +1404,8 @@ async def websocket_emotional_support(websocket: WebSocket, session_id: str):
                     await process_emotional_support_ai(session_id)
     except WebSocketDisconnect:
         manager.disconnect(session_id)
-    except Exception as e:
-        logger.error(f"Emotional support WebSocket error: {e}")
+    except Exception:
+        logger.exception("Emotional support WebSocket error")
 
 
 # ==================== AI Chat Endpoints ====================
@@ -1409,7 +1425,7 @@ async def create_chat_session(
     """Create a new chat session"""
     session = db.create_chat_session(current_user["id"], session_data.title)
     if not session:
-        raise HTTPException(status_code=500, detail="Failed to create chat session")
+        raise HTTPException(status_code=500, detail=FAILED_TO_CREATE_SESSION)
     return session
 
 
@@ -1443,7 +1459,7 @@ async def chat_with_aria(
             )
             session = db.create_chat_session(user_id, title)
             if not session:
-                raise HTTPException(status_code=500, detail="Failed to create session")
+                raise HTTPException(status_code=500, detail=FAILED_TO_CREATE_SESSION)
             session_id = session["id"]
 
         # Save user message
@@ -1478,8 +1494,8 @@ async def chat_with_aria(
 
         return AIResponse(content=response_content, mode=request.mode or "general")
 
-    except Exception as e:
-        logger.error(f"Chat error: {e}")
+    except Exception:
+        logger.exception("Chat error")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1499,7 +1515,7 @@ async def chat_with_aria_stream(
             title = request.messages[-1].get("content", "")[:30] if request.messages else "New Conversation"
             session = db.create_chat_session(user_id, title)
             if not session:
-                raise HTTPException(status_code=500, detail="Failed to create session")
+                raise HTTPException(status_code=500, detail=FAILED_TO_CREATE_SESSION)
             session_id = session["id"]
 
         user_message = request.messages[-1].get("content", "") if request.messages else ""
@@ -1529,8 +1545,8 @@ async def chat_with_aria_stream(
 
         return StreamingResponse(generate(), media_type="text/plain")
 
-    except Exception as e:
-        logger.error(f"Chat stream error: {e}")
+    except Exception:
+        logger.exception("Chat stream error")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1595,8 +1611,8 @@ async def get_home_data(current_user: Dict[str, Any] = Depends(get_current_user)
 
             # Save to database cache
             db.save_cached_verse(user_id, today, verse)
-    except Exception as e:
-        logger.error(f"Error getting personalized verse: {e}")
+    except Exception:
+        logger.exception("Error getting personalized verse")
         # Fallback verse
         verse = {
             "verse": "For I know the plans I have for you, declares the LORD, plans to prosper you and not to harm you, plans to give you hope and a future.",
@@ -1644,8 +1660,8 @@ async def get_personalized_verse(
             db.save_cached_verse(user_id, today, verse)
 
         return {"success": True, "verse": verse}
-    except Exception as e:
-        logger.error(f"Error getting personalized verse: {e}")
+    except Exception:
+        logger.exception("Error getting personalized verse")
         # Fallback verse
         return {
             "success": True,
@@ -1665,8 +1681,8 @@ async def get_home_activity(
     try:
         activity = db.get_user_activity(current_user["id"], limit=limit)
         return {"success": True, "activity": activity}
-    except Exception as e:
-        logger.error(f"Error getting activity: {e}")
+    except Exception:
+        logger.exception("Error getting activity")
         return {"success": False, "activity": [], "error": str(e)}
 
 
@@ -1676,8 +1692,8 @@ async def get_home_stats(current_user: Dict[str, Any] = Depends(get_current_user
     try:
         stats = db.get_user_stats(current_user["id"])
         return {"success": True, "stats": stats}
-    except Exception as e:
-        logger.error(f"Error getting stats: {e}")
+    except Exception:
+        logger.exception("Error getting stats")
         return {"success": False, "stats": {}, "error": str(e)}
 
 

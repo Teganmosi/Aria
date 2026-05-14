@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react'
 import useAuth from '../hooks/useAuth'
+import { useEffect } from 'react'
 
 const Login = () => {
   const navigate = useNavigate()
@@ -11,6 +12,14 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 1024)
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 1024)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -28,10 +37,21 @@ const Login = () => {
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', width: '100vw', overflow: 'hidden', backgroundColor: 'var(--bg-main)' }}>
+    <div className="responsive-stack" style={{ display: 'flex', minHeight: '100vh', width: '100vw', overflowX: 'hidden', backgroundColor: 'var(--bg-main)' }}>
 
-      {/* Left Panel - Hero Image Edge to Edge */}
-      <div style={{ flex: 1.2, position: 'relative', display: 'flex', flexDirection: 'column', padding: '4rem' }}>
+      {/* Left Panel - Hero Image */}
+      <div 
+        className="login-hero"
+        style={{ 
+          flex: isMobile ? 'none' : 1.2, 
+          height: isMobile ? '20vh' : 'auto',
+          position: 'relative', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          padding: isMobile ? '1.5rem' : '4rem',
+          minHeight: isMobile ? '200px' : 'auto'
+        }}
+      >
         {/* Background Image */}
         <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 0 }}>
           <img
@@ -50,17 +70,30 @@ const Login = () => {
 
         {/* Text Overlay */}
         <div style={{ position: 'relative', zIndex: 10, marginTop: 'auto', maxWidth: '600px' }}>
-          <h1 className="font-serif" style={{ fontSize: '4.5rem', lineHeight: 1.1, marginBottom: '1.5rem', color: 'white' }}>
+          <h1 className="font-serif" style={{ fontSize: isMobile ? '2.5rem' : '4.5rem', lineHeight: 1.1, marginBottom: '1.5rem', color: 'white' }}>
             Find <span style={{ fontStyle: 'italic' }}>peace</span> in the digital noise.
           </h1>
-          <p style={{ fontSize: '1.1rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
+          <p style={{ fontSize: isMobile ? '0.8rem' : '1.1rem', letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
             Your private space for scripture, study, and reflection.
           </p>
         </div>
       </div>
 
       {/* Right Panel - Form Container */}
-      <div style={{ flex: '0 0 600px', background: 'var(--bg-card)', padding: '4rem 6rem', display: 'flex', flexDirection: 'column', position: 'relative', boxShadow: '-20px 0 40px rgba(0,0,0,0.05)', zIndex: 10 }}>
+      <div 
+        className="login-form-container"
+        style={{ 
+          flex: isMobile ? '1' : '0 0 600px', 
+          background: 'var(--bg-card)', 
+          padding: isMobile ? '2rem 1.5rem' : '4rem 6rem', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          position: 'relative', 
+          boxShadow: isMobile ? 'none' : '-20px 0 40px rgba(0,0,0,0.05)', 
+          zIndex: 10,
+          overflowY: 'auto'
+        }}
+      >
 
         {/* Back Button */}
         <button onClick={() => navigate('/')} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', alignSelf: 'flex-start', marginBottom: 'auto', fontSize: '0.9rem', fontWeight: 500 }}>

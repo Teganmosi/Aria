@@ -24,8 +24,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
             plain_password.encode('utf-8'),
             hashed_password.encode('utf-8')
         )
-    except Exception as e:
-        logger.error(f"Password verification error: {e}")
+    except Exception:
+        logger.exception("Password verification error")
         return False
 
 def get_password_hash(password: str) -> str:
@@ -107,7 +107,7 @@ def supabase_auth_signup(email: str, password: str, full_name: Optional[str] = N
             }
         return {"success": False, "error": "Failed to create user"}
     except Exception as e:
-        logger.error(f"Signup error: {e}")
+        logger.exception("Signup error")
         return {"success": False, "error": str(e)}
 
 def supabase_auth_login(email: str, password: str) -> Dict[str, Any]:
@@ -133,7 +133,7 @@ def supabase_auth_login(email: str, password: str) -> Dict[str, Any]:
             }
         }
     except Exception as e:
-        logger.error(f"Login error: {e}")
+        logger.exception("Login error")
         return {"success": False, "error": str(e)}
 
 def supabase_auth_logout() -> Dict[str, Any]:

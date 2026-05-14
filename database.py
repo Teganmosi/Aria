@@ -107,18 +107,15 @@ class Database:
                 """)
                 
                 conn.commit()
-        except Exception as e:
-            logger.error(f"Error ensuring tables: {e}")
+        except Exception:
+            logger.exception("Error ensuring tables")
 
     def get_connection(self):
         conn = sqlite3.connect(DB_NAME)
         conn.row_factory = sqlite3.Row
         return conn
 
-    def to_dict(self, row):
-        if row is None: return None
-        d = dict(row)
-        # Handle JSON fields
+    def _parse_json_fields(self, d):
         json_fields = ['notification_preferences', 'provided_scriptures', 'scripture_reading', 'related_scriptures', 'topics', 'tags']
         for field in json_fields:
             if field in d and d[field]:
@@ -126,20 +123,24 @@ class Database:
                     d[field] = json.loads(d[field])
                 except json.JSONDecodeError:
                     pass
-        
-        # Handle comma-separated integers (specifically for BibleStudySession.verses)
-        if 'verses' in d:
-            if isinstance(d['verses'], str) and d['verses'].strip():
-                try:
-                    d['verses'] = [int(v.strip()) for v in d['verses'].split(',') if v.strip()]
-                except (ValueError, TypeError):
-                    d['verses'] = []
-            elif not d['verses']:
-                d['verses'] = []
-            elif not isinstance(d['verses'], list):
-                # Fallback if somehow it's already a list or other type
-                d['verses'] = []
 
+    def _parse_verses_field(self, d):
+        if 'verses' not in d:
+            return
+        val = d['verses']
+        if isinstance(val, str) and val.strip():
+            try:
+                d['verses'] = [int(v.strip()) for v in val.split(',') if v.strip()]
+            except (ValueError, TypeError):
+                d['verses'] = []
+        elif not isinstance(val, list):
+            d['verses'] = []
+
+    def to_dict(self, row):
+        if row is None: return None
+        d = dict(row)
+        self._parse_json_fields(d)
+        self._parse_verses_field(d)
         return d
 
     # ==================== Auth & Profile Operations ====================
@@ -160,8 +161,8 @@ class Database:
                 )
                 conn.commit()
                 return True
-        except Exception as e:
-            logger.error(f"Error creating user: {e}")
+        except Exception:
+            logger.exception("Error creating user")
             return False
 
     def get_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
@@ -170,8 +171,8 @@ class Database:
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM profiles WHERE id = ?", (user_id,))
                 return self.to_dict(cursor.fetchone())
-        except Exception as e:
-            logger.error(f"Error getting profile: {e}")
+        except Exception:
+            logger.exception("Error getting profile")
             return None
 
     def create_profile(self, profile_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -190,8 +191,8 @@ class Database:
                 cursor.execute(query, list(data.values()))
                 conn.commit()
                 return self.get_profile(data['id'])
-        except Exception as e:
-            logger.error(f"Error creating profile: {e}")
+        except Exception:
+            logger.exception("Error creating profile")
             return None
 
     def update_profile(self, user_id: str, profile_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -208,8 +209,8 @@ class Database:
                 cursor.execute(query, list(data.values()) + [user_id])
                 conn.commit()
                 return self.get_profile(user_id)
-        except Exception as e:
-            logger.error(f"Error updating profile: {e}")
+        except Exception:
+            logger.exception("Error updating profile")
             return None
 
     # ==================== Bible Study Operations ====================
@@ -232,8 +233,8 @@ class Database:
                 cursor.execute(query, list(data.values()))
                 conn.commit()
                 return self.get_bible_study_session(data['id'])
-        except Exception as e:
-            logger.error(f"Error creating bible study session: {e}")
+        except Exception:
+            logger.exception("Error creating bible study session")
             return None
 
     def get_bible_study_sessions(self, user_id: str) -> List[Dict[str, Any]]:
@@ -258,8 +259,8 @@ class Database:
                 cursor.execute(query, list(data.values()) + [session_id])
                 conn.commit()
                 return self.get_bible_study_session(session_id)
-        except Exception as e:
-            logger.error(f"Error updating session: {e}")
+        except Exception:
+            logger.exception("Error updating session")
             return None
 
     def create_bible_study_message(self, message_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -277,8 +278,8 @@ class Database:
                 # Return the created message
                 cursor.execute("SELECT * FROM bible_study_messages WHERE id = ?", (data['id'],))
                 return self.to_dict(cursor.fetchone())
-        except Exception as e:
-            logger.error(f"Error creating message: {e}")
+        except Exception:
+            logger.exception("Error creating message")
             return None
 
     def get_bible_study_messages(self, session_id: str) -> List[Dict[str, Any]]:
@@ -304,8 +305,8 @@ class Database:
                 cursor.execute(query, list(data.values()))
                 conn.commit()
                 return self.get_emotional_support_session(data['id'])
-        except Exception as e:
-            logger.error(f"Error creating emotional session: {e}")
+        except Exception:
+            logger.exception("Error creating emotional session")
             return None
 
     def get_emotional_support_sessions(self, user_id: str) -> List[Dict[str, Any]]:
@@ -331,8 +332,8 @@ class Database:
                 cursor.execute(query, list(data.values()) + [session_id])
                 conn.commit()
                 return self.get_emotional_support_session(session_id)
-        except Exception as e:
-            logger.error(f"Error updating emotional session: {e}")
+        except Exception:
+            logger.exception("Error updating emotional session")
             return None
 
     def create_emotional_support_message(self, message_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -349,8 +350,8 @@ class Database:
                 conn.commit()
                 cursor.execute("SELECT * FROM emotional_support_messages WHERE id = ?", (data['id'],))
                 return self.to_dict(cursor.fetchone())
-        except Exception as e:
-            logger.error(f"Error creating support message: {e}")
+        except Exception:
+            logger.exception("Error creating support message")
             return None
 
     def get_emotional_support_messages(self, session_id: str) -> List[Dict[str, Any]]:
@@ -379,8 +380,8 @@ class Database:
                 cursor.execute(query, list(data.values()))
                 conn.commit()
                 return self.get_devotion_settings(data['user_id'])
-        except Exception as e:
-            logger.error(f"Error creating devotion settings: {e}")
+        except Exception:
+            logger.exception("Error creating devotion settings")
             return None
 
     def update_devotion_settings(self, user_id: str, settings_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -394,8 +395,8 @@ class Database:
                 cursor.execute(query, list(data.values()) + [user_id])
                 conn.commit()
                 return self.get_devotion_settings(user_id)
-        except Exception as e:
-            logger.error(f"Error updating devotion settings: {e}")
+        except Exception:
+            logger.exception("Error updating devotion settings")
             return None
 
     def create_devotion(self, devotion_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -413,8 +414,8 @@ class Database:
                 conn.commit()
                 cursor.execute("SELECT * FROM devotions WHERE id = ?", (data['id'],))
                 return self.to_dict(cursor.fetchone())
-        except Exception as e:
-            logger.error(f"Error creating devotion: {e}")
+        except Exception:
+            logger.exception("Error creating devotion")
             return None
 
     def get_devotions(self, user_id: str) -> List[Dict[str, Any]]:
@@ -435,8 +436,8 @@ class Database:
                 conn.commit()
                 cursor.execute("SELECT * FROM devotions WHERE id = ?", (devotion_id,))
                 return self.to_dict(cursor.fetchone())
-        except Exception as e:
-            logger.error(f"Error updating devotion: {e}")
+        except Exception:
+            logger.exception("Error updating devotion")
             return None
 
     def create_devotion_message(self, message_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -453,8 +454,8 @@ class Database:
                 conn.commit()
                 cursor.execute("SELECT * FROM devotion_messages WHERE id = ?", (data['id'],))
                 return self.to_dict(cursor.fetchone())
-        except Exception as e:
-            logger.error(f"Error creating devotion message: {e}")
+        except Exception:
+            logger.exception("Error creating devotion message")
             return None
 
     def get_devotion_messages(self, devotion_id: str) -> List[Dict[str, Any]]:
@@ -463,8 +464,8 @@ class Database:
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM devotion_messages WHERE devotion_id = ? ORDER BY created_at ASC", (devotion_id,))
                 return [self.to_dict(row) for row in cursor.fetchall()]
-        except Exception as e:
-            logger.error(f"Error getting devotion messages: {e}")
+        except Exception:
+            logger.exception("Error getting devotion messages")
             return []
 
     # ==================== Bible Operations ====================
@@ -504,8 +505,8 @@ class Database:
                         self.save_bible_verses(fetched_verses)
                         
                     return fetched_verses
-        except Exception as e:
-            logger.error(f"Error fetching from API: {e}")
+        except Exception:
+            logger.exception("Error fetching from API")
 
         return []
 
@@ -533,8 +534,8 @@ class Database:
                     )
                 conn.commit()
                 logger.info(f"💾 Cached {len(verses)} verses locally")
-        except Exception as e:
-            logger.error(f"Error saving verses to cache: {e}")
+        except Exception:
+            logger.exception("Error saving verses to cache")
 
     def _parse_bible_json(self, book, chapter, content):
         """Helper to parse API.Bible complex JSON output"""
@@ -633,8 +634,8 @@ class Database:
                 conn.commit()
                 cursor.execute("SELECT * FROM notes WHERE id = ?", (data['id'],))
                 return self.to_dict(cursor.fetchone())
-        except Exception as e:
-            logger.error(f"Error creating note: {e}")
+        except Exception:
+            logger.exception("Error creating note")
             return None
 
     def get_note(self, note_id: str, user_id: str) -> Optional[Dict[str, Any]]:
@@ -659,8 +660,8 @@ class Database:
                 cursor.execute("DELETE FROM notes WHERE id = ? AND user_id = ?", (note_id, user_id))
                 conn.commit()
                 return cursor.rowcount > 0
-        except Exception as e:
-            logger.error(f"Error deleting note: {e}")
+        except Exception:
+            logger.exception("Error deleting note")
             return False
 
     def verify_note_password(self, note_id: str, user_id: str, password: str) -> bool:
@@ -682,8 +683,8 @@ class Database:
                 conn.commit()
                 cursor.execute("SELECT * FROM notes WHERE id = ?", (note_id,))
                 return self.to_dict(cursor.fetchone())
-        except Exception as e:
-            logger.error(f"Error updating note: {e}")
+        except Exception:
+            logger.exception("Error updating note")
             return None
 
     # ==================== Prayer Operations ====================
@@ -702,8 +703,8 @@ class Database:
                 conn.commit()
                 cursor.execute("SELECT * FROM prayers WHERE id = ?", (data['id'],))
                 return self.to_dict(cursor.fetchone())
-        except Exception as e:
-            logger.error(f"Error creating prayer: {e}")
+        except Exception:
+            logger.exception("Error creating prayer")
             return None
 
     def delete_prayer(self, prayer_id: str, user_id: str) -> bool:
@@ -713,8 +714,8 @@ class Database:
                 cursor.execute("DELETE FROM prayers WHERE id = ? AND user_id = ?", (prayer_id, user_id))
                 conn.commit()
                 return cursor.rowcount > 0
-        except Exception as e:
-            logger.error(f"Error deleting prayer: {e}")
+        except Exception:
+            logger.exception("Error deleting prayer")
             return False
 
     # ==================== Dashboard Stats ====================
@@ -764,8 +765,8 @@ class Database:
                 stats["streak_days"] = streak
                     
             return stats
-        except Exception as e:
-            logger.error(f"Error getting user stats: {e}")
+        except Exception:
+            logger.exception("Error getting user stats")
             return stats
 
     def get_prayers(self, user_id: str) -> List[Dict[str, Any]]:
@@ -777,8 +778,8 @@ class Database:
                     (user_id,)
                 )
                 return [self.to_dict(row) for row in cursor.fetchall()]
-        except Exception as e:
-            logger.error(f"Error getting prayers: {e}")
+        except Exception:
+            logger.exception("Error getting prayers")
             return []
 
     def get_cached_verse(self, user_id: str, date_str: str) -> Optional[Dict[str, Any]]:
@@ -791,8 +792,8 @@ class Database:
                 )
                 row = cursor.fetchone()
                 return dict(row) if row else None
-        except Exception as e:
-            logger.error(f"Error getting cached verse: {e}")
+        except Exception:
+            logger.exception("Error getting cached verse")
             return None
 
     def save_cached_verse(self, user_id: str, date_str: str, verse_data: Dict[str, Any]) -> bool:
@@ -807,8 +808,8 @@ class Database:
                 )
                 conn.commit()
                 return True
-        except Exception as e:
-            logger.error(f"Error saving cached verse: {e}")
+        except Exception:
+            logger.exception("Error saving cached verse")
             return False
 
     # ==================== AI Chat Operations ====================
@@ -825,8 +826,8 @@ class Database:
                 )
                 conn.commit()
                 return {"id": session_id, "user_id": user_id, "title": title}
-        except Exception as e:
-            logger.error(f"Error creating chat session: {e}")
+        except Exception:
+            logger.exception("Error creating chat session")
             return None
 
     def get_chat_sessions(self, user_id: str) -> List[Dict[str, Any]]:
@@ -838,8 +839,8 @@ class Database:
                     (user_id,)
                 )
                 return [self.to_dict(row) for row in cursor.fetchall()]
-        except Exception as e:
-            logger.error(f"Error getting chat sessions: {e}")
+        except Exception:
+            logger.exception("Error getting chat sessions")
             return []
 
     def get_chat_session_messages(self, session_id: str) -> List[Dict[str, Any]]:
@@ -851,8 +852,8 @@ class Database:
                     (session_id,)
                 )
                 return [self.to_dict(row) for row in cursor.fetchall()]
-        except Exception as e:
-            logger.error(f"Error getting chat messages: {e}")
+        except Exception:
+            logger.exception("Error getting chat messages")
             return []
 
     def create_chat_message(self, message_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -873,8 +874,8 @@ class Database:
                 conn.commit()
                 cursor.execute("SELECT * FROM ai_chat_messages WHERE id = ?", (data['id'],))
                 return self.to_dict(cursor.fetchone())
-        except Exception as e:
-            logger.error(f"Error creating chat message: {e}")
+        except Exception:
+            logger.exception("Error creating chat message")
             return None
 
     def update_chat_session_title(self, session_id: str, title: str) -> bool:
@@ -887,8 +888,8 @@ class Database:
                 )
                 conn.commit()
                 return cursor.rowcount > 0
-        except Exception as e:
-            logger.error(f"Error updating chat session title: {e}")
+        except Exception:
+            logger.exception("Error updating chat session title")
             return False
 
 db = Database()

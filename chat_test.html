@@ -76,8 +76,8 @@
 
         .me {
             align-self: flex-end;
-            background: #3b82f6;
-            color: white;
+            background: #2563eb;
+            color: #ffffff;
             border-bottom-right-radius: 4px;
         }
 
@@ -119,8 +119,8 @@
         }
 
         button {
-            background: #3b82f6;
-            color: white;
+            background: #2563eb;
+            color: #ffffff;
             border: none;
             padding: 0 16px;
             border-radius: 8px;
@@ -130,7 +130,7 @@
         }
 
         button:hover {
-            background: #2563eb;
+            background: #1d4ed8;
         }
 
         @keyframes fadeIn {
@@ -154,13 +154,13 @@
         }
 
         .connected {
-            background: #065f46;
-            color: #34d399;
+            background: #064e3b;
+            color: #6ee7b7;
         }
 
         .disconnected {
             background: #7f1d1d;
-            color: #f87171;
+            color: #fecaca;
         }
     </style>
 </head>
@@ -184,7 +184,7 @@
     <script>
         const myUserId = 9;
         const prod = "wss://uat-consultation-portal.aisha.ng";
-        const token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc1NDA0OTQ0LCJpYXQiOjE3NzUzODMzNDQsImp0aSI6IjZkMTI4OTliZDFhODQ0MjNiNWY5NzFlNjY5NzZiNzk1IiwidXNlcl9pZCI6MTMxfQ.Floec3g3ugnT-YB-JfQKvc99Znae-040uLxyLWkvG4Y";
+        const token = ""; // ADD TOKEN HERE
 
         const socket = new WebSocket(`${prod}/ws/consultation/room/?token=${token}`);
 
@@ -196,8 +196,7 @@
         socket.onmessage = function (event) {
             const data = JSON.parse(event.data);
             const messageElement = document.createElement("div");
-            messageElement.classList.add("message");
-            messageElement.classList.add(data.user_id === myUserId ? "me" : "other");
+            messageElement.classList.add("message", data.user_id === myUserId ? "me" : "other");
 
             messageElement.innerHTML = `
                 <span class="user-id">${data.email || 'User ' + data.user_id}</span>

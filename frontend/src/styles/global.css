@@ -26,6 +26,11 @@
   --gradient-glow: radial-gradient(circle at center, rgba(245, 206, 77, 0.15) 0%, rgba(245, 206, 77, 0) 60%);
   --gradient-card: linear-gradient(135deg, #FDFDFD 0%, #EEEEF0 100%);
   --input-bg: #EAE6DF;
+
+  /* Responsive Variables */
+  --sidebar-width: 240px;
+  --main-padding: 2.5rem;
+  --content-max-width: 1200px;
 }
 
 [data-theme='dark'] {
@@ -205,4 +210,66 @@ textarea:focus {
 input::placeholder,
 textarea::placeholder {
   color: var(--text-muted);
+}
+
+/* Responsive Utilities */
+@media (max-width: 768px) {
+  :root {
+    --sidebar-width: 0px;
+    --main-padding: 1.25rem;
+  }
+}
+
+.mobile-only {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-only {
+    display: block;
+  }
+  .desktop-only {
+    display: none;
+  }
+}
+
+/* Layout Helpers */
+.flex-row {
+  display: flex;
+  flex-direction: row;
+}
+
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 1024px) {
+  .responsive-stack {
+    flex-direction: column !important;
+  }
+}
+
+.fit-content {
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Scrollbar styling for a premium feel */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }

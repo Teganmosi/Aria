@@ -112,6 +112,13 @@ const Home = () => {
     insight: 'Take a moment to rest in the assurance that your every need is seen and provided for by a Shepherd who knows you by name.'
   })
   const [isSaved, setIsSaved] = useState(false)
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   useEffect(() => {
     // Set dynamic greeting based on time
@@ -171,7 +178,7 @@ const Home = () => {
       <div className="home-header">
         <div>
           <p className="home-greeting">{greeting}, {user.full_name?.split(' ')[0].toUpperCase()}</p>
-          <h1 className="home-title">Let's walk in faith today.</h1>
+          <h1 className="home-title" style={{ fontSize: isMobile ? '2rem' : '3.5rem' }}>Let's walk in faith today.</h1>
         </div>
         <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
           <Settings
@@ -197,16 +204,16 @@ const Home = () => {
       {/* Top Feature Grid */}
       <div className="top-feature-grid">
         {/* Quote Card */}
-        <div style={{ background: 'var(--bg-card)', padding: '2.5rem', borderRadius: '24px', boxShadow: 'var(--shadow-main)', border: '1px solid var(--border-color)', position: 'relative', overflow: 'hidden' }}>
-          <Quote size={40} color="var(--brand-accent)" style={{ opacity: 0.2, marginBottom: '1.5rem' }} />
-          <p style={{ fontSize: '1.75rem', lineHeight: '1.4', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", fontStyle: 'italic', margin: '0 0 1.5rem' }}>
+        <div style={{ background: 'var(--bg-card)', padding: isMobile ? '1.5rem' : '2.5rem', borderRadius: '24px', boxShadow: 'var(--shadow-main)', border: '1px solid var(--border-color)', position: 'relative', overflow: 'hidden' }}>
+          <Quote size={isMobile ? 24 : 40} color="var(--brand-accent)" style={{ opacity: 0.2, marginBottom: '1.5rem' }} />
+          <p style={{ fontSize: isMobile ? '1.25rem' : '1.75rem', lineHeight: '1.4', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", fontStyle: 'italic', margin: '0 0 1.5rem' }}>
             "{verseObj.verse}"
           </p>
           <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600, color: 'var(--brand-accent)', letterSpacing: '0.1em' }}>- {verseObj.reference.toUpperCase()}</p>
 
-          <div style={{ marginTop: '2.5rem', paddingTop: '2.5rem', borderTop: '1px solid var(--border-color)' }}>
+          <div style={{ marginTop: isMobile ? '1.5rem' : '2.5rem', paddingTop: isMobile ? '1.5rem' : '2.5rem', borderTop: '1px solid var(--border-color)' }}>
             <p style={{ margin: '0 0 0.75rem', fontSize: '0.65rem', fontWeight: 700, color: 'var(--brand-accent)', letterSpacing: '0.2em' }}>ARIA INSIGHT</p>
-            <p style={{ margin: 0, fontSize: '0.95rem', lineHeight: '1.6', color: 'var(--text-secondary)' }}>
+            <p style={{ margin: 0, fontSize: isMobile ? '0.85rem' : '0.95rem', lineHeight: '1.6', color: 'var(--text-secondary)' }}>
               {verseObj.insight}
             </p>
           </div>
@@ -264,7 +271,7 @@ const Home = () => {
 
       {/* Bottom Manna */}
       <div style={{
-        background: 'var(--gradient-card)', borderRadius: '40px', padding: 'var(--manna-padding, 5rem)',
+        background: 'var(--gradient-card)', borderRadius: '40px', padding: isMobile ? '3rem 1.5rem' : '5rem',
         display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
         border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-main)'
       }}>
@@ -272,7 +279,7 @@ const Home = () => {
           <Sparkles size={28} color="var(--text-inverse)" />
         </div>
         <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.2em', marginBottom: '1.5rem' }}>DAILY MANNA</p>
-        <h2 style={{ fontSize: '1.8rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", maxWidth: '600px', lineHeight: 1.6, marginBottom: '3rem' }}>
+        <h2 style={{ fontSize: isMobile ? '1.4rem' : '1.8rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", maxWidth: '600px', lineHeight: 1.6, marginBottom: '3rem' }}>
           "{verseObj.daily_manna || "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."}"
         </h2>
         <button 
