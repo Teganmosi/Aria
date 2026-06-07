@@ -116,6 +116,10 @@ class Database:
             logger.exception("Error ensuring tables")
 
     def get_connection(self):
+        # Ensure directory exists before connecting
+        db_dir = os.path.dirname(DB_NAME)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
         conn = sqlite3.connect(DB_NAME)
         conn.row_factory = sqlite3.Row
         return conn
