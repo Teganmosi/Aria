@@ -12,6 +12,11 @@ logger = logging.getLogger(__name__)
 
 DB_NAME = os.getenv("DATABASE_PATH", "aria.db")
 
+# Ensure the directory for the database file exists
+DB_DIR = os.path.dirname(DB_NAME)
+if DB_DIR and not os.path.exists(DB_DIR):
+    os.makedirs(DB_DIR, exist_ok=True)
+
 class Database:
     _instance: Optional["Database"] = None
 
