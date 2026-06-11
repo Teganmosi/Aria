@@ -33,7 +33,31 @@ class Database:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                # Create prayers table if it doesn't exist (since it was missing in init_sqlite.py)
+                # Create core tables if they don't exist (for fresh deployments like Render)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT NOT NULL UNIQUE,
+                    hashed_password TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS profiles (
+                    id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                    email TEXT NOT NULL UNIQUE,
+                    full_name TEXT,
+                    avatar_url TEXT,
+                    preferred_bible_version TEXT DEFAULT 'NIV',
+                    notification_preferences TEXT DEFAULT '{"email": true, "push": true}',
+                    spiritual_journey_notes TEXT,
+                    aria_custom_prompt TEXT,
+                    aria_personal_context TEXT,
+                    aria_voice TEXT DEFAULT 'verse',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
                 cursor.execute("""
                 CREATE TABLE IF NOT EXISTS prayers (
                     id TEXT PRIMARY KEY,
@@ -44,6 +68,156 @@ class Database:
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
                 """)
+                # Core tables from init_sqlite.py
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS bible_study_sessions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    book TEXT NOT NULL,
+                    chapter INTEGER NOT NULL,
+                    verses TEXT NOT NULL,
+                    selected_text TEXT NOT NULL,
+                    is_realtime BOOLEAN DEFAULT 0,
+                    ai_explanation TEXT,
+                    ai_context TEXT,
+                    conversation_summary TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS bible_study_messages (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL REFERENCES bible_study_sessions(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                    content TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS emotional_support_sessions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    mood TEXT NOT NULL,
+                    situation_description TEXT,
+                    is_realtime BOOLEAN DEFAULT 0,
+                    ai_response TEXT,
+                    provided_scriptures TEXT,
+                    prayer_suggestion TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS emotional_support_messages (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL REFERENCES emotional_support_sessions(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                    content TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS devotion_settings (
+                    user_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+                    preferred_time TEXT NOT NULL,
+                    timezone TEXT NOT NULL,
+                    duration_minutes INTEGER DEFAULT 15,
+                    topics TEXT DEFAULT '[]',
+                    auto_prayer BOOLEAN DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS devotions (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    scheduled_for DATETIME NOT NULL,
+                    day_plan_summary TEXT,
+                    scripture_reading TEXT,
+                    reflection_prompt TEXT,
+                    user_reflection TEXT,
+                    status TEXT DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'completed', 'skipped')),
+                    completed_at DATETIME,
+                    ai_prayer TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS bible_verses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    book TEXT NOT NULL,
+                    chapter INTEGER NOT NULL,
+                    verse INTEGER NOT NULL,
+                    text TEXT NOT NULL,
+                    version TEXT DEFAULT 'NIV',
+                    UNIQUE (book, chapter, verse, version)
+                );
+                """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS scripture_references (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    verse_id INTEGER NOT NULL REFERENCES bible_verses(id) ON DELETE CASCADE,
+                    category TEXT NOT NULL,
+                    tags TEXT NOT NULL,
+                    context_description TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_favorites (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    item_type TEXT NOT NULL CHECK (item_type IN ('verse', 'prayer', 'devotion')),
+                    item_id TEXT NOT NULL,
+                    notes TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (user_id, item_type, item_id)
+                );
+                """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS journal_entries (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    title TEXT,
+                    content TEXT NOT NULL,
+                    mood TEXT,
+                    related_scriptures TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS cached_verses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    verse_text TEXT NOT NULL,
+                    verse_reference TEXT NOT NULL,
+                    aria_insight TEXT,
+                    daily_manna TEXT,
+                    cached_date TEXT NOT NULL
+                );
+                """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS notes (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    title TEXT,
+                    content TEXT NOT NULL,
+                    source_type TEXT DEFAULT 'general',
+                    source_reference TEXT,
+                    tags TEXT DEFAULT '[]',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
+                # Create indexes
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_bible_study_sessions_user_id ON bible_study_sessions (user_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_bible_study_messages_session_id ON bible_study_messages (session_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_emotional_support_sessions_user_id ON emotional_support_sessions (user_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_devotions_user_id ON devotions (user_id);")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_devotion_messages_devotion_id ON devotion_messages (devotion_id);")
                 conn.commit()
                 # Add aria_insight to cached_verses if missing
                 try:
