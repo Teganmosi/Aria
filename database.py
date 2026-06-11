@@ -26,6 +26,18 @@ class Database:
         return cls._instance
 
     def __init__(self):
+        # Optional: Reset database on startup if RESET_DB=true (run once)
+        if not hasattr(Database, '_db_reset_done'):
+            if os.getenv("RESET_DB", "").lower() == "true":
+                import glob
+                for f in glob.glob(f"{DB_NAME}*"):
+                    try:
+                        os.remove(f)
+                        logger.info(f"🗑️ Removed database file: {f}")
+                    except Exception as e:
+                        logger.warning(f"Could not remove {f}: {e}")
+            Database._db_reset_done = True
+        
         # Ensure latest tables exist
         self._ensure_tables()
 
@@ -292,16 +304,6 @@ class Database:
         db_dir = os.path.dirname(DB_NAME)
         if db_dir and not os.path.exists(db_dir):
             os.makedirs(db_dir, exist_ok=True)
-        
-        # Optional: Reset database on startup if RESET_DB=true
-        if os.getenv("RESET_DB", "").lower() == "true":
-            import glob
-            for f in glob.glob(f"{DB_NAME}*"):
-                try:
-                    os.remove(f)
-                    logger.info(f"🗑️ Removed database file: {f}")
-                except Exception as e:
-                    logger.warning(f"Could not remove {f}: {e}")
         
         conn = sqlite3.connect(DB_NAME)
         conn.row_factory = sqlite3.Row
