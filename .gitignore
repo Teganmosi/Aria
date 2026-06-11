@@ -1,39 +1,26 @@
-```
+```markdown
 # Dependencies
 node_modules/
 
-# Build artifacts
-dist/
-build/
-*.css.map
-
-# Cache directories
-.cache/
-.npm/
-.yarn/
-
-# Logs
-*.log
-
-# Environment
+# Environment variables
 .env
 .env.local
-*.env.*
+.env.*
 
-# Editors
+# Editor/IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
+*.tmp
 
-# OS generated files
-.DS_Store
-Thumbs.db
+# Logs
+*.log
 
-# Coverage reports
-coverage/
-htmlcov/
-*.coverage
+# Build artifacts
+dist/
+build/
+target/
 
 # Python specific
 __pycache__/
@@ -45,13 +32,22 @@ __pycache__/
 *.egg-info/
 .eggs/
 
-# Temporary files
-*.tmp
-*.temp
-*.bak
-*.backup
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
 
-# Compression artifacts
+# Testing
+.mypy_cache/
+.pytest_cache/
+.nyc_output/
+coverage/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Compressed files
 *.zip
 *.gz
 *.tar

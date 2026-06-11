@@ -6,7 +6,7 @@ import { useEffect } from 'react'
 
 const Register = () => {
   const navigate = useNavigate()
-  const { register } = useAuth()
+  const { register, isAuthenticated } = useAuth()
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -24,6 +24,13 @@ const Register = () => {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/app/home')
+    }
+  }, [isAuthenticated, navigate])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setIsLoading(true)
@@ -31,10 +38,9 @@ const Register = () => {
 
     try {
       await register(formData.email, formData.password, formData.fullName)
-      navigate('/app/home')
+      // Navigation will happen via the isAuthenticated effect above
     } catch (err) {
       setError(err.message || 'Failed to create account')
-    } finally {
       setIsLoading(false)
     }
   }

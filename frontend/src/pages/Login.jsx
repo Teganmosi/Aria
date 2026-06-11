@@ -6,7 +6,7 @@ import { useEffect } from 'react'
 
 const Login = () => {
   const navigate = useNavigate()
-  const { login } = useAuth()
+  const { login, isAuthenticated } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -21,6 +21,13 @@ const Login = () => {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/app/home')
+    }
+  }, [isAuthenticated, navigate])
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setIsLoading(true)
@@ -28,10 +35,9 @@ const Login = () => {
 
     try {
       await login(email, password)
-      navigate('/app/home')
+      // Navigation will happen via the isAuthenticated effect above
     } catch (err) {
       setError(err.message || 'Failed to sign in')
-    } finally {
       setIsLoading(false)
     }
   }
