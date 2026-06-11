@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { Heart, Sparkles, Play, ArrowRight, HeartHandshake, Mic, Moon, Sun, Cloud, Send } from 'lucide-react'
-import { AnimatedBackground } from './LandingPage'
+import { AnimatedBackground } from '../components/ui/SharedComponents'
 import { aiService, emotionalSupportService } from '../services/api'
 
 const SITUATIONS = [

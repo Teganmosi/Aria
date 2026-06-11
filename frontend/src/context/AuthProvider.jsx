@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import PropTypes from 'prop-types'
 import { AuthContext } from './AuthContext'
-import { authService } from '../services/api'
+import { authService, dashboardService } from '../services/api'
 
-// Cache user data with timestamp to avoid stale data
+// Cache keys
 const USER_CACHE_KEY = 'userCache'
+const DASHBOARD_CACHE_KEY = 'dashboardData'
 const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
 
 const getCachedUser = () => {
@@ -25,6 +26,27 @@ const getCachedUser = () => {
 const setCachedUser = (user) => {
   try {
     localStorage.setItem(USER_CACHE_KEY, JSON.stringify({ user, timestamp: Date.now() }))
+  } catch {}
+}
+
+const getCachedDashboard = () => {
+  try {
+    const cached = localStorage.getItem(DASHBOARD_CACHE_KEY)
+    if (!cached) return null
+    const { data, timestamp } = JSON.parse(cached)
+    if (Date.now() - timestamp > CACHE_DURATION) {
+      localStorage.removeItem(DASHBOARD_CACHE_KEY)
+      return null
+    }
+    return data
+  } catch {
+    return null
+  }
+}
+
+const setCachedDashboard = (data) => {
+  try {
+    localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify({ data, timestamp: Date.now() }))
   } catch {}
 }
 
@@ -97,10 +119,19 @@ export const AuthProvider = ({ children }) => {
       setCachedUser(userData)
       setIsAuthenticated(true)
       setShowAuthModal(false)
+      
+      // Prefetch dashboard data in background after successful login
+      setTimeout(() => {
+        dashboardService.getDashboardData()
+          .then(dashboardData => {
+            setCachedDashboard(dashboardData)
+          })
+          .catch(() => {})
+      }, 100)
     }
     
     return response
-  }, [])
+  }, [setCachedDashboard])
 
   const register = useCallback(async (email, password, fullName) => {
     const response = await authService.register(email, password, fullName)
@@ -113,13 +144,23 @@ export const AuthProvider = ({ children }) => {
       setCachedUser(userData)
       setIsAuthenticated(true)
       setShowAuthModal(false)
+      
+      // Prefetch dashboard data in background after successful registration
+      setTimeout(() => {
+        dashboardService.getDashboardData()
+          .then(dashboardData => {
+            setCachedDashboard(dashboardData)
+          })
+          .catch(() => {})
+      }, 100)
     }
     return response
-  }, [])
+  }, [setCachedDashboard])
 
   const logout = useCallback(() => {
     localStorage.removeItem('authToken')
     localStorage.removeItem(USER_CACHE_KEY)
+    localStorage.removeItem(DASHBOARD_CACHE_KEY)
     setUser(null)
     setIsAuthenticated(false)
     setShowAuthModal(true)

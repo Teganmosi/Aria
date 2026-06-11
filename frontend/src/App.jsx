@@ -1,31 +1,40 @@
+import { Suspense, lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import useAuth from './hooks/useAuth'
 import ErrorBoundary from './components/ErrorBoundary'
 
-// Public Pages
-import LandingPage from './pages/LandingPage'
+// Public Pages - Eager loaded for fast initial render
 import Login from './pages/Login'
 import Register from './pages/Register'
 
-// Protected App Pages
+// Protected App Layout - Eager loaded
 import AppLayout from './components/AppLayout'
-import Home from './pages/Home'
-import AIChat from './pages/AIChat'
-import Bible from './pages/Bible'
-import BibleStudy from './pages/BibleStudy'
-import EmotionalSupport from './pages/EmotionalSupport'
-import Devotion from './pages/Devotion'
-import Profile from './pages/Profile'
-import Notes from './pages/Notes'
 
-import ActivityHistory from './pages/ActivityHistory'
+// Lazy loaded pages for code splitting
+const LandingPage = lazy(() => import('./pages/LandingPage'))
+const Home = lazy(() => import('./pages/Home'))
+const AIChat = lazy(() => import('./pages/AIChat'))
+const Bible = lazy(() => import('./pages/Bible'))
+const BibleStudy = lazy(() => import('./pages/BibleStudy'))
+const EmotionalSupport = lazy(() => import('./pages/EmotionalSupport'))
+const Devotion = lazy(() => import('./pages/Devotion'))
+const Profile = lazy(() => import('./pages/Profile'))
+const Notes = lazy(() => import('./pages/Notes'))
+const ActivityHistory = lazy(() => import('./pages/ActivityHistory'))
 
-// Loading Component
+// Loading Component with skeleton
 const LoadingScreen = () => (
   <div className="loading-screen">
     <div className="loading-spinner large"></div>
     <p>Loading Aria...</p>
   </div>
+)
+
+// Suspense wrapper for lazy components
+const LazyLoad = ({ children }) => (
+  <Suspense fallback={<LoadingScreen />}>
+    {children}
+  </Suspense>
 )
 
 // Protected Route Component
@@ -51,22 +60,22 @@ function App() {
     <ErrorBoundary showReset>
       <Routes>
         {/* Public Routes */}
-        <Route path="/" element={<PublicRoute><LandingPage /></PublicRoute>} />
+        <Route path="/" element={<PublicRoute><LazyLoad><LandingPage /></LazyLoad></PublicRoute>} />
         <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
 
         {/* Protected App Routes */}
         <Route path="/app" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
           <Route index element={<Navigate to="home" replace />} />
-          <Route path="home" element={<Home />} />
-          <Route path="ai-chat" element={<AIChat />} />
-          <Route path="bible" element={<Bible />} />
-          <Route path="bible-study" element={<BibleStudy />} />
-          <Route path="emotional-support" element={<EmotionalSupport />} />
-          <Route path="devotion" element={<Devotion />} />
-          <Route path="notes" element={<Notes />} />
-          <Route path="activity" element={<ActivityHistory />} />
-          <Route path="profile" element={<Profile />} />
+          <Route path="home" element={<LazyLoad><Home /></LazyLoad>} />
+          <Route path="ai-chat" element={<LazyLoad><AIChat /></LazyLoad>} />
+          <Route path="bible" element={<LazyLoad><Bible /></LazyLoad>} />
+          <Route path="bible-study" element={<LazyLoad><BibleStudy /></LazyLoad>} />
+          <Route path="emotional-support" element={<LazyLoad><EmotionalSupport /></LazyLoad>} />
+          <Route path="devotion" element={<LazyLoad><Devotion /></LazyLoad>} />
+          <Route path="notes" element={<LazyLoad><Notes /></LazyLoad>} />
+          <Route path="activity" element={<LazyLoad><ActivityHistory /></LazyLoad>} />
+          <Route path="profile" element={<LazyLoad><Profile /></LazyLoad>} />
         </Route>
 
         {/* Catch all */}

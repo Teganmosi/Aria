@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Sun, Sparkles, Heart, RefreshCw, Check, Send } from 'lucide-react'
 import { aiService, devotionService } from '../services/api'
-import { AnimatedBackground } from './LandingPage'
+import { AnimatedBackground } from '../components/ui/SharedComponents'
 
 const DURATION_OPTIONS = [
   { id: 5, label: '5 min', desc: 'A quick moment of peace' },

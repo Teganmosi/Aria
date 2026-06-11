@@ -10,7 +10,7 @@ import {
   Menu,
   X
 } from 'lucide-react'
-import { ThemeToggle } from '../pages/LandingPage'
+import { ThemeToggle } from '../components/ui/SharedComponents'
 import { useState, useEffect } from 'react'
 
 const AppLayout = () => {
