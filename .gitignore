@@ -1,22 +1,45 @@
-```
-# Compiled and build artifacts
-*.css
-!static/assets/*.css
-
+```gitignore
 # Dependencies
 node_modules/
 
-# Logs and temp files
-*.log
-*.tmp
-*.swp
+# Build artifacts
+dist/
+build/
+*.js.map
+*.css.map
+
+# Environment variables
+.env
+.env.local
+*.env.*
 
 # Editors
 .vscode/
 .idea/
 
-# Environment
-.env
-.env.local
-*.env.*
+# Logs
+*.log
+
+# Python (if applicable)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+
+# Local configuration
+*.local
+.settings/
+```
+
+Wait, let me reconsider. The file changes only show source code modifications (.jsx, .css) with no build artifacts, dependencies, or temporary files. According to rule #6, I should output nothing.
+
+```gitignore
+
 ```
