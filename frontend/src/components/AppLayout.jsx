@@ -15,6 +15,7 @@ import { useState, useEffect } from 'react'
 
 const AppLayout = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth <= 768)
@@ -22,14 +23,22 @@ const AppLayout = () => {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  // Close mobile menu when route changes
+  useEffect(() => {
+    setMobileMenuOpen(false)
+  }, [])
+
   const navItems = [
-    { path: '/app/home', icon: <House size={isMobile ? 22 : 18} />, label: 'HOME' },
-    { path: '/app/ai-chat', icon: <MessageSquare size={isMobile ? 22 : 18} />, label: 'CHAT' },
-    { path: '/app/bible', icon: <BookText size={isMobile ? 22 : 18} />, label: 'BIBLE' },
-    { path: '/app/bible-study', icon: <BookOpen size={isMobile ? 22 : 18} />, label: 'STUDY' },
-    { path: '/app/emotional-support', icon: <Heart size={isMobile ? 22 : 18} />, label: 'SUPPORT' },
-    { path: '/app/notes', icon: <BookText size={isMobile ? 22 : 18} />, label: 'NOTES' },
-    { path: '/app/devotion', icon: <Calendar size={isMobile ? 22 : 18} />, label: 'DEVOTIONS' },
+    { path: '/app/home', icon: <House size={20} />, label: 'Home' },
+    { path: '/app/ai-chat', icon: <MessageSquare size={20} />, label: 'Chat' },
+    { path: '/app/bible', icon: <BookText size={20} />, label: 'Bible' },
+    { path: '/app/bible-study', icon: <BookOpen size={20} />, label: 'Study' },
+    { path: '/app/emotional-support', icon: <Heart size={20} />, label: 'Support' },
+  ]
+
+  const moreNavItems = [
+    { path: '/app/notes', icon: <BookText size={20} />, label: 'Notes' },
+    { path: '/app/devotion', icon: <Calendar size={20} />, label: 'Devotions' },
   ]
 
   return (
@@ -114,7 +123,15 @@ const AppLayout = () => {
           zIndex: 100 
         }}
       >
-        <h2 className="font-serif" style={{ fontStyle: 'italic', fontSize: '1.5rem', color: 'var(--text-main)', margin: 0 }}>Aria</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <button 
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', cursor: 'pointer', padding: '0.5rem' }}
+          >
+            {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+          <h2 className="font-serif" style={{ fontStyle: 'italic', fontSize: '1.5rem', color: 'var(--text-main)', margin: 0 }}>Aria</h2>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <ThemeToggle />
           <NavLink to="/app/profile">
@@ -125,67 +142,101 @@ const AppLayout = () => {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main style={{ flex: 1, position: 'relative', overflowY: 'auto', background: 'var(--bg-main)', paddingBottom: isMobile ? '80px' : '0' }}>
-        <Outlet />
-      </main>
-
-      {/* Mobile Bottom Nav */}
-      <nav 
-        className="mobile-only"
-        style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: '72px',
-          background: 'var(--glass-bg)',
-          backdropFilter: 'blur(20px)',
-          borderTop: '1px solid var(--border-color)',
-          display: 'flex',
-          justifyContent: 'space-around',
-          alignItems: 'center',
-          padding: '0 0.5rem',
-          zIndex: 1000,
-          boxShadow: '0 -4px 20px rgba(0,0,0,0.05)'
-        }}
-      >
-        {navItems.slice(0, 5).map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            style={({ isActive }) => ({
+      {/* Mobile Slide-out Menu */}
+      {mobileMenuOpen && (
+        <>
+          <div 
+            className="mobile-only"
+            onClick={() => setMobileMenuOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.5)',
+              zIndex: 998,
+              backdropFilter: 'blur(4px)'
+            }}
+          />
+          <nav 
+            className="mobile-only"
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              bottom: 0,
+              width: '280px',
+              background: 'var(--bg-card)',
+              zIndex: 999,
+              padding: '1.5rem',
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'center',
-              gap: '0.25rem',
-              color: isActive ? 'var(--text-main)' : 'var(--text-muted)',
-              textDecoration: 'none',
-              fontSize: '0.6rem',
-              fontWeight: isActive ? 700 : 500,
-              transition: 'all 0.2s ease',
-              minWidth: '60px'
-            })}
+              gap: '0.5rem',
+              boxShadow: '4px 0 20px rgba(0,0,0,0.1)',
+              overflowY: 'auto'
+            }}
           >
-            {({ isActive }) => (
-              <>
-                <div style={{ 
-                  padding: '0.5rem', 
-                  borderRadius: '12px', 
-                  background: isActive ? 'var(--brand-accent)' : 'transparent',
-                  color: isActive ? 'var(--text-inverse)' : 'inherit',
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+              <h3 style={{ fontSize: '0.75rem', letterSpacing: '0.15em', color: 'var(--text-muted)', margin: 0 }}>MENU</h3>
+              <button onClick={() => setMobileMenuOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)' }}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            {navItems.map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                style={({ isActive }) => ({
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
+                  gap: '1rem',
+                  padding: '1rem',
+                  color: isActive ? 'var(--text-main)' : 'var(--text-secondary)',
+                  textDecoration: 'none',
+                  fontWeight: isActive ? 700 : 500,
+                  fontSize: '0.95rem',
+                  borderRadius: '12px',
+                  background: isActive ? 'var(--bg-alt)' : 'transparent',
+                  transition: 'all 0.2s ease'
+                })}
+              >
+                {item.icon}
+                {item.label}
+              </NavLink>
+            ))}
+            
+            <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
+              <p style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '1rem' }}>MORE</p>
+              {moreNavItems.map((item) => (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  style={({ isActive }) => ({
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '1rem',
+                    padding: '1rem',
+                    color: isActive ? 'var(--text-main)' : 'var(--text-secondary)',
+                    textDecoration: 'none',
+                    fontWeight: isActive ? 700 : 500,
+                    fontSize: '0.95rem',
+                    borderRadius: '12px',
+                    background: isActive ? 'var(--bg-alt)' : 'transparent',
+                    transition: 'all 0.2s ease'
+                  })}
+                >
                   {item.icon}
-                </div>
-                <span style={{ fontSize: '0.55rem', letterSpacing: '0.05em' }}>{item.label}</span>
-              </>
-            )}
-          </NavLink>
-        ))}
-      </nav>
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+          </nav>
+        </>
+      )}
+
+      {/* Main Content */}
+      <main style={{ flex: 1, position: 'relative', overflowY: 'auto', background: 'var(--bg-main)' }}>
+        <Outlet />
+      </main>
     </div>
   )
 }

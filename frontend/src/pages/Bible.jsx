@@ -480,6 +480,75 @@ const Bible = () => {
           z-index: 10;
         }
 
+        /* Mobile responsive for page content */
+        @media (max-width: 640px) {
+          .page-content {
+            padding: 1rem 1.25rem;
+          }
+          
+          .bible-header {
+            flex-direction: column;
+            gap: 1rem;
+            padding: 1.25rem !important;
+            border-radius: 16px !important;
+          }
+          
+          .bible-header-left {
+            width: 100%;
+          }
+          
+          .reading-progress {
+            width: 100%;
+          }
+          
+          .verse-of-day {
+            padding: 2rem 1.5rem !important;
+            border-radius: 24px !important;
+          }
+          
+          .verse-of-day blockquote {
+            font-size: 1.4rem !important;
+            line-height: 1.4;
+          }
+          
+          .verse-of-day cite {
+            font-size: 0.95rem !important;
+          }
+          
+          .search-container {
+            padding: 0.875rem 1.25rem !important;
+            border-radius: 100px !important;
+          }
+          
+          .search-container input {
+            font-size: 1rem !important;
+          }
+          
+          .testament-title {
+            font-size: 1.4rem !important;
+          }
+          
+          .chapter-hero {
+            flex-direction: column;
+            text-align: center;
+            padding: 2rem 1.5rem !important;
+            gap: 1rem;
+          }
+          
+          .hero-icon {
+            font-size: 3rem !important;
+          }
+          
+          .chapter-hero h2 {
+            font-size: 1.75rem !important;
+          }
+          
+          .chapters-grid-container {
+            padding: 1.5rem !important;
+            border-radius: 20px !important;
+          }
+        }
+
         /* Header */
         .bible-header {
           display: flex;
@@ -598,6 +667,22 @@ const Bible = () => {
           gap: 1rem;
         }
 
+        /* Mobile responsive for books grid */
+        @media (max-width: 640px) {
+          .books-grid {
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 0.75rem;
+          }
+          
+          .book-card {
+            padding: 1.25rem;
+          }
+          
+          .book-card h4 {
+            font-size: 0.95rem;
+          }
+        }
+
         .book-card {
           padding: 1.5rem;
           border-radius: 20px;
@@ -658,6 +743,19 @@ const Bible = () => {
           gap: 0.75rem;
         }
 
+        /* Mobile responsive for chapter grid */
+        @media (max-width: 640px) {
+          .chapter-grid {
+            grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
+            gap: 0.5rem;
+          }
+          
+          .chapter-btn {
+            font-size: 0.95rem;
+            border-radius: 12px;
+          }
+        }
+
         .chapter-btn {
           aspect-ratio: 1;
           display: flex;
@@ -699,6 +797,51 @@ const Bible = () => {
           min-height: 60vh;
           background: var(--bg-card);
           border: 1px solid var(--border-color);
+        }
+
+        /* Mobile responsive for reading view */
+        @media (max-width: 640px) {
+          .verses-scroll {
+            padding: 1.5rem;
+            border-radius: 20px;
+            min-height: auto;
+          }
+          
+          .verse-card {
+            gap: 1rem;
+            padding: 1rem;
+          }
+          
+          .verse-text {
+            font-size: 1.05rem;
+            line-height: 1.6;
+          }
+          
+          .verse-number {
+            font-size: 0.8rem;
+            min-width: 20px;
+          }
+          
+          .reading-header h2 {
+            font-size: 1.75rem !important;
+          }
+          
+          .reading-footer-nav {
+            flex-direction: column;
+            gap: 0.5rem;
+            border-radius: 16px !important;
+            padding: 0.75rem !important;
+          }
+          
+          .nav-divider {
+            display: none;
+          }
+          
+          .nav-btn {
+            width: 100%;
+            justify-content: center;
+            padding: 0.75rem !important;
+          }
         }
 
         .reading-header {
