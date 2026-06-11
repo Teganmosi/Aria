@@ -1,1 +1,22 @@
-(empty)
+```
+# Compiled and build artifacts
+*.css
+!static/assets/*.css
+
+# Dependencies
+node_modules/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Editors
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local
+*.env.*
+```
