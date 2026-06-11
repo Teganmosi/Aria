@@ -558,8 +558,152 @@ const BibleStudy = () => {
         }
 
         @media (max-width: 900px) {
-          .study-layout { grid-template-columns: 1fr; }
-          .content-sidebar { display: none; }
+          .study-layout { 
+            grid-template-columns: 1fr; 
+            height: auto;
+            min-height: auto;
+          }
+          .content-sidebar { 
+            display: block;
+            order: 2;
+            margin-top: 1rem;
+          }
+          .chat-interface {
+            order: 1;
+            min-height: 50vh;
+          }
+          .scripture-card {
+            padding: 1.5rem;
+          }
+          .scripture-text {
+            font-size: 1.1rem;
+          }
+        }
+
+        @media (max-width: 768px) {
+          .study-content-wrapper {
+            padding: 1rem;
+            height: auto;
+            min-height: 100vh;
+          }
+          .revamped-session {
+            gap: 1rem;
+          }
+          .session-nav {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+            padding-bottom: 1rem;
+          }
+          .exit-btn {
+            align-self: flex-end;
+          }
+          .hero-branding h1 {
+            font-size: 2rem;
+          }
+          .hero-branding p {
+            font-size: 1rem;
+          }
+          .input-panel {
+            padding: 1.5rem;
+          }
+          .sanctuary-input {
+            padding: 1rem 1.5rem;
+            font-size: 1rem;
+          }
+          .begin-button {
+            padding: 1rem;
+            font-size: 1rem;
+            width: 100%;
+          }
+          .example-tags {
+            justify-content: flex-start;
+          }
+          .tag-btn {
+            font-size: 0.8rem;
+            padding: 0.4rem 1rem;
+          }
+          .messages-flow {
+            padding: 1rem;
+            gap: 1.5rem;
+          }
+          .revamped-msg {
+            max-width: 90%;
+          }
+          .msg-content-bubble {
+            padding: 0.875rem 1.25rem;
+            font-size: 0.9375rem;
+          }
+          .floating-input-area {
+            padding: 1rem;
+          }
+          .input-outer {
+            padding: 0.4rem 0.4rem 0.4rem 1rem;
+          }
+          .input-outer input {
+            font-size: 0.9375rem;
+          }
+          .send-circle {
+            width: 40px;
+            height: 40px;
+          }
+          .footer-controls {
+            flex-wrap: wrap;
+            gap: 0.5rem;
+          }
+          .complete-btn, .final-prayer-btn, .start-new-btn {
+            font-size: 0.65rem;
+            padding: 0.5rem 1rem;
+          }
+          .action-pill {
+            font-size: 0.7rem;
+            padding: 0.7rem 1rem;
+          }
+          .progress-mini-card {
+            padding: 1rem;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .study-content-wrapper {
+            padding: 0.75rem;
+          }
+          .hero-branding h1 {
+            font-size: 1.75rem;
+          }
+          .sparkle-icon {
+            width: 48px;
+            height: 48px;
+          }
+          .session-title {
+            font-size: 1.25rem;
+          }
+          .study-badge {
+            font-size: 0.6rem;
+            padding: 0.3rem 0.6rem;
+          }
+          .scripture-text {
+            font-size: 1rem;
+          }
+          .msg-content-bubble {
+            padding: 0.75rem 1rem;
+            font-size: 0.875rem;
+          }
+          .aria-avatar, .user-avatar {
+            width: 32px;
+            height: 32px;
+          }
+          .input-outer input {
+            font-size: 0.875rem;
+          }
+          .send-circle {
+            width: 36px;
+            height: 36px;
+          }
+          .tag-btn {
+            font-size: 0.75rem;
+            padding: 0.35rem 0.85rem;
+          }
         }
 
         /* Sidebar Content */
