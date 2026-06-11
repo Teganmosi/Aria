@@ -18,7 +18,7 @@ import {
   KeyRound
 } from 'lucide-react'
 import { notesService } from '../services/api'
-import { AnimatedBackground } from './LandingPage'
+import { AnimatedBackground } from '../components/ui/SharedComponents'
 
 const NoteCard = ({ note, onEdit, onDelete, onUnlock }) => {
   const formatDate = (dateString) => {

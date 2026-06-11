@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Mic, Send, Sparkles, X, History } from 'lucide-react'
 import { aiChatService, profileService } from '../services/api'
 import { useAuth } from '../hooks/useAuth'
-import { AnimatedBackground } from './LandingPage'
+import { AnimatedBackground } from '../components/ui/SharedComponents'
 import VoiceCall from '../components/VoiceCall'
 import './AIChat.css'
 

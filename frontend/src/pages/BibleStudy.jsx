@@ -4,7 +4,7 @@ import { BookOpen, Sparkles, MessageCircle, Play, RefreshCw, Plus, Clock, ArrowR
 import { motion, AnimatePresence } from 'framer-motion'
 import { bibleService, aiService } from '../services/api'
 import { useAuth } from '../hooks/useAuth'
-import { AnimatedBackground } from './LandingPage'
+import { AnimatedBackground } from '../components/ui/SharedComponents'
 
 // Detect input type from user input
 const detectInputType = (input) => {

@@ -5,7 +5,7 @@ import {
   ArrowLeft, Bookmark, Volume2, Share2, Sparkles
 } from 'lucide-react'
 import { bibleService, homeService } from '../services/api'
-import { AnimatedBackground } from './LandingPage'
+import { AnimatedBackground } from '../components/ui/SharedComponents'
 
 // Bible structure - 66 books
 const BIBLE_BOOKS = {

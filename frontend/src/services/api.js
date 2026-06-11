@@ -379,6 +379,23 @@ export const homeService = {
   },
 }
 
+// Dashboard Service - Combined data for faster initial load
+export const dashboardService = {
+  getDashboardData: async () => {
+    // Try the combined endpoint first
+    try {
+      const response = await fetch(`${API_BASE_URL}/dashboard`, {
+        headers: getHeaders(),
+      })
+      return handleResponse(response)
+    } catch (e) {
+      // Fallback to fetching individual pieces if combined endpoint doesn't exist
+      console.warn('Combined dashboard endpoint not available, fetching individual endpoints')
+      return null
+    }
+  },
+}
+
 // Prayer Service
 export const prayerService = {
   createPrayer: async (prayerData) => {

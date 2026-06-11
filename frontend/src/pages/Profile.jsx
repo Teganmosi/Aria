@@ -14,7 +14,8 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { profileService } from '../services/api'
-import { AnimatedBackground, ThemeToggle } from './LandingPage'
+import { AnimatedBackground } from '../components/ui/SharedComponents'
+import { ThemeToggle } from '../components/ui/SharedComponents'
 
 const SettingsCard = ({ icon, title, subtitle, action, destructive = false }) => (
   <div
