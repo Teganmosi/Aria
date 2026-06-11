@@ -212,6 +212,15 @@ class Database:
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 );
                 """)
+                cursor.execute("""
+                CREATE TABLE IF NOT EXISTS devotion_messages (
+                    id TEXT PRIMARY KEY,
+                    devotion_id TEXT NOT NULL REFERENCES devotions(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                    content TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
+                """)
                 # Create indexes
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_bible_study_sessions_user_id ON bible_study_sessions (user_id);")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_bible_study_messages_session_id ON bible_study_messages (session_id);")
@@ -273,17 +282,6 @@ class Database:
                     cursor.execute("ALTER TABLE notes ADD COLUMN password_hash TEXT")
                 except sqlite3.Error:
                     pass
-                
-                # New table for Devotion Messages
-                cursor.execute("""
-                CREATE TABLE IF NOT EXISTS devotion_messages (
-                    id TEXT PRIMARY KEY,
-                    devotion_id TEXT NOT NULL REFERENCES devotions(id) ON DELETE CASCADE,
-                    role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
-                    content TEXT NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
-                """)
                 
                 conn.commit()
         except Exception:
