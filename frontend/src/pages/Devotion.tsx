@@ -39,28 +39,25 @@ export const Devotion = () => {
     setIsLoading(true)
     setMode('teaching')
 
-    const teachingPrompt = `The user wants a ${duration}-minute morning devotion based on this day plan: "${dayPlan}". 
-    Generate a warm, personalized teaching with a MAIN VERSE, TOPIC, and DEVOTION text. 
+    const teachingPrompt = `The user wants a ${duration}-minute morning devotion based on this day plan: "${dayPlan}".
+    Generate a warm, personalized teaching with a MAIN VERSE, TOPIC, and DEVOTION text.
     Format with beautiful typography in mind. No bullet points.`
 
     try {
-      // 1. Create devotion in database
       const devotion = await devotionService.scheduleDevotion(
         new Date().toISOString(),
         dayPlan
       )
       setDevotionId(devotion.id)
 
-      // 2. Generate teaching
       const response = await aiService.generate(
         [{ role: 'user', content: teachingPrompt }],
         'devotion'
       )
-      
+
       const aiResponse = `Good morning! ☀️ I've prepared a special reflection for your day.\n\n${response.content}\n\nHow does this speak to your heart as you look ahead to your day?`
       setMessages([{ role: 'assistant', content: aiResponse }])
 
-      // 3. Save teaching to DB
       await devotionService.createMessage(devotion.id, 'assistant', aiResponse)
 
     } catch (err) {
@@ -80,20 +77,17 @@ export const Devotion = () => {
     setIsLoading(true)
 
     try {
-      // 1. Save user message to DB
       if (devotionId) {
         await devotionService.createMessage(devotionId, 'user', userMsg)
       }
 
-      // 2. Generate AI response
       const response = await aiService.generate(
         [...messages, { role: 'user', content: userMsg }],
         'devotion'
       )
-      
+
       setMessages(prev => [...prev, { role: 'assistant', content: response.content }])
 
-      // 3. Save AI response to DB
       if (devotionId) {
         await devotionService.createMessage(devotionId, 'assistant', response.content)
       }
@@ -115,7 +109,7 @@ export const Devotion = () => {
         'devotion'
       )
       setMessages(prev => [...prev, { role: 'assistant', content: response.content }])
-      
+
       if (devotionId) {
         await devotionService.createMessage(devotionId, 'assistant', response.content)
         await devotionService.completeDevotion(devotionId)
@@ -130,7 +124,7 @@ export const Devotion = () => {
   }
 
   return (
-    <div style={{ minHeight: '100%', position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="min-h-full relative flex flex-col overflow-hidden">
       <AnimatedBackground />
 
       {/* Header */}

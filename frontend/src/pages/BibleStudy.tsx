@@ -7,7 +7,6 @@ import { bibleService, aiService } from '../services/api'
 import { useAuth } from '../hooks/useAuth'
 import { AnimatedBackground } from '../components/ui/SharedComponents'
 
-// Detect input type from user input
 const detectInputType = (input) => {
   const trimmed = input.trim().toLowerCase()
   const versePattern = /^(\d?\s*[a-z]+)\s+(\d+):(\d+)(?:-(\d+))?$/i
@@ -26,7 +25,7 @@ const detectInputType = (input) => {
 export const BibleStudy = () => {
   const { user } = useAuth()
   const location = useLocation()
-  const [mode, setMode] = useState('select') // select, study, pray
+  const [mode, setMode] = useState('select')
   const [userInput, setUserInput] = useState('')
   const [inputType, setInputType] = useState(null)
   const [studyContent, setStudyContent] = useState(null)
@@ -38,56 +37,37 @@ export const BibleStudy = () => {
   const [sessionId, setSessionId] = useState(null)
   const messagesEndRef = useRef(null)
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }
+  const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }
 
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+  useEffect(() => { scrollToBottom() }, [messages])
 
   useEffect(() => {
     if (location.state?.selectedText && mode === 'select') {
       const { book, chapter, selectedText } = location.state
       handleSelectionStudy(book, chapter, selectedText)
-      // Clear location state
       window.history.replaceState({}, document.title)
     }
   }, [location.state])
 
   const handleSelectionStudy = async (book, chapter, text) => {
     setIsLoading(true)
-    const content = {
-      type: 'selection',
-      reference: `${book} ${chapter}`,
-      text: text,
-      book: book,
-      chapter: chapter
-    }
+    const content = { type: 'selection', reference: `${book} ${chapter}`, text, book, chapter }
     setStudyContent(content)
     setMode('study')
-
     try {
       const session = await bibleService.createStudySession(book, chapter, [], text)
       setSessionId(session.id)
-      
       const initialMsg = `Welcome! 🕊️ I see you've selected a specific passage from ${book} ${chapter}: "${text}". It's a beautiful selection. What speaks to your heart about these specific words?`
       setMessages([{ role: 'companion', content: initialMsg }])
       await bibleService.createStudyMessage(session.id, 'assistant', initialMsg)
-    } catch {
-    } finally {
-      setIsLoading(false)
-    }
+    } catch { } finally { setIsLoading(false) }
   }
 
   const handleInputChange = (e) => {
     const value = e.target.value
     setUserInput(value)
-    if (value.trim()) {
-      setInputType(detectInputType(value))
-    } else {
-      setInputType(null)
-    }
+    if (value.trim()) setInputType(detectInputType(value))
+    else setInputType(null)
   }
 
   const startStudy = async () => {
@@ -102,33 +82,15 @@ export const BibleStudy = () => {
           const data = await bibleService.getChapter(typeInfo.book.toLowerCase().trim(), parseInt(typeInfo.chapter))
           const verseNum = parseInt(typeInfo.verse)
           const foundVerse = data.verses?.find(v => v.verse === verseNum)
-          if (foundVerse) {
-            content = {
-              type: 'verse',
-              reference: `${typeInfo.book} ${typeInfo.chapter}:${typeInfo.verse}`,
-              text: foundVerse.text,
-              book: typeInfo.book,
-              chapter: parseInt(typeInfo.chapter),
-              verse: verseNum
-            }
-          }
+          if (foundVerse) content = { type: 'verse', reference: `${typeInfo.book} ${typeInfo.chapter}:${typeInfo.verse}`, text: foundVerse.text, book: typeInfo.book, chapter: parseInt(typeInfo.chapter), verse: verseNum }
         } catch { }
         if (!content) content = { type: 'topic', topic: userInput.trim(), reference: null, text: null }
       } else if (typeInfo.type === 'chapter') {
         try {
           const data = await bibleService.getChapter(typeInfo.book.toLowerCase().trim(), parseInt(typeInfo.chapter))
           const chapterText = data.verses?.map(v => v.text).join(' ')
-          content = {
-            type: 'chapter',
-            reference: `${typeInfo.book} ${typeInfo.chapter}`,
-            text: chapterText,
-            verses: data.verses,
-            book: typeInfo.book,
-            chapter: parseInt(typeInfo.chapter)
-          }
-        } catch {
-          content = { type: 'topic', topic: userInput.trim(), reference: null, text: null }
-        }
+          content = { type: 'chapter', reference: `${typeInfo.book} ${typeInfo.chapter}`, text: chapterText, verses: data.verses, book: typeInfo.book, chapter: parseInt(typeInfo.chapter) }
+        } catch { content = { type: 'topic', topic: userInput.trim(), reference: null, text: null } }
       } else {
         content = { type: 'topic', topic: typeInfo.topic, reference: null, text: null }
       }
@@ -136,7 +98,6 @@ export const BibleStudy = () => {
       setStudyContent(content)
       setMode('study')
 
-      // Create session in database
       try {
         const session = await bibleService.createStudySession(
           content.book || content.topic || "Unknown",
@@ -160,18 +121,11 @@ export const BibleStudy = () => {
             initialMsg = `Hello! I'm so glad we're exploring "${content.topic}" together today. Where should we begin our reflection?`
           }
         }
-        
-        setMessages([{ role: 'companion', content: initialMsg }])
-        // Save initial message to DB
-        await bibleService.createStudyMessage(session.id, 'assistant', initialMsg)
 
-      } catch {
-        // DB session creation failed — UI proceeds with local state
-      }
-    } catch (err) {
-    } finally {
-      setIsLoading(false)
-    }
+        setMessages([{ role: 'companion', content: initialMsg }])
+        await bibleService.createStudyMessage(session.id, 'assistant', initialMsg)
+      } catch { }
+    } catch (err) { } finally { setIsLoading(false) }
   }
 
   const sendMessage = async () => {
@@ -182,25 +136,20 @@ export const BibleStudy = () => {
     setIsLoading(true)
     try {
       const conversationContext = messages.map(m => `${m.role === 'user' ? 'User' : 'Companion'}: ${m.content}`).join('\n\n')
-      let studyContext = (studyContent?.type === 'verse' || studyContent?.type === 'selection') 
-        ? `Studying: "${studyContent.text}" (${studyContent.reference})` 
+      let studyContext = (studyContent?.type === 'verse' || studyContent?.type === 'selection')
+        ? `Studying: "${studyContent.text}" (${studyContent.reference})`
         : `Studying: ${studyContent?.reference || studyContent?.topic}`
       const prompt = `You are a warm, supportive Bible study companion. ${studyContext}. Previous conversation: ${conversationContext}. User just said: "${userMsg}". Respond as a friend in faith, sharing scriptural depth and inviting more reflection. Keep it conversational and warm. No bullet points.`
       const response = await aiService.generate([{ role: 'user', content: prompt }], 'bibleStudy')
-      
       const aiResponse = response.content
       setMessages(prev => [...prev, { role: 'companion', content: aiResponse }])
-      
-      // Save to DB
       if (sessionId) {
         await bibleService.createStudyMessage(sessionId, 'user', userMsg)
         await bibleService.createStudyMessage(sessionId, 'assistant', aiResponse)
       }
     } catch (err) {
       setMessages(prev => [...prev, { role: 'companion', content: "I'm reflecting on what you said. Could you share a bit more of your heart on this?" }])
-    } finally {
-      setIsLoading(false)
-    }
+    } finally { setIsLoading(false) }
   }
 
   const endStudy = () => {
@@ -219,15 +168,10 @@ export const BibleStudy = () => {
       const response = await aiService.generate([{ role: 'user', content: prayerPrompt }], 'bibleStudy')
       const aiResponse = response.content
       setMessages(prev => [...prev, { role: 'companion', content: aiResponse }])
-      
-      if (sessionId) {
-        await bibleService.createStudyMessage(sessionId, 'assistant', aiResponse)
-      }
+      if (sessionId) await bibleService.createStudyMessage(sessionId, 'assistant', aiResponse)
     } catch (err) {
       setMessages(prev => [...prev, { role: 'companion', content: `Heavenly Father, thank you for this time of study. Bless the seeds sown today and let them grow in this heart. Amen. 🌿` }])
-    } finally {
-      setIsLoading(false)
-    }
+    } finally { setIsLoading(false) }
   }
 
   const hint = (() => {
@@ -238,11 +182,8 @@ export const BibleStudy = () => {
   })()
 
   let progressPercent = '30%';
-  if (messages.length > 5) {
-    progressPercent = '90%';
-  } else if (messages.length > 2) {
-    progressPercent = '60%';
-  }
+  if (messages.length > 5) progressPercent = '90%';
+  else if (messages.length > 2) progressPercent = '60%';
 
   return (
     <div className="study-page">
@@ -311,7 +252,6 @@ export const BibleStudy = () => {
               animate={{ opacity: 1 }}
               className="revamped-session"
             >
-              {/* Minimalist Top Nav */}
               <div className="session-nav">
                 <div className="session-info">
                   <div className="study-badge">
@@ -327,7 +267,6 @@ export const BibleStudy = () => {
               </div>
 
               <div className="study-layout">
-                {/* Left Column: Scripture Insight */}
                 <motion.div
                   initial={{ x: -20, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
@@ -366,11 +305,10 @@ export const BibleStudy = () => {
                     </div>
                   </div>
 
-                  {/* Progress Card */}
                   <div className="progress-mini-card glass-panel">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
-                      <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-muted)' }}>REFLECTION PROGRESS</span>
-                      <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--brand-accent)' }}>{progressPercent}</span>
+                    <div className="flex justify-between" style={{ marginBottom: '0.75rem' }}>
+                      <span className="font-extrabold text-[var(--text-muted)]" style={{ fontSize: '0.65rem' }}>REFLECTION PROGRESS</span>
+                      <span className="font-extrabold text-[var(--brand-accent)]" style={{ fontSize: '0.65rem' }}>{progressPercent}</span>
                     </div>
                     <div className="progress-bar">
                       <motion.div
@@ -382,7 +320,6 @@ export const BibleStudy = () => {
                   </div>
                 </motion.div>
 
-                {/* Right Column: Conversation */}
                 <motion.div
                   initial={{ x: 20, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
@@ -435,7 +372,6 @@ export const BibleStudy = () => {
                     <div ref={messagesEndRef} />
                   </div>
 
-                  {/* Fixed bottom input bar */}
                   <div className="floating-input-area">
                     <div className="input-outer glass-panel">
                       <input
@@ -479,513 +415,73 @@ export const BibleStudy = () => {
       </div>
 
       <style>{`
-        .study-page {
-          min-height: 100vh;
-          background: var(--bg-main);
-          position: relative;
-          color: var(--text-main);
-          overflow: hidden;
-        }
-
-        .study-content-wrapper {
-          max-width: 1200px;
-          margin: 0 auto;
-          padding: 2rem 1.5rem;
-          height: 100vh;
-          display: flex;
-          flex-direction: column;
-          position: relative;
-          z-index: 10;
-        }
-
-        /* Revamped Session Layout */
-        .revamped-session {
-          display: flex;
-          flex-direction: column;
-          height: 100%;
-          gap: 1.5rem;
-        }
-
-        .session-nav {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 0.5rem 0;
-        }
-
-        .study-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          background: var(--bg-alt);
-          padding: 0.4rem 0.8rem;
-          border-radius: 20px;
-          color: var(--brand-accent);
-          font-size: 0.65rem;
-          font-weight: 800;
-          letter-spacing: 0.1em;
-          margin-bottom: 0.5rem;
-        }
-
-        .session-title {
-          margin: 0;
-          font-size: 1.5rem;
-          color: var(--text-main);
-        }
-
-        .exit-btn {
-          background: transparent;
-          border: 1px solid var(--border-color);
-          padding: 0.6rem 1.2rem;
-          border-radius: 50px;
-          color: var(--text-secondary);
-          font-size: 0.7rem;
-          font-weight: 700;
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          cursor: pointer;
-        }
-
-        .study-layout {
-          display: grid;
-          grid-template-columns: 380px 1fr;
-          gap: 2rem;
-          flex: 1;
-          height: calc(100vh - 160px);
-          min-height: 0;
-        }
-
-        @media (max-width: 900px) {
-          .study-layout { 
-            grid-template-columns: 1fr; 
-            height: auto;
-            min-height: auto;
-          }
-          .content-sidebar { 
-            display: block;
-            order: 2;
-            margin-top: 1rem;
-          }
-          .chat-interface {
-            order: 1;
-            min-height: 50vh;
-          }
-          .scripture-card {
-            padding: 1.5rem;
-          }
-          .scripture-text {
-            font-size: 1.1rem;
-          }
-        }
-
-        @media (max-width: 768px) {
-          .study-content-wrapper {
-            padding: 1rem;
-            height: auto;
-            min-height: 100vh;
-          }
-          .revamped-session {
-            gap: 1rem;
-          }
-          .session-nav {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 1rem;
-            padding-bottom: 1rem;
-          }
-          .exit-btn {
-            align-self: flex-end;
-          }
-          .hero-branding h1 {
-            font-size: 2rem;
-          }
-          .hero-branding p {
-            font-size: 1rem;
-          }
-          .input-panel {
-            padding: 1.5rem;
-          }
-          .sanctuary-input {
-            padding: 1rem 1.5rem;
-            font-size: 1rem;
-          }
-          .begin-button {
-            padding: 1rem;
-            font-size: 1rem;
-            width: 100%;
-          }
-          .example-tags {
-            justify-content: flex-start;
-          }
-          .tag-btn {
-            font-size: 0.8rem;
-            padding: 0.4rem 1rem;
-          }
-          .messages-flow {
-            padding: 1rem;
-            gap: 1.5rem;
-          }
-          .revamped-msg {
-            max-width: 90%;
-          }
-          .msg-content-bubble {
-            padding: 0.875rem 1.25rem;
-            font-size: 0.9375rem;
-          }
-          .floating-input-area {
-            padding: 1rem;
-          }
-          .input-outer {
-            padding: 0.4rem 0.4rem 0.4rem 1rem;
-          }
-          .input-outer input {
-            font-size: 0.9375rem;
-          }
-          .send-circle {
-            width: 40px;
-            height: 40px;
-          }
-          .footer-controls {
-            flex-wrap: wrap;
-            gap: 0.5rem;
-          }
-          .complete-btn, .final-prayer-btn, .start-new-btn {
-            font-size: 0.65rem;
-            padding: 0.5rem 1rem;
-          }
-          .action-pill {
-            font-size: 0.7rem;
-            padding: 0.7rem 1rem;
-          }
-          .progress-mini-card {
-            padding: 1rem;
-          }
-        }
-
-        @media (max-width: 480px) {
-          .study-content-wrapper {
-            padding: 0.75rem;
-          }
-          .hero-branding h1 {
-            font-size: 1.75rem;
-          }
-          .sparkle-icon {
-            width: 48px;
-            height: 48px;
-          }
-          .session-title {
-            font-size: 1.25rem;
-          }
-          .study-badge {
-            font-size: 0.6rem;
-            padding: 0.3rem 0.6rem;
-          }
-          .scripture-text {
-            font-size: 1rem;
-          }
-          .msg-content-bubble {
-            padding: 0.75rem 1rem;
-            font-size: 0.875rem;
-          }
-          .aria-avatar, .user-avatar {
-            width: 32px;
-            height: 32px;
-          }
-          .input-outer input {
-            font-size: 0.875rem;
-          }
-          .send-circle {
-            width: 36px;
-            height: 36px;
-          }
-          .tag-btn {
-            font-size: 0.75rem;
-            padding: 0.35rem 0.85rem;
-          }
-        }
-
-        /* Sidebar Content */
-        .content-sidebar {
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
-          height: 100%;
-          overflow-y: auto;
-        }
-
-        .scripture-card {
-          padding: 2.5rem;
-          border-radius: 32px;
-          position: relative;
-          overflow: hidden;
-          background: var(--bg-card);
-        }
-
-        .card-texture {
-          position: absolute;
-          inset: 0;
-          background: url('https://www.transparenttextures.com/patterns/natural-paper.png');
-          opacity: 0.05;
-          pointer-events: none;
-        }
-
-        .quote-icon {
-          color: var(--brand-accent);
-          margin-bottom: 1.5rem;
-          opacity: 0.4;
-        }
-
-        .scripture-text {
-          font-size: 1.4rem;
-          line-height: 1.5;
-          color: var(--text-main);
-          margin-bottom: 1rem;
-        }
-
-        .scripture-ref {
-          font-size: 0.8rem;
-          font-weight: 700;
-          color: var(--brand-accent);
-          letter-spacing: 0.1em;
-        }
-
-        .topic-label {
-          font-size: 0.6rem;
-          font-weight: 900;
-          letter-spacing: 0.2em;
-          color: var(--text-muted);
-          margin-bottom: 1rem;
-        }
-
-        .topic-desc {
-          font-size: 0.9rem;
-          color: var(--text-secondary);
-          line-height: 1.6;
-          margin-top: 1rem;
-        }
-
-        .study-actions {
-          margin-top: 2.5rem;
-          padding-top: 2rem;
-          border-top: 1px solid var(--border-color);
-        }
-
-        .action-label {
-          font-size: 0.6rem;
-          font-weight: 800;
-          color: var(--text-muted);
-          letter-spacing: 0.1em;
-          margin-bottom: 1rem;
-        }
-
-        .action-btns {
-          display: flex;
-          flex-direction: column;
-          gap: 0.75rem;
-        }
-
-        .action-pill {
-          background: var(--bg-alt);
-          border: 1px solid var(--border-color);
-          padding: 0.8rem 1.2rem;
-          border-radius: 14px;
-          font-size: 0.75rem;
-          font-weight: 600;
-          color: var(--text-secondary);
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          cursor: pointer;
-          transition: all 0.2s;
-          text-align: left;
-        }
-
-        .action-pill:hover {
-          background: var(--bg-hover);
-          color: var(--text-main);
-          border-color: var(--brand-accent);
-          transform: translateX(5px);
-        }
-
-        .progress-mini-card {
-          padding: 1.5rem;
-          border-radius: 20px;
-        }
-
-        .progress-bar {
-          height: 6px;
-          background: var(--bg-alt);
-          border-radius: 3px;
-        }
-
-        .progress-fill {
-          height: 100%;
-          background: var(--brand-accent);
-          border-radius: 3px;
-          transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        /* Chat Interface */
-        .chat-interface {
-          display: flex;
-          flex-direction: column;
-          background: var(--bg-card);
-          border-radius: 32px;
-          border: 1px solid var(--border-color);
-          position: relative;
-          overflow: hidden;
-        }
-
-        .messages-flow {
-          flex: 1;
-          padding: 2rem;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 2rem;
-          scroll-behavior: smooth;
-        }
-
-        .messages-flow::-webkit-scrollbar { width: 6px; }
-        .messages-flow::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 10px; }
-
-        .revamped-msg {
-          display: flex;
-          gap: 1rem;
-          max-width: 85%;
-        }
-
-        .revamped-msg.companion { align-self: flex-start; }
-        .revamped-msg.user { align-self: flex-end; flex-direction: row-reverse; }
-
-        .aria-avatar {
-          width: 36px; height: 36px; background: var(--brand-solid); color: white;
-          border-radius: 50%; display: flex; align-items: center; justify-content: center;
-        }
-
-        .user-avatar {
-          width: 36px; height: 36px; background: var(--bg-alt); color: var(--text-main);
-          border-radius: 50%; display: flex; align-items: center; justify-content: center;
-          font-size: 0.8rem; font-weight: 700; border: 1px solid var(--border-color);
-        }
-
+        .study-page { min-height: 100vh; background: var(--bg-main); position: relative; color: var(--text-main); overflow: hidden; }
+        .study-content-wrapper { max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem; height: 100vh; display: flex; flex-direction: column; position: relative; z-index: 10; }
+        .revamped-session { display: flex; flex-direction: column; height: 100%; gap: 1.5rem; }
+        .session-nav { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; }
+        .study-badge { display: inline-flex; align-items: center; gap: 0.5rem; background: var(--bg-alt); padding: 0.4rem 0.8rem; border-radius: 20px; color: var(--brand-accent); font-size: 0.65rem; font-weight: 800; letter-spacing: 0.1em; margin-bottom: 0.5rem; }
+        .session-title { margin: 0; font-size: 1.5rem; color: var(--text-main); }
+        .exit-btn { background: transparent; border: 1px solid var(--border-color); padding: 0.6rem 1.2rem; border-radius: 50px; color: var(--text-secondary); font-size: 0.7rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+        .study-layout { display: grid; grid-template-columns: 380px 1fr; gap: 2rem; flex: 1; height: calc(100vh - 160px); min-height: 0; }
+        @media (max-width: 900px) { .study-layout { grid-template-columns: 1fr; height: auto; min-height: auto; } .content-sidebar { display: block; order: 2; margin-top: 1rem; } .chat-interface { order: 1; min-height: 50vh; } .scripture-card { padding: 1.5rem; } .scripture-text { font-size: 1.1rem; } }
+        @media (max-width: 768px) { .study-content-wrapper { padding: 1rem; height: auto; min-height: 100vh; } .revamped-session { gap: 1rem; } .session-nav { flex-direction: column; align-items: flex-start; gap: 1rem; padding-bottom: 1rem; } .exit-btn { align-self: flex-end; } .hero-branding h1 { font-size: 2rem; } .hero-branding p { font-size: 1rem; } .input-panel { padding: 1.5rem; } .sanctuary-input { padding: 1rem 1.5rem; font-size: 1rem; } .begin-button { padding: 1rem; font-size: 1rem; width: 100%; } .example-tags { justify-content: flex-start; } .tag-btn { font-size: 0.8rem; padding: 0.4rem 1rem; } .messages-flow { padding: 1rem; gap: 1.5rem; } .revamped-msg { max-width: 90%; } .msg-content-bubble { padding: 0.875rem 1.25rem; font-size: 0.9375rem; } .floating-input-area { padding: 1rem; } .input-outer { padding: 0.4rem 0.4rem 0.4rem 1rem; } .input-outer input { font-size: 0.9375rem; } .send-circle { width: 40px; height: 40px; } .footer-controls { flex-wrap: wrap; gap: 0.5rem; } .complete-btn, .final-prayer-btn, .start-new-btn { font-size: 0.65rem; padding: 0.5rem 1rem; } .action-pill { font-size: 0.7rem; padding: 0.7rem 1rem; } .progress-mini-card { padding: 1rem; } }
+        @media (max-width: 480px) { .study-content-wrapper { padding: 0.75rem; } .hero-branding h1 { font-size: 1.75rem; } .sparkle-icon { width: 48px; height: 48px; } .session-title { font-size: 1.25rem; } .study-badge { font-size: 0.6rem; padding: 0.3rem 0.6rem; } .scripture-text { font-size: 1rem; } .msg-content-bubble { padding: 0.75rem 1rem; font-size: 0.875rem; } .aria-avatar, .user-avatar { width: 32px; height: 32px; } .input-outer input { font-size: 0.875rem; } .send-circle { width: 36px; height: 36px; } .tag-btn { font-size: 0.75rem; padding: 0.35rem 0.85rem; } }
+        .content-sidebar { display: flex; flex-direction: column; gap: 1.5rem; height: 100%; overflow-y: auto; }
+        .scripture-card { padding: 2.5rem; border-radius: 32px; position: relative; overflow: hidden; background: var(--bg-card); }
+        .card-texture { position: absolute; inset: 0; background: url('https://www.transparenttextures.com/patterns/natural-paper.png'); opacity: 0.05; pointer-events: none; }
+        .quote-icon { color: var(--brand-accent); margin-bottom: 1.5rem; opacity: 0.4; }
+        .scripture-text { font-size: 1.4rem; line-height: 1.5; color: var(--text-main); margin-bottom: 1rem; }
+        .scripture-ref { font-size: 0.8rem; font-weight: 700; color: var(--brand-accent); letter-spacing: 0.1em; }
+        .topic-label { font-size: 0.6rem; font-weight: 900; letter-spacing: 0.2em; color: var(--text-muted); margin-bottom: 1rem; }
+        .topic-desc { font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6; margin-top: 1rem; }
+        .study-actions { margin-top: 2.5rem; padding-top: 2rem; border-top: 1px solid var(--border-color); }
+        .action-label { font-size: 0.6rem; font-weight: 800; color: var(--text-muted); letter-spacing: 0.1em; margin-bottom: 1rem; }
+        .action-btns { display: flex; flex-direction: column; gap: 0.75rem; }
+        .action-pill { background: var(--bg-alt); border: 1px solid var(--border-color); padding: 0.8rem 1.2rem; border-radius: 14px; font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); display: flex; align-items: center; gap: 0.75rem; cursor: pointer; transition: all 0.2s; text-align: left; }
+        .action-pill:hover { background: var(--bg-hover); color: var(--text-main); border-color: var(--brand-accent); transform: translateX(5px); }
+        .progress-mini-card { padding: 1.5rem; border-radius: 20px; }
+        .progress-bar { height: 6px; background: var(--bg-alt); border-radius: 3px; }
+        .progress-fill { height: 100%; background: var(--brand-accent); border-radius: 3px; transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
+        .chat-interface { display: flex; flex-direction: column; background: var(--bg-card); border-radius: 32px; border: 1px solid var(--border-color); position: relative; overflow: hidden; }
+        .messages-flow { flex: 1; padding: 2rem; overflow-y: auto; display: flex; flex-direction: column; gap: 2rem; scroll-behavior: smooth; }
+        .messages-flow::-webkit-scrollbar { width: 6px; } .messages-flow::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 10px; }
+        .revamped-msg { display: flex; gap: 1rem; max-width: 85%; }
+        .revamped-msg.companion { align-self: flex-start; } .revamped-msg.user { align-self: flex-end; flex-direction: row-reverse; }
+        .aria-avatar { width: 36px; height: 36px; background: var(--brand-solid); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+        .user-avatar { width: 36px; height: 36px; background: var(--bg-alt); color: var(--text-main); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; border: 1px solid var(--border-color); }
         .msg-bubble-wrap { display: flex; flex-direction: column; gap: 0.4rem; max-width: 100%; }
         .revamped-msg.user .msg-bubble-wrap { align-items: flex-end; }
-
         .msg-author { font-size: 0.6rem; font-weight: 800; color: var(--text-muted); letter-spacing: 0.1em; }
-        
-        .msg-content-bubble {
-          padding: 1rem 1.5rem;
-          border-radius: 20px;
-          line-height: 1.6;
-          font-size: 1rem;
-        }
-
-        .companion .msg-content-bubble { 
-          background: var(--bg-alt); 
-          color: var(--text-main); 
-          border-top-left-radius: 4px; 
-          font-family: 'Playfair Display', serif;
-        }
-        .user .msg-content-bubble { 
-          background: var(--brand-solid); 
-          color: white; 
-          border-top-right-radius: 4px; 
-        }
-
-        /* Floating Input */
-        .floating-input-area {
-          padding: 1.5rem 2rem;
-          background: var(--bg-card);
-          border-top: 1px solid var(--border-color);
-        }
-
-        .input-outer {
-          display: flex;
-          align-items: center;
-          padding: 0.5rem 0.5rem 0.5rem 1.5rem;
-          border-radius: 100px;
-        }
-
-        .input-outer input {
-          flex: 1;
-          background: none;
-          border: none;
-          color: var(--text-main);
-          font-size: 1rem;
-          outline: none;
-        }
-
-        .send-circle {
-          width: 44px; height: 44px; background: var(--brand-solid); color: white; 
-          border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
-          transition: transform 0.2s;
-        }
+        .msg-content-bubble { padding: 1rem 1.5rem; border-radius: 20px; line-height: 1.6; font-size: 1rem; }
+        .companion .msg-content-bubble { background: var(--bg-alt); color: var(--text-main); border-top-left-radius: 4px; font-family: 'Playfair Display', serif; }
+        .user .msg-content-bubble { background: var(--brand-solid); color: white; border-top-right-radius: 4px; }
+        .floating-input-area { padding: 1.5rem 2rem; background: var(--bg-card); border-top: 1px solid var(--border-color); }
+        .input-outer { display: flex; align-items: center; padding: 0.5rem 0.5rem 0.5rem 1.5rem; border-radius: 100px; }
+        .input-outer input { flex: 1; background: none; border: none; color: var(--text-main); font-size: 1rem; outline: none; }
+        .send-circle { width: 44px; height: 44px; background: var(--brand-solid); color: white; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }
         .send-circle:hover:not(:disabled) { transform: scale(1.05); }
-
-        .footer-controls {
-          display: flex;
-          justify-content: center;
-          gap: 1rem;
-          margin-top: 1rem;
-        }
-
-        .complete-btn, .final-prayer-btn, .start-new-btn {
-          background: var(--bg-alt); border: 1px solid var(--border-color); padding: 0.6rem 1.2rem;
-          border-radius: 50px; color: var(--text-main); font-size: 0.7rem; font-weight: 700;
-          display: flex; align-items: center; gap: 0.6rem; cursor: pointer; transition: all 0.2s;
-        }
+        .footer-controls { display: flex; justify-content: center; gap: 1rem; margin-top: 1rem; }
+        .complete-btn, .final-prayer-btn, .start-new-btn { background: var(--bg-alt); border: 1px solid var(--border-color); padding: 0.6rem 1.2rem; border-radius: 50px; color: var(--text-main); font-size: 0.7rem; font-weight: 700; display: flex; align-items: center; gap: 0.6rem; cursor: pointer; transition: all 0.2s; }
         .final-prayer-btn { background: var(--brand-solid); border: none; color: white; }
-
         .complete-btn:hover { border-color: var(--brand-accent); color: var(--brand-accent); }
-
         .typing { display: flex; gap: 0.4rem; padding: 0.75rem 0; }
         .typing span { width: 6px; height: 6px; background: var(--text-muted); border-radius: 50%; animation: bounce 1.4s infinite ease-in-out; }
-        .typing span:nth-child(2) { animation-delay: 0.2s; }
-        .typing span:nth-child(3) { animation-delay: 0.4s; }
-
+        .typing span:nth-child(2) { animation-delay: 0.2s; } .typing span:nth-child(3) { animation-delay: 0.4s; }
         @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
         @keyframes spinning { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .spinning { animation: spinning 1.5s linear infinite; }
-
-        /* Legacy compatibility */
-        .hero-branding {
-          text-align: center;
-          margin-bottom: 3rem;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-        }
-        .hero-branding h1 { font-size: 3.5rem; margin: 1rem 0; }
-        .hero-branding p { font-size: 1.25rem; color: var(--text-secondary); }
-        .sparkle-icon { 
-          width: 64px; height: 64px; background: var(--bg-card); border-radius: 20px;
-          display: flex; align-items: center; justify-content: center; color: var(--brand-accent);
-          margin: 0 auto; box-shadow: var(--shadow-main);
-        }
-        .input-panel {
-          width: 100%; padding: 3rem; border-radius: 40px; display: flex; flex-direction: column; gap: 1.5rem;
-        }
+        .hero-branding { text-align: center; margin-bottom: 3rem; display: flex; flex-direction: column; align-items: center; }
+        .hero-branding h1 { font-size: 3.5rem; margin: 1rem 0; } .hero-branding p { font-size: 1.25rem; color: var(--text-secondary); }
+        .sparkle-icon { width: 64px; height: 64px; background: var(--bg-card); border-radius: 20px; display: flex; align-items: center; justify-content: center; color: var(--brand-accent); margin: 0 auto; box-shadow: var(--shadow-main); }
+        .input-panel { width: 100%; padding: 3rem; border-radius: 40px; display: flex; flex-direction: column; gap: 1.5rem; }
         .panel-header { display: flex; align-items: center; justify-content: center; gap: 0.75rem; font-size: 1.25rem; }
         .search-field { position: relative; width: 100%; }
-        .sanctuary-input {
-          width: 100%; padding: 1.5rem 2rem; border-radius: 100px; border: 1px solid var(--border-color);
-          background: var(--bg-hover); color: var(--text-main); font-size: 1.1rem; outline: none; transition: border-color 0.2s;
-        }
-        .type-hint {
-          position: absolute; right: 1.5rem; top: 50%; transform: translateY(-50%);
-          display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; font-weight: 600;
-          text-transform: uppercase; letter-spacing: 0.05em;
-        }
+        .sanctuary-input { width: 100%; padding: 1.5rem 2rem; border-radius: 100px; border: 1px solid var(--border-color); background: var(--bg-hover); color: var(--text-main); font-size: 1.1rem; outline: none; transition: border-color 0.2s; }
+        .type-hint { position: absolute; right: 1.5rem; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
         .example-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem; margin-top: 0.5rem; }
         .tag-label { color: var(--text-muted); font-size: 0.9rem; align-self: center; }
         .tag-btn { padding: 0.5rem 1.25rem; border-radius: 100px; border: none; cursor: pointer; font-size: 0.9rem; color: var(--text-secondary); }
-        .begin-button {
-          margin-top: 1rem; padding: 1.5rem; border-radius: 100px; border: none;
-          background: var(--brand-solid); color: white; font-size: 1.1rem; font-weight: 700;
-          cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 1rem;
-        }
+        .begin-button { margin-top: 1rem; padding: 1.5rem; border-radius: 100px; border: none; background: var(--brand-solid); color: white; font-size: 1.1rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 1rem; }
       `}</style>
     </div>
   )

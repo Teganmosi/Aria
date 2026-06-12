@@ -46,29 +46,25 @@ export const EmotionalSupport = () => {
 
     const situationInfo = SITUATIONS.find(s => s.id === selectedSituation)
 
-    // Initial prompt for the AI to be warm and pastoral
-    const initialPrompt = `User is coming to you seeking support for: ${situationInfo.label}. 
-    As a compassionate faith companion, greet them warmly and invite them to share what's on their heart. 
+    const initialPrompt = `User is coming to you seeking support for: ${situationInfo.label}.
+    As a compassionate faith companion, greet them warmly and invite them to share what's on their heart.
     Use a comforting, empathetic tone. Keep it to 1-2 sentences.`
 
     try {
-      // 1. Create a session in the database
       const session = await emotionalSupportService.createSession(
         situationInfo.label,
         situationInfo.description
       )
       setSessionId(session.id)
 
-      // 2. Generate initial AI response
       const response = await aiService.generate(
         [{ role: 'user', content: initialPrompt }],
         'emotionalSupport'
       )
-      
+
       const aiWelcome = response.content
       setMessages([{ role: 'assistant', content: aiWelcome }])
 
-      // 3. Save the welcome message to the session
       await emotionalSupportService.createMessage(session.id, 'assistant', aiWelcome)
 
     } catch (err) {
@@ -90,21 +86,18 @@ export const EmotionalSupport = () => {
     setIsLoading(true)
 
     try {
-      // 1. Save user message to database if we have a session
       if (sessionId) {
         await emotionalSupportService.createMessage(sessionId, 'user', userMsg)
       }
 
-      // 2. Generate AI response
       const response = await aiService.generate(
         [...messages, { role: 'user', content: userMsg }],
         'emotionalSupport'
       )
-      
+
       const aiResponse = response.content
       setMessages(prev => [...prev, { role: 'assistant', content: aiResponse }])
 
-      // 3. Save AI response to database
       if (sessionId) {
         await emotionalSupportService.createMessage(sessionId, 'assistant', aiResponse)
       }
@@ -119,7 +112,7 @@ export const EmotionalSupport = () => {
   const selectedSituationInfo = SITUATIONS.find(s => s.id === selectedSituation)
 
   return (
-    <div style={{ minHeight: '100%', position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="min-h-full relative flex flex-col overflow-hidden">
       <AnimatedBackground />
 
       {/* Header */}
