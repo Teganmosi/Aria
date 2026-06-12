@@ -1,6 +1,6 @@
 // @ts-nocheck
-import { useState, useEffect, useRef } from 'react'
-import { Sun, Sparkles, Heart, RefreshCw, Check, Send } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Sun, Sparkles, Heart, RefreshCw, Check, Send, Volume2, VolumeX } from 'lucide-react'
 import { aiService, devotionService } from '../services/api'
 import { AnimatedBackground } from '../components/ui/SharedComponents'
 
@@ -19,7 +19,9 @@ export const Devotion = () => {
   const [userMessage, setUserMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [devotionId, setDevotionId] = useState(null)
+  const [teachingPlaying, setTeachingPlaying] = useState(false)
   const messagesEndRef = useRef(null)
+  const teachingUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -123,6 +125,22 @@ export const Devotion = () => {
     }
   }
 
+  const toggleTeachingAudio = useCallback((text: string) => {
+    if (teachingPlaying) {
+      window.speechSynthesis.cancel()
+      setTeachingPlaying(false)
+      return
+    }
+    const utt = new SpeechSynthesisUtterance(text)
+    utt.rate = 0.92
+    utt.pitch = 1
+    utt.onend = () => setTeachingPlaying(false)
+    utt.onerror = () => setTeachingPlaying(false)
+    teachingUtteranceRef.current = utt
+    window.speechSynthesis.speak(utt)
+    setTeachingPlaying(true)
+  }, [teachingPlaying])
+
   return (
     <div className="min-h-full relative flex flex-col overflow-hidden">
       <AnimatedBackground />
@@ -197,23 +215,74 @@ export const Devotion = () => {
 
         {(mode === 'teaching' || mode === 'complete') && (
           <div style={{ width: '100%', maxWidth: '850px', display: 'flex', flexDirection: 'column', gap: '2rem', paddingBottom: '14rem' }}>
-            {messages.map((msg, i) => (
-              <div key={i} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
-                <div style={{
-                  padding: '1.75rem 2rem',
-                  borderRadius: '2rem',
-                  background: msg.role === 'user' ? 'var(--brand-solid)' : 'var(--bg-card)',
-                  color: msg.role === 'user' ? 'var(--bg-main)' : 'var(--text-main)',
-                  boxShadow: msg.role === 'assistant' ? 'var(--shadow-main)' : 'none',
-                  border: msg.role === 'assistant' ? '1px solid var(--border-color)' : 'none',
-                  fontSize: '1.15rem',
-                  lineHeight: 1.7,
-                  whiteSpace: 'pre-wrap'
-                }} className={msg.role === 'assistant' ? 'font-serif' : ''}>
-                  {msg.content}
+            {messages.map((msg, i) => {
+              // First assistant message = structured teaching card
+              if (i === 0 && msg.role === 'assistant') {
+                return (
+                  <div key={i} style={{ background: 'var(--bg-card)', borderRadius: '32px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-main)', overflow: 'hidden' }}>
+                    {/* Card header */}
+                    <div style={{ padding: '2rem 2.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                        <Sun size={28} color="#f59e0b" />
+                        <div>
+                          <p style={{ margin: 0, fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.2em' }}>MORNING TEACHING</p>
+                          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{duration} min devotion · {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => toggleTeachingAudio(msg.content)}
+                        title={teachingPlaying ? 'Stop' : 'Listen to teaching'}
+                        style={{
+                          background: teachingPlaying ? '#f59e0b' : 'var(--input-bg)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: '50%',
+                          width: 44, height: 44,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0,
+                        }}
+                      >
+                        {teachingPlaying
+                          ? <VolumeX size={18} color="white" />
+                          : <Volume2 size={18} color="var(--text-secondary)" />}
+                      </button>
+                    </div>
+                    {/* Teaching body */}
+                    <div style={{ padding: '2.5rem' }}>
+                      <p style={{
+                        margin: 0,
+                        fontSize: '1.15rem',
+                        lineHeight: 1.85,
+                        color: 'var(--text-main)',
+                        fontFamily: "'Playfair Display', serif",
+                        whiteSpace: 'pre-wrap',
+                      }}>
+                        {msg.content}
+                      </p>
+                    </div>
+                  </div>
+                )
+              }
+
+              // Subsequent messages = chat bubbles
+              return (
+                <div key={i} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
+                  <div style={{
+                    padding: '1.5rem 2rem',
+                    borderRadius: '2rem',
+                    background: msg.role === 'user' ? 'var(--brand-solid)' : 'var(--bg-card)',
+                    color: msg.role === 'user' ? 'var(--bg-main)' : 'var(--text-main)',
+                    boxShadow: msg.role === 'assistant' ? 'var(--shadow-main)' : 'none',
+                    border: msg.role === 'assistant' ? '1px solid var(--border-color)' : 'none',
+                    fontSize: '1.1rem',
+                    lineHeight: 1.7,
+                    whiteSpace: 'pre-wrap',
+                  }} className={msg.role === 'assistant' ? 'font-serif' : ''}>
+                    {msg.content}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
+
             {isLoading && (
               <div style={{ alignSelf: 'flex-start', color: 'var(--text-muted)', fontStyle: 'italic', paddingLeft: '1rem' }}>Aria is reflecting...</div>
             )}

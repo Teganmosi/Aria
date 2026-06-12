@@ -13,6 +13,7 @@ import {
   Sparkles,
   ChevronRight
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { useAuth } from '../hooks/useAuth'
 import { profileService } from '../services/api'
 import { AnimatedBackground } from '../components/ui/SharedComponents'
@@ -48,16 +49,10 @@ export const Profile = () => {
   const [ariaPersonalContext, setAriaPersonalContext] = useState(user?.aria_personal_context || '')
   const [ariaVoice, setAriaVoice] = useState(user?.aria_voice || 'sage')
   const [isEditing, setIsEditing] = useState(false)
-  const [message, setMessage] = useState<{text:string;isError:boolean}|null>(null)
-
-  const showMessage = (text: string, isError = false) => {
-    setMessage({ text, isError })
-    setTimeout(() => setMessage(null), 3000)
-  }
 
   const handleUpdateProfile = async () => {
     if (!displayName.trim()) {
-      showMessage('Display name cannot be empty', true)
+      toast.error('Display name cannot be empty')
       return
     }
 
@@ -71,9 +66,9 @@ export const Profile = () => {
       })
       setIsEditing(false)
       await refreshUser()
-      showMessage('Profile updated successfully!')
+      toast.success('Profile updated successfully!')
     } catch (err) {
-      showMessage(( err as Error).message || 'Failed to update profile', true)
+      toast.error((err as Error).message || 'Failed to update profile')
     }
   }
 
@@ -81,7 +76,7 @@ export const Profile = () => {
     try {
       await logout()
     } catch {
-      showMessage('Failed to log out', true)
+      toast.error('Failed to log out')
     }
   }
 
@@ -118,20 +113,6 @@ export const Profile = () => {
           {email.toUpperCase()} • SANCTUARY MEMBER SINCE {memberSince.toUpperCase()}
         </p>
 
-        {message && (
-          <div style={{
-            maxWidth: '400px',
-            margin: '1.5rem auto 0',
-            padding: '1rem',
-            borderRadius: '12px',
-            background: message.isError ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-            color: message.isError ? '#ef4444' : '#10b981',
-            fontSize: '0.9rem',
-            border: `1px solid ${message.isError ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)'}`
-          }}>
-            {message.text}
-          </div>
-        )}
       </header>
 
       {/* Settings Sections */}

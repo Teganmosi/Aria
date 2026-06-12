@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { authService } from '../services/api'
+import { setTokens, clearTokens } from '../api/axios'
 import type { AuthState, AuthResponse, User } from '../types'
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -20,7 +21,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const userData: User = await authService.getMe()
       set({ user: userData, isAuthenticated: true })
     } catch {
-      localStorage.removeItem('authToken')
+      clearTokens()
       set({ showAuthModal: true })
     } finally {
       set({ isLoading: false })
@@ -30,7 +31,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (email: string, password: string): Promise<AuthResponse> => {
     const response: AuthResponse = await authService.login(email, password)
     if (response.access_token) {
-      localStorage.setItem('authToken', response.access_token)
+      setTokens(response.access_token, response.refresh_token ?? '')
       const userData = response.user ?? response.data?.user ?? ({} as User)
       set({ user: userData, isAuthenticated: true, showAuthModal: false })
     }
@@ -40,7 +41,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   register: async (email: string, password: string, fullName: string): Promise<AuthResponse> => {
     const response: AuthResponse = await authService.register(email, password, fullName)
     if (response.access_token) {
-      localStorage.setItem('authToken', response.access_token)
+      setTokens(response.access_token, response.refresh_token ?? '')
       const userData = response.user ?? response.data?.user ?? ({ email, full_name: fullName } as User)
       set({ user: userData, isAuthenticated: true, showAuthModal: false })
     }
@@ -48,7 +49,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
-    localStorage.removeItem('authToken')
+    clearTokens()
     set({ user: null, isAuthenticated: false, showAuthModal: true })
   },
 

@@ -1,10 +1,10 @@
 // @ts-nocheck
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Sparkles, Book, Heart, Flame, MessageSquare,
   Settings, Bookmark, ArrowRight, Quote, AlignLeft,
-  BookOpen, ChevronRight, CheckCircle2
+  BookOpen, ChevronRight, CheckCircle2, Volume2, VolumeX
 } from 'lucide-react'
 import { notesService } from '../services/api'
 import { useHomeData } from '../hooks/use-home-data'
@@ -111,6 +111,8 @@ export const Home = () => {
   const [greeting, setGreeting] = useState('GOOD DAY')
   const [isSaved, setIsSaved] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
+  const [mannaPlaying, setMannaPlaying] = useState(false)
+  const mannaUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
 
   const { data: homeData } = useHomeData()
   const stats = homeData?.stats ?? { streak_days: 7, streak_history: [true, true, true, true, true, true, false] }
@@ -147,10 +149,13 @@ export const Home = () => {
 
   const handleSaveManna = async () => {
     if (isSaved || !verseObj.daily_manna) return
-    const mannaText = verseObj.daily_manna
+    const manna = verseObj.daily_manna
+    const mannaText = typeof manna === 'object'
+      ? `${manna.title}\n\nReflection: ${manna.reflection}\n\nPrayer: ${manna.prayer}\n\nApplication: ${manna.application}`
+      : manna
     try {
       await notesService.createNote({
-        title: "Daily Manna Prayer",
+        title: typeof manna === 'object' ? manna.title : "Daily Manna Prayer",
         content: mannaText,
         source_type: 'devotion',
         tags: ['manna', 'prayer', 'daily', verseObj.reference]
@@ -158,6 +163,27 @@ export const Home = () => {
       setIsSaved(true)
     } catch { }
   }
+
+  const toggleMannaAudio = useCallback(() => {
+    if (mannaPlaying) {
+      window.speechSynthesis.cancel()
+      setMannaPlaying(false)
+      return
+    }
+    const manna = verseObj.daily_manna
+    if (!manna) return
+    const text = typeof manna === 'object'
+      ? `${manna.title}. ${manna.reflection} ${manna.prayer} Today's application: ${manna.application}`
+      : manna
+    const utt = new SpeechSynthesisUtterance(text)
+    utt.rate = 0.92
+    utt.pitch = 1
+    utt.onend = () => setMannaPlaying(false)
+    utt.onerror = () => setMannaPlaying(false)
+    mannaUtteranceRef.current = utt
+    window.speechSynthesis.speak(utt)
+    setMannaPlaying(true)
+  }, [mannaPlaying, verseObj.daily_manna])
 
   return (
     <div className="home-container">
@@ -258,36 +284,103 @@ export const Home = () => {
       </div>
 
       {/* Bottom Manna */}
-      <div className="bg-[var(--gradient-card)] rounded-[40px] flex flex-col items-center text-center border border-[var(--border-color)] shadow-[var(--shadow-main)]" style={{ padding: isMobile ? '3rem 1.5rem' : '5rem' }}>
-        <div className="w-[60px] h-[60px] bg-[var(--brand-accent)] rounded-[18px] flex items-center justify-center mb-8" style={{ boxShadow: '0 8px 20px rgba(245, 206, 77, 0.2)' }}>
-          <Sparkles size={28} color="var(--text-inverse)" />
+      <div className="bg-[var(--gradient-card)] rounded-[40px] border border-[var(--border-color)] shadow-[var(--shadow-main)]" style={{ padding: isMobile ? '2.5rem 1.5rem' : '4rem 5rem' }}>
+        {/* Header row */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <div className="w-[52px] h-[52px] bg-[var(--brand-accent)] rounded-[16px] flex items-center justify-center" style={{ boxShadow: '0 8px 20px rgba(245, 206, 77, 0.2)', flexShrink: 0 }}>
+              <Sparkles size={24} color="var(--text-inverse)" />
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.2em' }}>DAILY MANNA</p>
+              {typeof verseObj.daily_manna === 'object' && verseObj.daily_manna?.title && (
+                <h3 style={{ margin: 0, fontSize: isMobile ? '1.1rem' : '1.4rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", fontWeight: 500 }}>
+                  {verseObj.daily_manna.title}
+                </h3>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={toggleMannaAudio}
+            title={mannaPlaying ? 'Stop' : 'Listen'}
+            style={{
+              background: mannaPlaying ? 'var(--brand-accent)' : 'var(--input-bg)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '50%',
+              width: 44,
+              height: 44,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              flexShrink: 0,
+              transition: 'all 0.2s',
+            }}
+          >
+            {mannaPlaying
+              ? <VolumeX size={18} color="var(--text-inverse)" />
+              : <Volume2 size={18} color="var(--text-secondary)" />}
+          </button>
         </div>
-        <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.2em', marginBottom: '1.5rem' }}>DAILY MANNA</p>
-        <h2 style={{ fontSize: isMobile ? '1.4rem' : '1.8rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", maxWidth: '600px', lineHeight: 1.6, marginBottom: '3rem' }}>
-          "{verseObj.daily_manna || "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."}"
-        </h2>
-        <button
-          onClick={handleSaveManna}
-          disabled={isSaved}
-          style={{
-            background: isSaved ? '#10b981' : 'var(--text-main)',
-            color: 'var(--bg-main)',
-            border: 'none',
-            padding: '1.25rem 3rem',
-            borderRadius: '50px',
-            fontSize: '0.8rem',
-            fontWeight: 800,
-            letterSpacing: '0.1em',
-            cursor: isSaved ? 'default' : 'pointer',
-            transition: 'all 0.3s',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          {isSaved ? <CheckCircle2 size={18} /> : null}
-          {isSaved ? 'SAVED TO JOURNAL' : 'SAVE TO DEVOTIONS'}
-        </button>
+
+        {/* Sections */}
+        {typeof verseObj.daily_manna === 'object' && verseObj.daily_manna ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            {/* Reflection */}
+            <div style={{ padding: '1.75rem', borderRadius: '20px', background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+              <p style={{ margin: '0 0 0.75rem', fontSize: '0.6rem', fontWeight: 800, color: 'var(--brand-accent)', letterSpacing: '0.2em' }}>REFLECTION</p>
+              <p style={{ margin: 0, fontSize: isMobile ? '0.95rem' : '1.05rem', lineHeight: 1.75, color: 'var(--text-secondary)' }}>
+                {verseObj.daily_manna.reflection}
+              </p>
+            </div>
+
+            {/* Prayer */}
+            <div style={{ padding: '1.75rem', borderRadius: '20px', background: 'var(--input-bg)', borderLeft: '3px solid var(--brand-accent)' }}>
+              <p style={{ margin: '0 0 0.75rem', fontSize: '0.6rem', fontWeight: 800, color: 'var(--brand-accent)', letterSpacing: '0.2em' }}>PRAYER</p>
+              <p style={{ margin: 0, fontSize: isMobile ? '0.95rem' : '1.05rem', lineHeight: 1.75, color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}>
+                {verseObj.daily_manna.prayer}
+              </p>
+            </div>
+
+            {/* Application */}
+            <div style={{ padding: '1.75rem', borderRadius: '20px', background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+              <p style={{ margin: '0 0 0.75rem', fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.2em' }}>TODAY'S APPLICATION</p>
+              <p style={{ margin: 0, fontSize: isMobile ? '0.9rem' : '1rem', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
+                {verseObj.daily_manna.application}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <h2 style={{ fontSize: isMobile ? '1.4rem' : '1.8rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", lineHeight: 1.6, margin: '0 0 2.5rem' }}>
+            "{typeof verseObj.daily_manna === 'string' ? verseObj.daily_manna : "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."}"
+          </h2>
+        )}
+
+        {/* Save button */}
+        <div style={{ marginTop: '2.5rem', display: 'flex', justifyContent: 'center' }}>
+          <button
+            onClick={handleSaveManna}
+            disabled={isSaved}
+            style={{
+              background: isSaved ? '#10b981' : 'var(--text-main)',
+              color: 'var(--bg-main)',
+              border: 'none',
+              padding: '1.1rem 2.75rem',
+              borderRadius: '50px',
+              fontSize: '0.75rem',
+              fontWeight: 800,
+              letterSpacing: '0.1em',
+              cursor: isSaved ? 'default' : 'pointer',
+              transition: 'all 0.3s',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+            }}
+          >
+            {isSaved && <CheckCircle2 size={16} />}
+            {isSaved ? 'SAVED TO JOURNAL' : 'SAVE TO DEVOTIONS'}
+          </button>
+        </div>
       </div>
     </div>
   )

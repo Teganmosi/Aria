@@ -2,6 +2,7 @@ from fastapi import (
     FastAPI,
     Depends,
     HTTPException,
+    Request,
     status,
     WebSocket,
     WebSocketDisconnect,
@@ -15,12 +16,16 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from datetime import datetime, timezone
+import asyncio
 import logging
 import json
 import aiofiles
 import aiofiles.os
 import uuid
 
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from config import settings
 from models import (
     UserRegister,
@@ -70,6 +75,8 @@ from auth import (
     decode_access_token,
     get_password_hash,
     verify_password,
+    create_access_token,
+    create_refresh_token,
 )
 from ai_service import ai_service
 import redis
@@ -117,39 +124,36 @@ BIBLE_BOOK_MAPPING = {
 BIBLE_API_URL = "https://bible-api.com"
 
 
-async def _handle_voice_realtime_event(event, call_id: str):
-    """Helper to handle OpenAI Realtime API events"""
-    if event.type == "response.audio.delta":
+async def _handle_voice_realtime_event(event: dict, call_id: str):
+    """Dispatch a raw OpenAI Realtime API event dict to the frontend."""
+    event_type = event.get("type", "")
+    if event_type == "response.audio.delta":
         await voice_call_manager.send_message(
-            call_id, {"type": "audio_output", "audio": event.delta}
+            call_id, {"type": "audio_output", "audio": event.get("delta", "")}
         )
-    elif event.type == "response.created":
+    elif event_type == "response.created":
         await voice_call_manager.send_message(
             call_id, {"type": "aria_speaking", "speaking": True}
         )
-    elif event.type == "response.done":
+    elif event_type == "response.done":
         await voice_call_manager.send_message(
             call_id, {"type": "aria_speaking", "speaking": False}
         )
-    elif event.type == "response.audio_transcript.delta":
+    elif event_type == "response.audio_transcript.delta":
         await voice_call_manager.send_message(
             call_id,
-            {
-                "type": "transcript",
-                "text": event.delta,
-                "role": "assistant",
-            },
+            {"type": "transcript", "text": event.get("delta", ""), "role": "assistant"},
         )
-    elif event.type == "input_audio_buffer.speech_started":
+    elif event_type == "input_audio_buffer.speech_started":
         await voice_call_manager.send_message(
             call_id, {"type": "user_speaking", "speaking": True}
         )
-    elif event.type == "input_audio_buffer.speech_stopped":
+    elif event_type == "input_audio_buffer.speech_stopped":
         await voice_call_manager.send_message(
             call_id, {"type": "user_speaking", "speaking": False}
         )
-    elif event.type == "error":
-        logger.error(f"OpenAI error: {event.error}")
+    elif event_type == "error":
+        logger.error(f"OpenAI Realtime error: {event.get('error')}")
 
 
 def _cache_in_redis(key: str, data: Any, expire_seconds: int = 3600 * 24 * 7):
@@ -190,13 +194,37 @@ async def _fetch_verse_from_api(book: str, chapter: int, verse: int, version: st
 
 
 def _get_user_custom_instructions(user_profile: Dict[str, Any]) -> Optional[str]:
-    """Helper to combine custom prompt and personal context from user profile"""
+    """Build a personalisation block that tells the model who it is talking to
+    and how to adapt — not just a raw data dump."""
     parts = []
-    if user_profile.get("aria_custom_prompt"):
-        parts.append(f"Custom Persona/Prompt: {user_profile['aria_custom_prompt']}")
-    if user_profile.get("aria_personal_context"):
-        parts.append(f"User Personal Context: {user_profile['aria_personal_context']}")
-    return "\n".join(parts) if parts else None
+
+    custom_prompt = (user_profile.get("aria_custom_prompt") or "").strip()
+    personal_context = (user_profile.get("aria_personal_context") or "").strip()
+
+    if not custom_prompt and not personal_context:
+        return None
+
+    parts.append(
+        "## ABOUT THIS USER — PERSONALISE EVERY RESPONSE\n"
+        "The user has shared the following about themselves. "
+        "Let this shape the depth, tone, and scripture choices in every reply. "
+        "Do not give generic answers when you have personal information about them. "
+        "Speak directly to where they are in their walk with God."
+    )
+
+    if custom_prompt:
+        parts.append(f"**How they want Aria to engage / their spiritual focus:**\n{custom_prompt}")
+
+    if personal_context:
+        parts.append(f"**Their current life and spiritual context:**\n{personal_context}")
+
+    parts.append(
+        "Use this context to make your responses personal and relevant. "
+        "Reference their situation when applicable — do not ignore it. "
+        "The guardrails in the core instructions above still apply fully."
+    )
+
+    return "\n\n".join(parts)
 
 
 # Initialize Redis client
@@ -218,17 +246,21 @@ if settings.redis_enabled:
 else:
     logger.info("ℹ️ Redis caching is disabled (REDIS_ENABLED=false)")
 
+limiter = Limiter(key_func=get_remote_address)
+
 # Create FastAPI app
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="AI-powered Bible study, emotional support, and daily devotion assistant",
 )
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -262,7 +294,8 @@ async def health_check():
 
 
 @app.post("/api/v1/auth/register", response_model=Dict[str, Any])
-async def register(user_data: UserRegister):
+@limiter.limit("3/minute")
+async def register(request: Request, user_data: UserRegister):
     """Register a new user"""
     result = supabase_auth_signup(
         email=user_data.email,
@@ -280,13 +313,14 @@ async def register(user_data: UserRegister):
 
 
 @app.post("/api/v1/auth/login", response_model=Dict[str, Any])
-async def login(user_data: UserLogin):
+@limiter.limit("5/minute")
+async def login(request: Request, user_data: UserLogin):
     """Login a user"""
     result = supabase_auth_login(email=user_data.email, password=user_data.password)
 
     if not result.get("success"):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=result.get("error", "Invalid credentials"),
         )
 
@@ -308,6 +342,36 @@ async def logout(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(
         supabase_auth_logout()
 
     return {"success": True, "message": "Logged out successfully. Token invalidated."}
+
+
+@app.post("/api/v1/auth/refresh", response_model=Dict[str, Any])
+async def refresh_token(request: Request):
+    """Exchange a valid refresh token for a new access + refresh token pair."""
+    body = await request.json()
+    old_refresh = body.get("refresh_token", "").strip()
+    if not old_refresh:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="refresh_token required")
+
+    row = db.get_refresh_token(old_refresh)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
+
+    user_id: str = row["user_id"]
+    profile = db.get_profile(user_id)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    # Rotate: revoke old, issue new pair
+    db.revoke_refresh_token(old_refresh)
+    new_access = create_access_token(data={"sub": user_id, "email": profile["email"]})
+    new_refresh, _ = create_refresh_token(user_id, profile["email"])
+
+    return {
+        "success": True,
+        "access_token": new_access,
+        "refresh_token": new_refresh,
+        "token_type": "bearer",
+    }
 
 
 @app.get("/api/v1/auth/me")
@@ -825,7 +889,8 @@ async def process_devotion_ai(devotion_id: str):
             _get_user_custom_instructions(user_profile) if user_profile else None
         )
 
-        response = ai_service.generate_response(
+        response = await asyncio.to_thread(
+            ai_service.generate_response,
             conversation_history,
             "devotion",
             custom_instructions=custom_instructions,
@@ -1017,28 +1082,6 @@ async def generate_ai_response(
         )
 
 
-@app.post("/api/v1/ai/chat", response_model=ChatResponse)
-async def chat(
-    request: ChatRequest, current_user: Dict[str, Any] = Depends(get_current_user)
-):
-    """General AI chat endpoint"""
-    try:
-        # Use the requested mode for chat
-        content = ai_service.generate_response(
-            request.messages,
-            request.mode,
-            custom_instructions=_get_user_custom_instructions(current_user),
-        )
-        return ChatResponse(
-            content=content, role="assistant", timestamp=datetime.now(timezone.utc)
-        )
-    except Exception:
-        logger.exception("Error in chat")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=FAILED_TO_GENERATE_RESPONSE,
-        )
-
 
 @app.post("/api/v1/ai/voice-chat")
 async def voice_chat(
@@ -1056,8 +1099,14 @@ async def voice_chat(
                 detail="Invalid file type. Please upload an audio file.",
             )
 
-        # Read audio content
-        audio_content = await audio_file.read()
+        # Read audio content (cap at 10 MB)
+        MAX_AUDIO_BYTES = 10 * 1024 * 1024
+        audio_content = await audio_file.read(MAX_AUDIO_BYTES + 1)
+        if len(audio_content) > MAX_AUDIO_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Audio file exceeds the 10 MB limit.",
+            )
 
         # Initialize OpenAI client
         client = OpenAI(api_key=settings.openai_api_key)
@@ -1121,21 +1170,17 @@ async def create_voice_session(
 
 
 class VoiceCallManager:
-    """Manager for voice call connections with OpenAI Realtime API"""
+    """Manager for active voice call WebSocket connections."""
 
     def __init__(self):
         self.active_calls: Dict[str, WebSocket] = {}
-        self.openai_clients: Dict[str, Any] = {}
 
     async def connect(self, websocket: WebSocket, call_id: str):
         await websocket.accept()
         self.active_calls[call_id] = websocket
 
     def disconnect(self, call_id: str):
-        if call_id in self.active_calls:
-            del self.active_calls[call_id]
-        if call_id in self.openai_clients:
-            del self.openai_clients[call_id]
+        self.active_calls.pop(call_id, None)
 
     async def send_message(self, call_id: str, message: Dict[str, Any]):
         if call_id in self.active_calls:
@@ -1154,27 +1199,45 @@ class VoiceCallManager:
 voice_call_manager = VoiceCallManager()
 
 
-async def handle_voice_frontend(websocket: WebSocket, session, call_id: str):
-    """Handle messages from the frontend in a voice call"""
-    try:
-        while True:
-            data = await websocket.receive_json()
-            if data["type"] == "audio_input":
-                audio_data = data.get("audio")
-                if audio_data:
-                    await session.input_audio_buffer.append(audio=audio_data)
-            elif data["type"] == "ping":
-                await voice_call_manager.send_message(call_id, {"type": "pong"})
-            elif data["type"] == "close":
-                break
-    except Exception:
-        logger.exception("Frontend receive error")
+# Maps Realtime API voice names → TTS voice names (different model families)
+_TTS_VOICE_MAP: Dict[str, str] = {
+    "alloy": "alloy", "ash": "echo", "ballad": "fable",
+    "coral": "nova", "echo": "echo", "sage": "nova",
+    "stella": "shimmer", "verse": "nova",
+}
+
+
+def _pcm16_rms(pcm_bytes: bytes) -> float:
+    """Return RMS energy of a raw PCM16-LE byte buffer without numpy."""
+    import struct
+    n = len(pcm_bytes) // 2
+    if n == 0:
+        return 0.0
+    samples = struct.unpack(f"<{n}h", pcm_bytes[:n * 2])
+    return (sum(s * s for s in samples) / n) ** 0.5
+
+
+def _pcm16_to_wav(pcm_bytes: bytes, sample_rate: int = 24000) -> bytes:
+    """Wrap raw PCM16-LE mono bytes in a WAV container."""
+    import io, wave
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm_bytes)
+    return buf.getvalue()
 
 
 @app.websocket("/ws/voice-call/{call_id}")
 async def websocket_voice_call(websocket: WebSocket, call_id: str):
-    """WebSocket endpoint for real-time voice calls with OpenAI Realtime API"""
-    import asyncio
+    """Voice call via Whisper STT → NVIDIA NIM → OpenAI TTS pipeline.
+
+    Replaces the OpenAI Realtime API (requires Tier 2) with a Tier-1-compatible
+    turn-based approach: accumulate PCM audio, detect end-of-turn by silence,
+    transcribe with Whisper, generate with NVIDIA NIM, speak with OpenAI TTS.
+    """
+    import base64
     from openai import AsyncOpenAI
 
     try:
@@ -1186,62 +1249,169 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
 
     ai_config = ai_service.AI_CONFIGS.get("voiceCall", ai_service.AI_CONFIGS["general"])
     custom_instructions = _get_user_custom_instructions(user) if user else None
-    voice_preference = user.get("aria_voice", "verse") if user else "verse"
+    voice_preference = user.get("aria_voice", "sage") if user else "sage"
+    tts_voice = _TTS_VOICE_MAP.get(voice_preference, "nova")
     instructions = ai_config["system_prompt"]
     if custom_instructions:
         instructions = f"{instructions}\n\nUSER CUSTOMIZATION:\n{custom_instructions}"
 
     await voice_call_manager.connect(websocket, call_id)
-    openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
-    voice_call_manager.openai_clients[call_id] = openai_client
+    await voice_call_manager.send_message(
+        call_id, {"type": "conversation_started", "message": "Connected to Aria."}
+    )
+
+    oai = AsyncOpenAI(api_key=settings.openai_api_key)
+
+    # VAD constants — audio arrives at ~24 kHz, 4096 samples/chunk ≈ 0.17 s/chunk
+    BASE_THRESHOLD = 300        # absolute RMS floor; adaptive threshold stays above this
+    NOISE_MULTIPLIER = 3.5      # speech must be this many × above ambient noise floor
+    SILENCE_FRAMES_END = 7      # ~1.2 s silence triggers end-of-turn (feels natural)
+    MIN_SPEECH_FRAMES = 3       # ignore bursts shorter than ~0.5 s
+    PREROLL_FRAMES = 3          # prepend ~0.5 s before speech onset to avoid clipping first word
+    NOISE_WINDOW = 40           # rolling window of silent frames used to track noise floor
+
+    from collections import deque as _deque
+    audio_buffer: list[bytes] = []
+    preroll_buffer: _deque[bytes] = _deque(maxlen=PREROLL_FRAMES)
+    silence_frames = 0
+    speech_frames = 0
+    is_speaking = False
+    noise_samples: list[float] = []   # recent silent-frame RMS values
+    noise_floor = 0.0                 # rolling mean of ambient noise
+    conversation_history: list[Dict[str, str]] = []
+
+    # Completed turns wait here; the worker drains them one at a time so
+    # the user can keep speaking while Aria is still processing/talking.
+    turn_queue: asyncio.Queue[bytes] = asyncio.Queue()
+
+    async def process_turn(pcm_bytes: bytes) -> None:
+        """Run the STT → LLM → TTS pipeline for one completed user turn."""
+        try:
+            import io
+            wav_bytes = _pcm16_to_wav(pcm_bytes)
+            result = await oai.audio.transcriptions.create(
+                model="whisper-1",
+                file=("speech.wav", io.BytesIO(wav_bytes), "audio/wav"),
+                language="en",
+            )
+            user_text = result.text.strip()
+            if not user_text:
+                return
+            logger.info(f"[VoiceCall] User said: {user_text}")
+            await voice_call_manager.send_message(
+                call_id, {"type": "transcript", "text": user_text, "role": "user"}
+            )
+
+            conversation_history.append({"role": "user", "content": user_text})
+            ai_text = await asyncio.to_thread(
+                ai_service.generate_response,
+                conversation_history,
+                "voiceCall",
+                custom_instructions,
+            )
+            conversation_history.append({"role": "assistant", "content": ai_text})
+            await voice_call_manager.send_message(
+                call_id, {"type": "transcript", "text": ai_text, "role": "assistant"}
+            )
+
+            await voice_call_manager.send_message(call_id, {"type": "aria_speaking", "speaking": True})
+            tts_response = await oai.audio.speech.create(
+                model="tts-1",
+                voice=tts_voice,
+                input=ai_text,
+                response_format="pcm",
+            )
+            pcm_out = tts_response.content
+            chunk_size = 8192
+            for i in range(0, len(pcm_out), chunk_size):
+                await voice_call_manager.send_message(call_id, {
+                    "type": "audio_output",
+                    "audio": base64.b64encode(pcm_out[i:i + chunk_size]).decode(),
+                })
+        except Exception:
+            logger.exception("[VoiceCall] process_turn error")
+        finally:
+            await voice_call_manager.send_message(call_id, {"type": "aria_speaking", "speaking": False})
+
+    async def turn_worker() -> None:
+        """Drain turn_queue sequentially so turns never overlap."""
+        while True:
+            pcm = await turn_queue.get()
+            if pcm is None:          # sentinel — shut down
+                break
+            await process_turn(pcm)
+            turn_queue.task_done()
+
+    worker_task = asyncio.create_task(turn_worker())
 
     try:
-        async with openai_client.beta.realtime.connect(
-            model=ai_config['model']
-        ) as session:
-            await session.session.update(
-                session={
-                    "modalities": ["text", "audio"],
-                    "instructions": instructions,
-                    "voice": voice_preference,
-                    "input_audio_format": "pcm16",
-                    "output_audio_format": "pcm16",
-                    "turn_detection": {"type": "server_vad"},
-                }
-            )
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type")
 
-            await voice_call_manager.send_message(
-                call_id,
-                {"type": "conversation_started", "message": "Connected to Aria."},
-            )
-            frontend_task = asyncio.create_task(
-                handle_voice_frontend(websocket, session, call_id)
-            )
+            if msg_type == "ping":
+                await voice_call_manager.send_message(call_id, {"type": "pong"})
 
-            async for event in session:
-                await _handle_voice_realtime_event(event, call_id)
+            elif msg_type == "close":
+                break
 
-            frontend_task.cancel()
+            elif msg_type == "audio_input":
+                audio_b64 = data.get("audio", "")
+                if not audio_b64:
+                    continue
+
+                pcm_chunk = base64.b64decode(audio_b64)
+                energy = _pcm16_rms(pcm_chunk)
+
+                # Adaptive threshold: rises with ambient noise so a loud room
+                # doesn't cause constant false-positive speech detection.
+                adaptive_threshold = max(BASE_THRESHOLD, noise_floor * NOISE_MULTIPLIER)
+
+                if energy > adaptive_threshold:
+                    if not is_speaking:
+                        is_speaking = True
+                        # Prepend pre-roll so the first syllable isn't clipped
+                        audio_buffer = list(preroll_buffer)
+                        await voice_call_manager.send_message(
+                            call_id, {"type": "user_speaking", "speaking": True}
+                        )
+                    silence_frames = 0
+                    speech_frames += 1
+                    audio_buffer.append(pcm_chunk)
+
+                else:
+                    if not is_speaking:
+                        # Track ambient noise floor while the user isn't speaking
+                        preroll_buffer.append(pcm_chunk)
+                        noise_samples.append(energy)
+                        if len(noise_samples) > NOISE_WINDOW:
+                            noise_samples.pop(0)
+                        noise_floor = sum(noise_samples) / len(noise_samples)
+                    else:
+                        silence_frames += 1
+                        audio_buffer.append(pcm_chunk)
+
+                        if silence_frames >= SILENCE_FRAMES_END and speech_frames >= MIN_SPEECH_FRAMES:
+                            is_speaking = False
+                            await voice_call_manager.send_message(
+                                call_id, {"type": "user_speaking", "speaking": False}
+                            )
+                            full_audio = b"".join(audio_buffer)
+                            audio_buffer = []
+                            silence_frames = 0
+                            speech_frames = 0
+                            await turn_queue.put(full_audio)
+
     except Exception as e:
-        # Check if it's just a normal disconnect
-        from starlette.websockets import WebSocketDisconnect
         if not isinstance(e, (WebSocketDisconnect, RuntimeError)):
             logger.exception("Voice call error")
-            # Only try to send error if still connected
             await voice_call_manager.send_message(
                 call_id, {"type": "error", "message": "Connection error."}
             )
     finally:
+        await turn_queue.put(None)   # stop the worker
+        worker_task.cancel()
         voice_call_manager.disconnect(call_id)
-        # Final cleanup for OpenAI client
-        if call_id in voice_call_manager.openai_clients:
-            try:
-                await voice_call_manager.openai_clients[call_id].close()
-                del voice_call_manager.openai_clients[call_id]
-            except Exception:
-                pass
-                
-        # Only close if not already closed
         try:
             from starlette.websockets import WebSocketState
             if websocket.client_state == WebSocketState.CONNECTED:
@@ -1274,7 +1444,6 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
-@app.websocket("/ws/bible-study/{session_id}")
 async def process_bible_study_ai(session_id: str):
     """Helper to process AI interaction for Bible study"""
     try:
@@ -1358,7 +1527,8 @@ async def process_emotional_support_ai(session_id: str):
             _get_user_custom_instructions(user_profile) if user_profile else None
         )
 
-        response = ai_service.generate_response(
+        response = await asyncio.to_thread(
+            ai_service.generate_response,
             conversation_history,
             "emotionalSupport",
             custom_instructions=custom_instructions,
@@ -1436,6 +1606,9 @@ async def get_chat_messages(
     session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Get all messages for a chat session"""
+    session = db.get_chat_session(session_id)
+    if not session or session.get("user_id") != current_user.get("id"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     return db.get_chat_session_messages(session_id)
 
 
@@ -1494,9 +1667,9 @@ async def chat_with_aria(
 
         return AIResponse(content=response_content, mode=request.mode or "general")
 
-    except Exception:
+    except Exception as e:
         logger.exception("Chat error")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=FAILED_TO_GENERATE_RESPONSE)
 
 
 from fastapi.responses import StreamingResponse
@@ -1528,16 +1701,18 @@ async def chat_with_aria_stream(
         custom_instructions = _get_user_custom_instructions(profile) if profile else None
         full_context = [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in request.messages]
 
-        def generate():
+        async def generate():
+            chunks = await asyncio.to_thread(
+                lambda: list(ai_service.generate_response_stream(
+                    messages=full_context,
+                    mode=request.mode or "general",
+                    custom_instructions=custom_instructions,
+                ))
+            )
             full_content = ""
-            for chunk in ai_service.generate_response_stream(
-                messages=full_context,
-                mode=request.mode or "general",
-                custom_instructions=custom_instructions,
-            ):
+            for chunk in chunks:
                 full_content += chunk
                 yield chunk
-            
             if full_content:
                 db.create_chat_message(
                     {"session_id": session_id, "role": "assistant", "content": full_content}
@@ -1545,9 +1720,9 @@ async def chat_with_aria_stream(
 
         return StreamingResponse(generate(), media_type="text/plain")
 
-    except Exception:
+    except Exception as e:
         logger.exception("Chat stream error")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=FAILED_TO_GENERATE_RESPONSE)
 
 
 # ==================== Serve Frontend ====================
@@ -1683,7 +1858,7 @@ async def get_home_activity(
         return {"success": True, "activity": activity}
     except Exception:
         logger.exception("Error getting activity")
-        return {"success": False, "activity": [], "error": str(e)}
+        return {"success": False, "activity": [], "error": "Failed to load activity"}
 
 
 @app.get("/api/v1/home/stats")
@@ -1694,64 +1869,7 @@ async def get_home_stats(current_user: Dict[str, Any] = Depends(get_current_user
         return {"success": True, "stats": stats}
     except Exception:
         logger.exception("Error getting stats")
-        return {"success": False, "stats": {}, "error": str(e)}
-
-
-# ==================== Notes Endpoints ====================
-
-
-@app.get("/api/v1/notes", response_model=List[Note])
-async def get_notes(
-    source_type: Optional[str] = None,
-    current_user: Dict[str, Any] = Depends(get_current_user),
-):
-    """Get all notes for current user"""
-    notes = db.get_notes(current_user["id"], source_type)
-    return notes
-
-
-@app.post("/api/v1/notes", response_model=Note)
-async def create_note(
-    note_data: NoteCreate, current_user: Dict[str, Any] = Depends(get_current_user)
-):
-    """Create a new note"""
-    note = db.create_note(current_user["id"], note_data.model_dump())
-    if not note:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create note",
-        )
-    return note
-
-
-@app.put("/api/v1/notes/{note_id}", response_model=Note)
-async def update_note(
-    note_id: str,
-    note_data: NoteUpdate,
-    current_user: Dict[str, Any] = Depends(get_current_user),
-):
-    """Update an existing note"""
-    note = db.update_note(note_id, current_user["id"], note_data.model_dump())
-    if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Note not found or failed to update",
-        )
-    return note
-
-
-@app.delete("/api/v1/notes/{note_id}")
-async def delete_note(
-    note_id: str, current_user: Dict[str, Any] = Depends(get_current_user)
-):
-    """Delete a note"""
-    success = db.delete_note(note_id, current_user["id"])
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Note not found or failed to delete",
-        )
-    return {"success": True, "message": "Note deleted"}
+        return {"success": False, "stats": {}, "error": "Failed to load stats"}
 
 
 # ==================== Prayer Endpoints ====================

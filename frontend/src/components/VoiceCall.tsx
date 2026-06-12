@@ -91,7 +91,15 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
             // 2. Initialize Audio
             const AudioCtx = globalThis.AudioContext || globalThis.webkitAudioContext
             audioContextRef.current = new AudioCtx({ sampleRate: 24000 })
-            streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true })
+            streamRef.current = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,   // stops Aria's voice feeding back into the mic
+                    noiseSuppression: true,   // OS-level background noise filtering
+                    autoGainControl: true,    // keeps your voice at a consistent level
+                    sampleRate: { ideal: 24000 },
+                    channelCount: 1,
+                },
+            })
 
             // Add Analyser for visualization
             analyserRef.current = audioContextRef.current.createAnalyser()
@@ -125,7 +133,10 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
                 handleWsMessage(data)
             }
 
-            wsRef.current.onerror = () => {
+            wsRef.current.onerror = (event) => {
+                console.error('[VoiceCall] WebSocket error:', event)
+                console.error('[VoiceCall] WS URL was:', wsRef.current?.url)
+                statusRef.current = 'error'
                 setError('Connection failed. Please try again.')
                 setStatus('error')
             }
@@ -144,27 +155,34 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
         const context = audioContextRef.current
         const source = context.createMediaStreamSource(streamRef.current)
 
-        // Using ScriptProcessorNode for legacy fallback strategy
         processorRef.current = context.createScriptProcessor(4096, 1, 1)
 
         processorRef.current.onaudioprocess = (e) => {
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
+            if (wsRef.current?.readyState === WebSocket.OPEN && !isMutedRef.current) {
                 const inputData = e.inputBuffer.getChannelData(0)
                 const pcm16 = new Int16Array(inputData.length)
                 for (let i = 0; i < inputData.length; i++) {
                     const s = Math.max(-1, Math.min(1, inputData[i]))
                     pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
                 }
-                if (!isMutedRef.current) {
-                    // Optimized base64 conversion
-                    const base64 = btoa(String.fromCharCode.apply(null, new Uint8Array(pcm16.buffer)))
-                    wsRef.current.send(JSON.stringify({ type: 'audio_input', audio: base64 }))
+                // Chunked btoa avoids call-stack overflow on large typed arrays
+                const bytes = new Uint8Array(pcm16.buffer)
+                let binary = ''
+                const CHUNK = 0x8000
+                for (let i = 0; i < bytes.length; i += CHUNK) {
+                    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
                 }
+                wsRef.current.send(JSON.stringify({ type: 'audio_input', audio: btoa(binary) }))
             }
         }
 
         source.connect(processorRef.current)
-        processorRef.current.connect(context.destination)
+        // Route through a silent gain node — processor must be in the graph to
+        // fire, but we must NOT pipe mic audio back to the speakers (causes echo).
+        const silentSink = context.createGain()
+        silentSink.gain.value = 0
+        processorRef.current.connect(silentSink)
+        silentSink.connect(context.destination)
     }
 
     const clearAudioQueue = () => {

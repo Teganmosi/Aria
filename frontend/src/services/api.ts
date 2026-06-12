@@ -264,8 +264,9 @@ export const voiceCallService = {
   // C1 deferred: token in WebSocket URL — do not change
   getWebSocketUrl: (callId: string) => {
     let wsHost = import.meta.env.VITE_WS_URL || 'localhost:8002'
-    wsHost = wsHost.replace(/^(ws|wss):\/\//, '')
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    wsHost = wsHost.replace(/^(wss?):\/\//, '')
+    const isLocalhost = wsHost.startsWith('localhost') || wsHost.startsWith('127.0.0.1')
+    const wsProtocol = (!isLocalhost || window.location.protocol === 'https:') ? 'wss:' : 'ws:'
     const token = localStorage.getItem('authToken')
     return `${wsProtocol}//${wsHost}/ws/voice-call/${callId}?token=${token}`
   },

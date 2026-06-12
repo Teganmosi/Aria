@@ -1,9 +1,10 @@
 // @ts-nocheck
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Search, BookOpen, ChevronRight, ChevronLeft, MessageSquare,
-  ArrowLeft, Bookmark, Volume2, Share2, Sparkles
+  ArrowLeft, Bookmark, Volume2, Share2, Sparkles, X, Check,
+  PlayCircle, StopCircle, SkipForward, SkipBack, Settings2
 } from 'lucide-react'
 import { bibleService, homeService } from '../services/api'
 import { AnimatedBackground } from '../components/ui/SharedComponents'
@@ -37,11 +38,23 @@ const BIBLE_BOOKS = {
   ]
 }
 
+const SAVED_KEY = 'aria_saved_verses'
+const VOICE_KEY = 'aria_tts_voice'
+
+const getSavedVerses = (): string[] => {
+  try { return JSON.parse(localStorage.getItem(SAVED_KEY) || '[]') } catch { return [] }
+}
+
+const toggleSavedVerse = (ref: string): boolean => {
+  const saved = getSavedVerses()
+  const idx = saved.indexOf(ref)
+  const next = idx === -1 ? [...saved, ref] : saved.filter((_, i) => i !== idx)
+  localStorage.setItem(SAVED_KEY, JSON.stringify(next))
+  return idx === -1
+}
+
 const BookCard = ({ book, isSelected, onClick }) => (
-  <button
-    className={`book-card glass-panel ${isSelected ? 'active' : ''}`}
-    onClick={onClick}
-  >
+  <button className={`book-card glass-panel ${isSelected ? 'active' : ''}`} onClick={onClick}>
     <div className="book-card-content">
       <h4 className="font-serif">{book.name}</h4>
       <p>{book.chapters} chapters</p>
@@ -49,48 +62,74 @@ const BookCard = ({ book, isSelected, onClick }) => (
   </button>
 )
 
-const VerseCard = ({ verse }) => {
-  const [isSaved, setIsSaved] = useState(false)
+const VerseCard = ({ verse, bookName, chapterNum, isActiveReading, chapterPlaying, verseId, getSelectedVoice }) => {
+  const ref = `${bookName} ${chapterNum}:${verse.verse || verse.number}`
+  const [isSaved, setIsSaved] = useState(() => getSavedVerses().includes(ref))
   const [isPlaying, setIsPlaying] = useState(false)
+  const [shareToast, setShareToast] = useState(false)
 
-  const handlePlayAudio = () => {
-    if (!('speechSynthesis' in window)) {
-      alert('Text to speech is not supported in your browser.')
-      return
+  const handleBookmark = useCallback(() => {
+    const next = toggleSavedVerse(ref)
+    setIsSaved(next)
+  }, [ref])
+
+  const handleShare = useCallback(async () => {
+    const text = `"${verse.text}" — ${ref}`
+    if (navigator.share) {
+      try { await navigator.share({ title: 'Aria — Scripture', text }) } catch { /* user cancelled */ }
+    } else {
+      try {
+        await navigator.clipboard.writeText(text)
+        setShareToast(true)
+        setTimeout(() => setShareToast(false), 2000)
+      } catch { /* clipboard blocked */ }
     }
-    if (isPlaying) {
-      window.speechSynthesis.cancel()
-      setIsPlaying(false)
-      return
-    }
+  }, [verse.text, ref])
+
+  const handlePlayAudio = useCallback(() => {
+    if (!('speechSynthesis' in window)) { alert('Text to speech is not supported in your browser.'); return }
+    if (isPlaying) { window.speechSynthesis.cancel(); setIsPlaying(false); return }
     window.speechSynthesis.cancel()
     const utterance = new SpeechSynthesisUtterance(verse.text)
     utterance.rate = 0.9
+    const voice = getSelectedVoice?.()
+    if (voice) utterance.voice = voice
     utterance.onend = () => setIsPlaying(false)
     utterance.onerror = () => setIsPlaying(false)
     window.speechSynthesis.speak(utterance)
     setIsPlaying(true)
-  }
+  }, [verse.text, isPlaying, getSelectedVoice])
 
   return (
-    <div className="verse-card">
-      <span className="verse-number">{verse.verse || verse.number}</span>
+    <div
+      id={verseId}
+      className={`verse-card ${isActiveReading ? 'verse-card--active' : ''}`}
+    >
+      <span className={`verse-number ${isActiveReading ? 'verse-number--active' : ''}`}>
+        {verse.verse || verse.number}
+      </span>
       <p className="verse-text font-serif">{verse.text}</p>
       <div className="verse-actions">
-        <button className={`verse-action ${isSaved ? 'saved' : ''}`} onClick={() => setIsSaved(!isSaved)}>
+        <button
+          className={`verse-action ${isSaved ? 'saved' : ''}`}
+          onClick={handleBookmark}
+          title={isSaved ? 'Remove bookmark' : 'Bookmark verse'}
+        >
           <Bookmark size={16} fill={isSaved ? 'var(--brand-accent)' : 'none'} />
         </button>
-        <button className="verse-action">
-          <Share2 size={16} />
+        <button className="verse-action" onClick={handleShare} title="Share verse">
+          {shareToast ? <Check size={16} color="var(--brand-accent)" /> : <Share2 size={16} />}
         </button>
-        <button
-          className={`verse-action ${isPlaying ? 'saved' : ''}`}
-          onClick={handlePlayAudio}
-          title={isPlaying ? "Stop playing" : "Listen to verse"}
-          style={isPlaying ? { color: 'var(--brand-accent)', borderColor: 'var(--brand-accent)' } : {}}
-        >
-          <Volume2 size={16} />
-        </button>
+        {!chapterPlaying && (
+          <button
+            className={`verse-action ${isPlaying ? 'saved' : ''}`}
+            onClick={handlePlayAudio}
+            title={isPlaying ? 'Stop playing' : 'Listen to verse'}
+            style={isPlaying ? { color: 'var(--brand-accent)', borderColor: 'var(--brand-accent)' } : {}}
+          >
+            <Volume2 size={16} />
+          </button>
+        )}
       </div>
     </div>
   )
@@ -101,19 +140,124 @@ export const Bible = () => {
   const [selectedBook, setSelectedBook] = useState(null)
   const [selectedChapter, setSelectedChapter] = useState(1)
   const [searchQuery, setSearchQuery] = useState('')
+  const [pickerSearch, setPickerSearch] = useState('')
   const [selectedText, setSelectedText] = useState('')
   const [showAISelector, setShowAISelector] = useState(false)
   const [verses, setVerses] = useState([])
+  const [isLoadingVerses, setIsLoadingVerses] = useState(false)
+  const [versesError, setVersesError] = useState('')
   const [view, setView] = useState('books')
   const [readingProgress, setReadingProgress] = useState(0)
   const [verseOfDay, setVerseOfDay] = useState({ verse: '', reference: '' })
+  const [showBookOverlay, setShowBookOverlay] = useState(false)
+  const [showChapterOverlay, setShowChapterOverlay] = useState(false)
+  const [chapterPlaying, setChapterPlaying] = useState(false)
+  const [activeVerseIdx, setActiveVerseIdx] = useState<number | null>(null)
+  const chapterPlayingRef = useRef(false)
+  const speakVerseRef = useRef<((idx: number) => void) | null>(null)
+  const [availableVoices, setAvailableVoices] = useState([])
+  const [selectedVoiceName, setSelectedVoiceName] = useState(() => localStorage.getItem(VOICE_KEY) || '')
+  const [showVoicePicker, setShowVoicePicker] = useState(false)
+  const selectedVoiceNameRef = useRef(selectedVoiceName)
+
+  useEffect(() => { selectedVoiceNameRef.current = selectedVoiceName }, [selectedVoiceName])
+
+  useEffect(() => {
+    if (!('speechSynthesis' in window)) return
+    const load = () => {
+      const voices = window.speechSynthesis.getVoices()
+      if (voices.length) setAvailableVoices(voices)
+    }
+    load()
+    window.speechSynthesis.addEventListener('voiceschanged', load)
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', load)
+  }, [])
+
+  const getSelectedVoice = useCallback(() => {
+    if (!selectedVoiceNameRef.current) return null
+    return window.speechSynthesis.getVoices().find(v => v.name === selectedVoiceNameRef.current) || null
+  }, [])
+
+  const handleSelectVoice = useCallback((name: string) => {
+    setSelectedVoiceName(name)
+    selectedVoiceNameRef.current = name
+    localStorage.setItem(VOICE_KEY, name)
+    setShowVoicePicker(false)
+  }, [])
+
+  const speakVerse = useCallback((idx: number) => {
+    if (!chapterPlayingRef.current || idx >= verses.length) {
+      chapterPlayingRef.current = false
+      setChapterPlaying(false)
+      setActiveVerseIdx(null)
+      return
+    }
+    setActiveVerseIdx(idx)
+    const el = document.getElementById(`verse-row-${idx}`)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(verses[idx].text)
+    utterance.rate = 0.9
+    const voice = getSelectedVoice()
+    if (voice) utterance.voice = voice
+    utterance.onend = () => speakVerseRef.current?.(idx + 1)
+    utterance.onerror = () => {
+      chapterPlayingRef.current = false
+      setChapterPlaying(false)
+      setActiveVerseIdx(null)
+    }
+    window.speechSynthesis.speak(utterance)
+  }, [verses, getSelectedVoice])
+
+  useEffect(() => { speakVerseRef.current = speakVerse }, [speakVerse])
+
+  const startChapterPlayback = useCallback(() => {
+    if (!('speechSynthesis' in window)) { alert('Text to speech is not supported in your browser.'); return }
+    if (verses.length === 0) return
+    window.speechSynthesis.cancel()
+    chapterPlayingRef.current = true
+    setChapterPlaying(true)
+    setActiveVerseIdx(0)
+    speakVerse(0)
+  }, [verses, speakVerse])
+
+  const stopChapterPlayback = useCallback(() => {
+    chapterPlayingRef.current = false
+    window.speechSynthesis.cancel()
+    setChapterPlaying(false)
+    setActiveVerseIdx(null)
+  }, [])
+
+  const skipVerse = useCallback((direction: 1 | -1) => {
+    setActiveVerseIdx(prev => {
+      const next = (prev ?? 0) + direction
+      if (next < 0 || next >= verses.length) return prev
+      chapterPlayingRef.current = true
+      speakVerseRef.current?.(next)
+      return next
+    })
+  }, [verses.length])
+
+  // Stop playback when verses change (chapter or book changed)
+  useEffect(() => {
+    chapterPlayingRef.current = false
+    window.speechSynthesis.cancel()
+    setChapterPlaying(false)
+    setActiveVerseIdx(null)
+  }, [verses])
+
+  // Stop on unmount
+  useEffect(() => () => {
+    chapterPlayingRef.current = false
+    window.speechSynthesis.cancel()
+  }, [])
 
   useEffect(() => {
     const fetchVerseOfDay = async () => {
       try {
         const data = await homeService.getHomeData()
         if (data.verse_of_day) setVerseOfDay(data.verse_of_day)
-      } catch (error) { }
+      } catch { }
     }
     fetchVerseOfDay()
   }, [])
@@ -121,15 +265,23 @@ export const Bible = () => {
   useEffect(() => {
     if (selectedBook) {
       const fetchVerses = async () => {
+        setIsLoadingVerses(true)
+        setVersesError('')
         try {
           const response = await bibleService.getChapter(selectedBook.name, selectedChapter)
-          if (response.verses) {
+          if (response.verses && response.verses.length > 0) {
             setVerses(response.verses)
             setReadingProgress(0)
             const container = document.getElementById('verses-container')
             if (container) container.scrollTop = 0
+          } else {
+            setVersesError('No verses found for this chapter.')
           }
-        } catch (error) { setVerses([]) }
+        } catch {
+          setVersesError('Could not load this chapter. Please try again.')
+        } finally {
+          setIsLoadingVerses(false)
+        }
       }
       fetchVerses()
     }
@@ -163,6 +315,19 @@ export const Bible = () => {
   const handleBookSelect = (book) => { setSelectedBook(book); setSelectedChapter(1); setView('chapters') }
   const handleChapterSelect = (chapter) => { setSelectedChapter(chapter); setView('reading') }
 
+  const handleOverlayBookSelect = (book) => {
+    setSelectedBook(book)
+    setSelectedChapter(1)
+    setShowBookOverlay(false)
+    setShowChapterOverlay(true)
+    setPickerSearch('')
+  }
+
+  const handleOverlayChapterSelect = (chapter) => {
+    setSelectedChapter(chapter)
+    setShowChapterOverlay(false)
+  }
+
   const goBack = () => {
     if (view === 'reading') { setView('chapters') }
     else if (view === 'chapters') { setView('books'); setSelectedBook(null) }
@@ -170,6 +335,12 @@ export const Bible = () => {
 
   const filteredBooks = Object.entries(BIBLE_BOOKS).reduce((acc, [testament, books]) => {
     const filtered = books.filter(book => book.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    if (filtered.length > 0) acc[testament] = filtered
+    return acc
+  }, {})
+
+  const filteredPickerBooks = Object.entries(BIBLE_BOOKS).reduce((acc, [testament, books]) => {
+    const filtered = books.filter(book => book.name.toLowerCase().includes(pickerSearch.toLowerCase()))
     if (filtered.length > 0) acc[testament] = filtered
     return acc
   }, {})
@@ -198,6 +369,118 @@ export const Bible = () => {
     <div className="page-container">
       <AnimatedBackground />
 
+      {showVoicePicker && (
+        <div className="picker-overlay" onClick={() => setShowVoicePicker(false)}>
+          <div className="picker-modal picker-modal--sm" onClick={e => e.stopPropagation()}>
+            <div className="picker-header">
+              <h3 className="font-serif">Reading Voice</h3>
+              <button className="picker-close" onClick={() => setShowVoicePicker(false)}><X size={20} /></button>
+            </div>
+            {availableVoices.length === 0 ? (
+              <div className="voice-empty">No voices available on this device.</div>
+            ) : (
+              <div className="voice-list">
+                <button
+                  className={`voice-item ${selectedVoiceName === '' ? 'active' : ''}`}
+                  onClick={() => handleSelectVoice('')}
+                >
+                  <div className="voice-item-info">
+                    <span className="voice-name">System Default</span>
+                    <span className="voice-lang">Browser default voice</span>
+                  </div>
+                  {selectedVoiceName === '' && <Check size={16} color="var(--brand-accent)" />}
+                </button>
+                {['en', 'other'].map(group => {
+                  const voices = availableVoices.filter(v =>
+                    group === 'en' ? v.lang.startsWith('en') : !v.lang.startsWith('en')
+                  )
+                  if (!voices.length) return null
+                  return (
+                    <div key={group}>
+                      <p className="voice-group-label">{group === 'en' ? 'English' : 'Other Languages'}</p>
+                      {voices.map(voice => (
+                        <button
+                          key={voice.name}
+                          className={`voice-item ${selectedVoiceName === voice.name ? 'active' : ''}`}
+                          onClick={() => handleSelectVoice(voice.name)}
+                        >
+                          <div className="voice-item-info">
+                            <span className="voice-name">{voice.name}</span>
+                            <span className="voice-lang">{voice.lang}{voice.localService ? ' · Local' : ' · Online'}</span>
+                          </div>
+                          {selectedVoiceName === voice.name && <Check size={16} color="var(--brand-accent)" />}
+                        </button>
+                      ))}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showBookOverlay && (
+        <div className="picker-overlay" onClick={() => setShowBookOverlay(false)}>
+          <div className="picker-modal" onClick={e => e.stopPropagation()}>
+            <div className="picker-header">
+              <h3 className="font-serif">Choose a Book</h3>
+              <button className="picker-close" onClick={() => setShowBookOverlay(false)}><X size={20} /></button>
+            </div>
+            <div className="picker-search">
+              <Search size={16} color="var(--text-muted)" />
+              <input
+                type="text"
+                placeholder="Search books..."
+                value={pickerSearch}
+                onChange={e => setPickerSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="picker-books-scroll">
+              {Object.entries(filteredPickerBooks).map(([testament, books]) => (
+                <div key={testament} className="picker-testament">
+                  <p className="picker-testament-label">{testament}</p>
+                  <div className="picker-books-grid">
+                    {books.map(book => (
+                      <button
+                        key={book.name}
+                        className={`picker-book-btn ${selectedBook?.name === book.name ? 'active' : ''}`}
+                        onClick={() => handleOverlayBookSelect(book)}
+                      >
+                        {book.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showChapterOverlay && selectedBook && (
+        <div className="picker-overlay" onClick={() => setShowChapterOverlay(false)}>
+          <div className="picker-modal picker-modal--sm" onClick={e => e.stopPropagation()}>
+            <div className="picker-header">
+              <h3 className="font-serif">{selectedBook.name} — Chapter</h3>
+              <button className="picker-close" onClick={() => setShowChapterOverlay(false)}><X size={20} /></button>
+            </div>
+            <div className="picker-chapter-grid">
+              {Array.from({ length: selectedBook.chapters }, (_, i) => (
+                <button
+                  key={i + 1}
+                  className={`chapter-btn glass-panel ${selectedChapter === i + 1 ? 'active' : ''}`}
+                  onClick={() => handleOverlayChapterSelect(i + 1)}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="page-content">
         <header className="bible-header glass-panel">
           <div className="bible-header-left">
@@ -212,7 +495,24 @@ export const Bible = () => {
                 <h1 className="font-serif m-0" style={{ fontSize: '1.75rem' }}>The Sanctuary Library</h1>
               </div>
               <p className="text-[var(--text-secondary)]" style={{ margin: '0.25rem 0 0', fontSize: '0.9rem' }}>
-                {selectedBook ? `${selectedBook.name} • Chapter ${selectedChapter}` : "Explore God's Word in quiet reflection"}
+                {selectedBook
+                  ? (
+                    view === 'reading'
+                      ? (
+                        <span className="inline-flex items-center gap-1 flex-wrap">
+                          <button className="passage-nav-btn" onClick={() => { setShowChapterOverlay(false); setShowBookOverlay(true) }}>
+                            {selectedBook.name}
+                          </button>
+                          <span style={{ opacity: 0.4 }}>•</span>
+                          <button className="passage-nav-btn" onClick={() => { setShowBookOverlay(false); setShowChapterOverlay(true) }}>
+                            Chapter {selectedChapter}
+                          </button>
+                        </span>
+                      )
+                      : `${selectedBook.name} • Chapter ${selectedChapter}`
+                  )
+                  : "Explore God's Word in quiet reflection"
+                }
               </p>
             </div>
           </div>
@@ -303,23 +603,110 @@ export const Bible = () => {
               <div id="verses-container" className="verses-scroll glass-panel" onMouseUp={handleTextSelection}>
                 <div className="reading-header">
                   <h2 className="font-serif">Chapter {selectedChapter}</h2>
-                  <p>{verses.length} Verses</p>
+                  <p>{isLoadingVerses ? 'Loading...' : `${verses.length} VERSES`}</p>
+                  {!isLoadingVerses && verses.length > 0 && (
+                    <div className="reading-controls">
+                      {chapterPlaying ? (
+                        <button className="play-chapter-btn playing" onClick={stopChapterPlayback}>
+                          <StopCircle size={18} />
+                          Stop Reading
+                        </button>
+                      ) : (
+                        <button className="play-chapter-btn" onClick={startChapterPlayback}>
+                          <PlayCircle size={18} />
+                          Listen to Chapter
+                        </button>
+                      )}
+                      <button
+                        className="voice-settings-btn"
+                        onClick={() => setShowVoicePicker(true)}
+                        title="Change reading voice"
+                      >
+                        <Settings2 size={16} />
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <div className="verses-content">
-                  {verses.map((verse) => (
-                    <VerseCard key={verse.verse} verse={verse} />
-                  ))}
-                </div>
+
+                {isLoadingVerses ? (
+                  <div className="verses-loading">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <div key={i} className="verse-skeleton">
+                        <div className="skeleton-num" />
+                        <div className="skeleton-lines">
+                          <div className="skeleton-line" style={{ width: `${70 + (i % 3) * 10}%` }} />
+                          <div className="skeleton-line" style={{ width: `${50 + (i % 4) * 8}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : versesError ? (
+                  <div className="verses-error">
+                    <BookOpen size={40} color="var(--text-muted)" />
+                    <p>{versesError}</p>
+                    <button className="study-btn" style={{ maxWidth: 200 }} onClick={() => {
+                      setVersesError('')
+                      setSelectedBook({ ...selectedBook })
+                    }}>
+                      Try Again
+                    </button>
+                  </div>
+                ) : (
+                  <div className="verses-content">
+                    {verses.map((verse, idx) => (
+                      <VerseCard
+                        key={verse.verse}
+                        verse={verse}
+                        bookName={selectedBook.name}
+                        chapterNum={selectedChapter}
+                        verseId={`verse-row-${idx}`}
+                        isActiveReading={chapterPlaying && activeVerseIdx === idx}
+                        chapterPlaying={chapterPlaying}
+                        getSelectedVoice={getSelectedVoice}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {chapterPlaying && activeVerseIdx !== null && verses[activeVerseIdx] && (
+                <div className="now-playing-bar glass-panel">
+                  <div className="np-left">
+                    <div className="np-pulse-ring" />
+                    <div className="np-info">
+                      <span className="np-label">Now Reading</span>
+                      <span className="np-verse font-serif">
+                        {selectedBook.name} {selectedChapter}:{verses[activeVerseIdx].verse || activeVerseIdx + 1}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="np-controls">
+                    <button className="np-btn" onClick={() => skipVerse(-1)} title="Previous verse" disabled={activeVerseIdx === 0}>
+                      <SkipBack size={16} />
+                    </button>
+                    <button className="np-btn np-stop" onClick={stopChapterPlayback} title="Stop">
+                      <StopCircle size={20} />
+                    </button>
+                    <button className="np-btn" onClick={() => skipVerse(1)} title="Next verse" disabled={activeVerseIdx >= verses.length - 1}>
+                      <SkipForward size={16} />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="reading-footer-nav glass-panel">
                 <button className="nav-btn" onClick={handlePrevChapter} disabled={selectedBook.name === 'Genesis' && selectedChapter === 1}>
                   <ChevronLeft size={20} />
-                  <span>Previous Chapter</span>
+                  <span>Previous</span>
                 </button>
-                <div className="nav-divider"></div>
+
+                <button className="passage-pill" onClick={() => { setShowBookOverlay(true); setShowChapterOverlay(false) }}>
+                  <BookOpen size={14} />
+                  <span>{selectedBook.name} {selectedChapter}</span>
+                </button>
+
                 <button className="nav-btn" onClick={handleNextChapter} disabled={selectedBook.name === 'Revelation' && selectedChapter === 22}>
-                  <span>Next Chapter</span>
+                  <span>Next</span>
                   <ChevronRight size={20} />
                 </button>
               </div>
@@ -368,8 +755,12 @@ export const Bible = () => {
         }
         .bible-header { display: flex; justify-content: space-between; align-items: center; padding: 1.5rem 2rem; border-radius: 24px; margin-bottom: 2rem; background: var(--glass-bg); backdrop-filter: blur(20px); border: 1px solid var(--border-color); }
         .bible-header-left { display: flex; align-items: center; gap: 1.5rem; }
-        .back-btn { width: 44px; height: 44px; border-radius: 50%; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-main); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .back-btn { width: 44px; height: 44px; border-radius: 50%; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-main); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; }
         .back-btn:hover { background: var(--bg-hover); transform: translateX(-3px); }
+        .passage-nav-btn { background: none; border: none; color: var(--brand-accent); font-size: 0.9rem; font-weight: 600; cursor: pointer; padding: 0.15rem 0.5rem; border-radius: 6px; transition: background 0.15s; text-decoration: underline; text-underline-offset: 3px; text-decoration-style: dotted; }
+        .passage-nav-btn:hover { background: var(--bg-hover); text-decoration: none; }
+        .passage-pill { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1.25rem; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 100px; color: var(--text-main); font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+        .passage-pill:hover { background: var(--bg-hover); border-color: var(--brand-accent); color: var(--brand-accent); }
         .books-view { display: flex; flex-direction: column; gap: 2rem; }
         .verse-of-day { padding: 2.5rem; border-radius: 32px; text-align: center; background: var(--gradient-card); border: 1px solid var(--border-color); box-shadow: var(--shadow-main); }
         .vod-header { display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin-bottom: 1.5rem; text-transform: uppercase; letter-spacing: 0.15em; font-size: 0.85rem; color: var(--text-muted); }
@@ -396,7 +787,7 @@ export const Bible = () => {
         .chapter-btn.active { background: var(--brand-solid); color: var(--text-inverse); border-color: var(--brand-solid); }
         .reading-layout { max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.5rem; }
         .verses-scroll { padding: 3rem; border-radius: 32px; min-height: 60vh; background: var(--bg-card); border: 1px solid var(--border-color); }
-        @media (max-width: 640px) { .verses-scroll { padding: 1.5rem; border-radius: 20px; min-height: auto; } .verse-card { gap: 1rem; padding: 1rem; } .verse-text { font-size: 1.05rem; line-height: 1.6; } .verse-number { font-size: 0.8rem; min-width: 20px; } .reading-header h2 { font-size: 1.75rem !important; } .reading-footer-nav { flex-direction: column; gap: 0.5rem; border-radius: 16px !important; padding: 0.75rem !important; } .nav-divider { display: none; } .nav-btn { width: 100%; justify-content: center; padding: 0.75rem !important; } }
+        @media (max-width: 640px) { .verses-scroll { padding: 1.5rem; border-radius: 20px; min-height: auto; } .verse-card { gap: 1rem; padding: 1rem; } .verse-text { font-size: 1.05rem; line-height: 1.6; } .verse-number { font-size: 0.8rem; min-width: 20px; } .reading-header h2 { font-size: 1.75rem !important; } .reading-footer-nav { gap: 0.5rem; border-radius: 20px !important; padding: 0.75rem !important; flex-wrap: wrap; } .passage-pill { font-size: 0.8rem; padding: 0.5rem 0.875rem; } }
         .reading-header { text-align: center; margin-bottom: 3rem; padding-bottom: 2rem; border-bottom: 1px solid var(--border-color); }
         .reading-header h2 { font-size: 2.5rem; margin-bottom: 0.5rem; } .reading-header p { color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.85rem; }
         .verse-card { display: flex; gap: 1.5rem; padding: 1.25rem; border-radius: 16px; transition: all 0.2s; border: 1px solid transparent; }
@@ -407,10 +798,10 @@ export const Bible = () => {
         .verse-card:hover .verse-actions { opacity: 1; }
         .verse-action { width: 36px; height: 36px; border-radius: 50%; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
         .verse-action:hover { color: var(--brand-accent); background: var(--bg-card); border-color: var(--brand-accent); }
-        .reading-footer-nav { display: flex; align-items: center; justify-content: center; padding: 1rem; border-radius: 100px; background: var(--glass-bg); backdrop-filter: blur(20px); border: 1px solid var(--border-color); }
-        .nav-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 1rem; padding: 1rem; background: none; border: none; color: var(--text-main); font-size: 1rem; font-weight: 600; cursor: pointer; border-radius: 100px; transition: all 0.2s; }
+        .verse-action.saved { color: var(--brand-accent); border-color: var(--brand-accent); background: var(--bg-card); }
+        .reading-footer-nav { display: flex; align-items: center; justify-content: space-between; padding: 0.875rem 1.25rem; border-radius: 100px; background: var(--glass-bg); backdrop-filter: blur(20px); border: 1px solid var(--border-color); gap: 0.5rem; }
+        .nav-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 0.75rem; background: none; border: none; color: var(--text-main); font-size: 0.95rem; font-weight: 600; cursor: pointer; border-radius: 100px; transition: all 0.2s; }
         .nav-btn:hover:not(:disabled) { background: var(--bg-hover); } .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        .nav-divider { width: 1px; height: 30px; background: var(--border-color); }
         .ai-insight-popup { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); width: 450px; padding: 2rem; border-radius: 24px; z-index: 100; background: var(--bg-card); border: 1px solid var(--brand-accent); box-shadow: var(--shadow-main); animation: slideUp 0.3s ease-out; }
         @keyframes slideUp { from { transform: translate(-50%, 20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
         .ai-insight-popup blockquote { font-style: italic; color: var(--text-secondary); margin-bottom: 2rem; font-size: 1rem; }
@@ -418,6 +809,77 @@ export const Bible = () => {
         .study-btn { flex: 1; padding: 0.875rem; background: var(--brand-solid); color: var(--text-inverse); border: none; border-radius: 100px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 0.5rem; cursor: pointer; transition: all 0.2s; }
         .study-btn:hover { opacity: 0.9; transform: translateY(-1px); }
         .cancel-btn { padding: 0.875rem 1.5rem; background: var(--input-bg); border: 1px solid var(--border-color); border-radius: 100px; color: var(--text-main); font-weight: 600; cursor: pointer; }
+        .verses-loading { display: flex; flex-direction: column; gap: 1.5rem; padding: 0.5rem 0; }
+        .verse-skeleton { display: flex; gap: 1.5rem; padding: 1.25rem; border-radius: 16px; }
+        .skeleton-num { width: 24px; height: 18px; border-radius: 6px; background: var(--border-color); flex-shrink: 0; margin-top: 4px; animation: shimmer 1.4s infinite; }
+        .skeleton-lines { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+        .skeleton-line { height: 16px; border-radius: 6px; background: var(--border-color); animation: shimmer 1.4s infinite; }
+        .skeleton-line:last-child { animation-delay: 0.2s; }
+        @keyframes shimmer { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.9; } }
+        .verses-error { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem; padding: 5rem 2rem; color: var(--text-muted); text-align: center; }
+        .verses-error p { font-size: 1.05rem; margin: 0; }
+
+        /* Picker overlay */
+        .picker-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(6px); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 1.5rem; animation: fadeIn 0.15s ease; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .picker-modal { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 28px; width: 100%; max-width: 640px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden; animation: scaleIn 0.2s ease; box-shadow: 0 24px 60px rgba(0,0,0,0.4); }
+        .picker-modal--sm { max-width: 480px; }
+        @keyframes scaleIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .picker-header { display: flex; align-items: center; justify-content: space-between; padding: 1.5rem 1.75rem 1rem; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+        .picker-header h3 { margin: 0; font-size: 1.25rem; }
+        .picker-close { width: 36px; height: 36px; border-radius: 50%; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+        .picker-close:hover { background: var(--bg-hover); color: var(--text-main); }
+        .picker-search { display: flex; align-items: center; gap: 0.75rem; padding: 1rem 1.75rem; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+        .picker-search input { flex: 1; background: none; border: none; outline: none; color: var(--text-main); font-size: 1rem; }
+        .picker-books-scroll { overflow-y: auto; padding: 1rem 1.75rem 1.75rem; flex: 1; }
+        .picker-testament { margin-bottom: 1.5rem; }
+        .picker-testament-label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); font-weight: 700; margin: 0 0 0.75rem; }
+        .picker-books-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.5rem; }
+        .picker-book-btn { padding: 0.625rem 0.875rem; border-radius: 12px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-main); font-size: 0.9rem; font-weight: 500; cursor: pointer; text-align: left; transition: all 0.15s; }
+        .picker-book-btn:hover { background: var(--bg-hover); border-color: var(--brand-accent); color: var(--brand-accent); }
+        .picker-book-btn.active { background: var(--brand-solid); border-color: var(--brand-solid); color: var(--text-inverse); }
+        .picker-chapter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(58px, 1fr)); gap: 0.6rem; padding: 1.25rem 1.75rem 1.75rem; overflow-y: auto; }
+
+        /* Play chapter button */
+        .play-chapter-btn { display: inline-flex; align-items: center; gap: 0.5rem; margin-top: 1rem; padding: 0.625rem 1.25rem; border-radius: 100px; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-main); font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .play-chapter-btn:hover { border-color: var(--brand-accent); color: var(--brand-accent); background: var(--bg-hover); }
+        .play-chapter-btn.playing { background: rgba(var(--brand-accent-rgb, 212,175,55), 0.12); border-color: var(--brand-accent); color: var(--brand-accent); }
+
+        /* Active verse highlight */
+        .verse-card--active { background: rgba(var(--brand-accent-rgb, 212,175,55), 0.08) !important; border-color: rgba(var(--brand-accent-rgb, 212,175,55), 0.3) !important; border-left: 3px solid var(--brand-accent) !important; border-radius: 12px; }
+        .verse-number--active { color: var(--brand-accent); animation: pulse-num 1.2s ease-in-out infinite; }
+        @keyframes pulse-num { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        /* Now playing bar */
+        .now-playing-bar { display: flex; align-items: center; justify-content: space-between; padding: 0.875rem 1.25rem; border-radius: 20px; background: var(--glass-bg); backdrop-filter: blur(20px); border: 1px solid var(--brand-accent); gap: 1rem; animation: slideUp 0.25s ease-out; }
+        .np-left { display: flex; align-items: center; gap: 0.875rem; min-width: 0; }
+        .np-pulse-ring { width: 14px; height: 14px; border-radius: 50%; background: var(--brand-accent); flex-shrink: 0; animation: np-pulse 1.4s ease-in-out infinite; }
+        @keyframes np-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(var(--brand-accent-rgb, 212,175,55), 0.5); } 50% { box-shadow: 0 0 0 6px rgba(var(--brand-accent-rgb, 212,175,55), 0); } }
+        .np-info { display: flex; flex-direction: column; min-width: 0; }
+        .np-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }
+        .np-verse { font-size: 0.95rem; font-weight: 600; color: var(--text-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .np-controls { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+        .np-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+        .np-btn:hover:not(:disabled) { color: var(--brand-accent); border-color: var(--brand-accent); background: var(--bg-hover); }
+        .np-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+        .np-stop { color: var(--brand-accent); border-color: var(--brand-accent); width: 40px; height: 40px; }
+        .np-stop:hover { background: rgba(var(--brand-accent-rgb, 212,175,55), 0.15) !important; }
+
+        /* Reading controls row */
+        .reading-controls { display: inline-flex; align-items: center; gap: 0.5rem; margin-top: 1rem; }
+        .voice-settings-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; }
+        .voice-settings-btn:hover { color: var(--brand-accent); border-color: var(--brand-accent); background: var(--bg-hover); }
+
+        /* Voice picker */
+        .voice-empty { padding: 2rem 1.75rem; color: var(--text-muted); font-size: 0.95rem; text-align: center; }
+        .voice-list { overflow-y: auto; max-height: 420px; padding: 0.75rem 0.75rem 1rem; }
+        .voice-group-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-muted); font-weight: 700; padding: 0.75rem 0.75rem 0.4rem; margin: 0; }
+        .voice-item { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem 1rem; border-radius: 12px; background: none; border: 1px solid transparent; color: var(--text-main); cursor: pointer; text-align: left; transition: all 0.15s; }
+        .voice-item:hover { background: var(--bg-hover); border-color: var(--border-color); }
+        .voice-item.active { background: rgba(var(--brand-accent-rgb, 212,175,55), 0.08); border-color: rgba(var(--brand-accent-rgb, 212,175,55), 0.3); }
+        .voice-item-info { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+        .voice-name { font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .voice-lang { font-size: 0.75rem; color: var(--text-muted); }
       `}</style>
     </div>
   )

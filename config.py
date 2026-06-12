@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     supabase_url: Optional[str] = ""
     supabase_key: Optional[str] = ""
     
+    # Database
+    database_url: str = "postgresql://postgres:password@localhost:5433/aria"
+
     # Redis Configuration
     redis_url: str = "redis://localhost:6379"
     redis_enabled: bool = False
@@ -20,10 +23,10 @@ class Settings(BaseSettings):
     # Application Configuration
     app_name: str = "Aria - Your Spiritual Companion"
     app_version: str = "1.0.0"
-    debug: bool = True
-    secret_key: str = "dev-secret-key-change-in-production"
+    debug: bool = False
+    secret_key: str
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 1440
+    access_token_expire_minutes: int = 15
     
     # CORS Configuration
     cors_origins: str = '["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:8000", "http://localhost:8002"]'
@@ -41,7 +44,9 @@ class Settings(BaseSettings):
         self.openai_api_key = os.getenv('OPENAI_API_KEY', self.openai_api_key)
         self.nvidia_api_key = os.getenv('NVIDIA_API_KEY', self.nvidia_api_key)
         self.api_bible_key = os.getenv('API_BIBLE_KEY', self.api_bible_key)
-        self.secret_key = os.getenv('SECRET_KEY', self.secret_key)
+        env_secret = os.getenv('SECRET_KEY')
+        if env_secret:
+            self.secret_key = env_secret
         self.redis_enabled = os.getenv('REDIS_ENABLED', str(self.redis_enabled)).lower() == 'true'
 
     model_config = SettingsConfigDict(

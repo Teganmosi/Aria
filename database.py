@@ -1,60 +1,99 @@
-import sqlite3
 import os
 import json
 import logging
-import asyncio
+import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
+
+import psycopg2
+import psycopg2.extras
+from psycopg2.pool import ThreadedConnectionPool
+
 from config import settings
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-DB_NAME = os.getenv("DATABASE_PATH", "aria.db")
-
-# Ensure the directory for the database file exists
-DB_DIR = os.path.dirname(DB_NAME)
-if DB_DIR and not os.path.exists(DB_DIR):
-    os.makedirs(DB_DIR, exist_ok=True)
 
 class Database:
     _instance: Optional["Database"] = None
+    _pool: Optional[ThreadedConnectionPool] = None
 
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
+    _COLUMN_ALLOWLISTS: Dict[str, frozenset] = {
+        "profiles": frozenset({"id", "email", "full_name", "avatar_url", "preferred_bible_version",
+                                "notification_preferences", "spiritual_journey_notes",
+                                "aria_custom_prompt", "aria_personal_context", "aria_voice",
+                                "created_at", "updated_at"}),
+        "bible_study_sessions": frozenset({"id", "user_id", "book", "chapter", "verses",
+                                            "selected_text", "created_at", "updated_at"}),
+        "bible_study_messages": frozenset({"id", "session_id", "role", "content", "created_at"}),
+        "emotional_support_sessions": frozenset({"id", "user_id", "mood", "provided_scriptures",
+                                                  "created_at", "updated_at"}),
+        "emotional_support_messages": frozenset({"id", "session_id", "role", "content", "created_at"}),
+        "devotion_settings": frozenset({"id", "user_id", "topics", "preferred_time", "frequency",
+                                         "created_at", "updated_at"}),
+        "devotions": frozenset({"id", "user_id", "title", "day_plan_summary", "scripture_reading",
+                                 "reflection", "prayer", "status", "scheduled_date",
+                                 "created_at", "updated_at"}),
+        "devotion_messages": frozenset({"id", "devotion_id", "role", "content", "created_at"}),
+        "notes": frozenset({"id", "user_id", "title", "content", "source_type", "source_reference",
+                             "tags", "is_locked", "password_hash", "created_at", "updated_at"}),
+        "prayers": frozenset({"id", "user_id", "title", "content", "is_answered", "created_at",
+                               "updated_at"}),
+        "ai_chat_sessions": frozenset({"id", "user_id", "title", "created_at", "updated_at"}),
+        "ai_chat_messages": frozenset({"id", "session_id", "role", "content", "created_at"}),
+    }
+
+    def _validate_columns(self, table: str, keys) -> None:
+        allowed = self._COLUMN_ALLOWLISTS.get(table, frozenset())
+        bad = frozenset(keys) - allowed
+        if bad:
+            raise ValueError(f"Disallowed column(s) for table '{table}': {bad}")
+
     def __init__(self):
-        # Optional: Reset database on startup if RESET_DB=true (run once)
-        if not hasattr(Database, '_db_reset_done'):
-            if os.getenv("RESET_DB", "").lower() == "true":
-                import glob
-                for f in glob.glob(f"{DB_NAME}*"):
-                    try:
-                        os.remove(f)
-                        logger.info(f"🗑️ Removed database file: {f}")
-                    except Exception as e:
-                        logger.warning(f"Could not remove {f}: {e}")
-            Database._db_reset_done = True
-        
-        # Ensure latest tables exist
+        if hasattr(self, '_initialized'):
+            return
+        self._initialized = True
+        if not self.__class__._pool:
+            self.__class__._pool = ThreadedConnectionPool(
+                minconn=1,
+                maxconn=10,
+                dsn=settings.database_url,
+            )
         self._ensure_tables()
+
+    @contextmanager
+    def get_connection(self):
+        conn = self._pool.getconn()
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._pool.putconn(conn)
 
     def _ensure_tables(self):
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                # Create core tables if they don't exist (for fresh deployments like Render)
-                cursor.execute("""
+                cur = conn.cursor()
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY,
                     email TEXT NOT NULL UNIQUE,
                     hashed_password TEXT NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS profiles (
                     id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                     email TEXT NOT NULL UNIQUE,
@@ -66,22 +105,23 @@ class Database:
                     aria_custom_prompt TEXT,
                     aria_personal_context TEXT,
                     aria_voice TEXT DEFAULT 'verse',
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS prayers (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL,
                     title TEXT,
                     content TEXT NOT NULL,
-                    isanswered BOOLEAN DEFAULT 0,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    isanswered BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                # Core tables from init_sqlite.py
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS bible_study_sessions (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -89,106 +129,115 @@ class Database:
                     chapter INTEGER NOT NULL,
                     verses TEXT NOT NULL,
                     selected_text TEXT NOT NULL,
-                    is_realtime BOOLEAN DEFAULT 0,
+                    is_realtime BOOLEAN DEFAULT FALSE,
                     ai_explanation TEXT,
                     ai_context TEXT,
                     conversation_summary TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS bible_study_messages (
                     id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL REFERENCES bible_study_sessions(id) ON DELETE CASCADE,
                     role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
                     content TEXT NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS emotional_support_sessions (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                     mood TEXT NOT NULL,
                     situation_description TEXT,
-                    is_realtime BOOLEAN DEFAULT 0,
+                    is_realtime BOOLEAN DEFAULT FALSE,
                     ai_response TEXT,
                     provided_scriptures TEXT,
                     prayer_suggestion TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS emotional_support_messages (
                     id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL REFERENCES emotional_support_sessions(id) ON DELETE CASCADE,
                     role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
                     content TEXT NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS devotion_settings (
                     user_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
                     preferred_time TEXT NOT NULL,
                     timezone TEXT NOT NULL,
                     duration_minutes INTEGER DEFAULT 15,
                     topics TEXT DEFAULT '[]',
-                    auto_prayer BOOLEAN DEFAULT 1,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    auto_prayer BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS devotions (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-                    scheduled_for DATETIME NOT NULL,
+                    scheduled_for TIMESTAMP WITH TIME ZONE NOT NULL,
                     day_plan_summary TEXT,
                     scripture_reading TEXT,
                     reflection_prompt TEXT,
                     user_reflection TEXT,
                     status TEXT DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'completed', 'skipped')),
-                    completed_at DATETIME,
+                    completed_at TIMESTAMP WITH TIME ZONE,
                     ai_prayer TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS bible_verses (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     book TEXT NOT NULL,
                     chapter INTEGER NOT NULL,
                     verse INTEGER NOT NULL,
                     text TEXT NOT NULL,
                     version TEXT DEFAULT 'NIV',
                     UNIQUE (book, chapter, verse, version)
-                );
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS scripture_references (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     verse_id INTEGER NOT NULL REFERENCES bible_verses(id) ON DELETE CASCADE,
                     category TEXT NOT NULL,
                     tags TEXT NOT NULL,
                     context_description TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS user_favorites (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                     item_type TEXT NOT NULL CHECK (item_type IN ('verse', 'prayer', 'devotion')),
                     item_id TEXT NOT NULL,
                     notes TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     UNIQUE (user_id, item_type, item_id)
-                );
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS journal_entries (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -196,22 +245,24 @@ class Database:
                     content TEXT NOT NULL,
                     mood TEXT,
                     related_scriptures TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS cached_verses (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    id SERIAL PRIMARY KEY,
                     user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                     verse_text TEXT NOT NULL,
                     verse_reference TEXT NOT NULL,
                     aria_insight TEXT,
                     daily_manna TEXT,
                     cached_date TEXT NOT NULL
-                );
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS notes (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -220,171 +271,200 @@ class Database:
                     source_type TEXT DEFAULT 'general',
                     source_reference TEXT,
                     tags TEXT DEFAULT '[]',
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    is_locked BOOLEAN DEFAULT FALSE,
+                    password_hash TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS devotion_messages (
                     id TEXT PRIMARY KEY,
                     devotion_id TEXT NOT NULL REFERENCES devotions(id) ON DELETE CASCADE,
                     role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
                     content TEXT NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                # Create indexes
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_bible_study_sessions_user_id ON bible_study_sessions (user_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_bible_study_messages_session_id ON bible_study_messages (session_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_emotional_support_sessions_user_id ON emotional_support_sessions (user_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_devotions_user_id ON devotions (user_id);")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_devotion_messages_devotion_id ON devotion_messages (devotion_id);")
-                conn.commit()
-                # Add aria_insight to cached_verses if missing
-                try:
-                    cursor.execute("ALTER TABLE cached_verses ADD COLUMN aria_insight TEXT")
-                except sqlite3.Error:
-                    pass
-                
-                # Add daily_manna to cached_verses if missing
-                try:
-                    cursor.execute("ALTER TABLE cached_verses ADD COLUMN daily_manna TEXT")
-                except sqlite3.Error:
-                    pass
-                
-                # Add custom prompt and personal context to profiles if missing
-                try:
-                    cursor.execute("ALTER TABLE profiles ADD COLUMN aria_custom_prompt TEXT")
-                except sqlite3.Error:
-                    pass
-                try:
-                    cursor.execute("ALTER TABLE profiles ADD COLUMN aria_personal_context TEXT")
-                except sqlite3.Error:
-                    pass
-                try:
-                    cursor.execute("ALTER TABLE profiles ADD COLUMN aria_voice TEXT DEFAULT 'sage'")
-                except sqlite3.Error:
-                    pass
-                
-                # New tables for AI chat
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS ai_chat_sessions (
                     id TEXT PRIMARY KEY,
                     user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                     title TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                cursor.execute("""
+
+                cur.execute("""
                 CREATE TABLE IF NOT EXISTS ai_chat_messages (
                     id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL REFERENCES ai_chat_sessions(id) ON DELETE CASCADE,
                     role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
                     content TEXT NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                );
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
                 """)
-                # Add is_locked and password_hash to notes if missing
-                try:
-                    cursor.execute("ALTER TABLE notes ADD COLUMN is_locked BOOLEAN DEFAULT 0")
-                except sqlite3.Error:
-                    pass
-                try:
-                    cursor.execute("ALTER TABLE notes ADD COLUMN password_hash TEXT")
-                except sqlite3.Error:
-                    pass
-                
-                conn.commit()
+
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS revoked_tokens (
+                    jti TEXT PRIMARY KEY,
+                    revoked_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+                )
+                """)
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS refresh_tokens (
+                    token TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    revoked BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+                """)
+
+                # Indexes
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_bible_study_sessions_user_id ON bible_study_sessions (user_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_bible_study_messages_session_id ON bible_study_messages (session_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_emotional_support_sessions_user_id ON emotional_support_sessions (user_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_devotions_user_id ON devotions (user_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_devotion_messages_devotion_id ON devotion_messages (devotion_id)")
+
         except Exception:
             logger.exception("Error ensuring tables")
 
-    def get_connection(self):
-        # Ensure directory exists before connecting
-        db_dir = os.path.dirname(DB_NAME)
-        if db_dir and not os.path.exists(db_dir):
-            os.makedirs(db_dir, exist_ok=True)
-        
-        conn = sqlite3.connect(DB_NAME)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _cursor(self, conn):
+        return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    def _parse_json_fields(self, d):
-        json_fields = ['notification_preferences', 'provided_scriptures', 'scripture_reading', 'related_scriptures', 'topics', 'tags']
-        for field in json_fields:
-            if field in d and d[field]:
+    def _parse_json_fields(self, d: Dict) -> None:
+        for field in ('notification_preferences', 'provided_scriptures', 'scripture_reading',
+                      'related_scriptures', 'topics', 'tags'):
+            if field in d and isinstance(d[field], str):
                 try:
                     d[field] = json.loads(d[field])
                 except json.JSONDecodeError:
                     pass
 
-    def _parse_verses_field(self, d):
-        if 'verses' not in d:
-            return
-        val = d['verses']
+    def _parse_verses_field(self, d: Dict) -> None:
+        val = d.get('verses')
         if isinstance(val, str) and val.strip():
             try:
                 d['verses'] = [int(v.strip()) for v in val.split(',') if v.strip()]
             except (ValueError, TypeError):
                 d['verses'] = []
         elif not isinstance(val, list):
-            d['verses'] = []
+            if val is not None:
+                d['verses'] = []
 
-    def to_dict(self, row):
-        if row is None: return None
+    def to_dict(self, row) -> Optional[Dict]:
+        if row is None:
+            return None
         d = dict(row)
         self._parse_json_fields(d)
         self._parse_verses_field(d)
         return d
 
-    # ==================== Auth & Profile Operations ====================
+    # ==================== Auth & Token Operations ====================
 
     def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
-            return self.to_dict(cursor.fetchone())
+            cur = self._cursor(conn)
+            cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+            return self.to_dict(cur.fetchone())
 
     def create_user(self, user_id: str, email: str, hashed_password: str) -> bool:
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT INTO users (id, email, hashed_password) VALUES (?, ?, ?)",
-                    (user_id, email, hashed_password)
+                cur = self._cursor(conn)
+                cur.execute(
+                    "INSERT INTO users (id, email, hashed_password) VALUES (%s, %s, %s)",
+                    (user_id, email, hashed_password),
                 )
-                conn.commit()
                 return True
         except Exception:
             logger.exception("Error creating user")
             return False
 
+    def revoke_token(self, jti: str, expires_at: str) -> None:
+        try:
+            with self.get_connection() as conn:
+                cur = self._cursor(conn)
+                cur.execute(
+                    "INSERT INTO revoked_tokens (jti, expires_at) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                    (jti, expires_at),
+                )
+        except Exception:
+            logger.exception("Error revoking token")
+
+    def is_token_revoked(self, jti: str) -> bool:
+        try:
+            with self.get_connection() as conn:
+                cur = self._cursor(conn)
+                cur.execute("SELECT 1 FROM revoked_tokens WHERE jti = %s", (jti,))
+                return cur.fetchone() is not None
+        except Exception:
+            logger.exception("Error checking token revocation")
+            return False
+
+    def store_refresh_token(self, token: str, user_id: str, expires_at: str) -> None:
+        try:
+            with self.get_connection() as conn:
+                cur = self._cursor(conn)
+                cur.execute(
+                    "INSERT INTO refresh_tokens (token, user_id, expires_at) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+                    (token, user_id, expires_at),
+                )
+        except Exception:
+            logger.exception("Error storing refresh token")
+
+    def get_refresh_token(self, token: str) -> Optional[Dict[str, Any]]:
+        try:
+            with self.get_connection() as conn:
+                cur = self._cursor(conn)
+                cur.execute(
+                    "SELECT * FROM refresh_tokens WHERE token = %s AND revoked = FALSE AND expires_at > NOW()",
+                    (token,),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+        except Exception:
+            logger.exception("Error getting refresh token")
+            return None
+
+    def revoke_refresh_token(self, token: str) -> None:
+        try:
+            with self.get_connection() as conn:
+                cur = self._cursor(conn)
+                cur.execute("UPDATE refresh_tokens SET revoked = TRUE WHERE token = %s", (token,))
+        except Exception:
+            logger.exception("Error revoking refresh token")
+
+    # ==================== Profile Operations ====================
+
     def get_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM profiles WHERE id = ?", (user_id,))
-                return self.to_dict(cursor.fetchone())
+                cur = self._cursor(conn)
+                cur.execute("SELECT * FROM profiles WHERE id = %s", (user_id,))
+                return self.to_dict(cur.fetchone())
         except Exception:
             logger.exception("Error getting profile")
             return None
 
     def create_profile(self, profile_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
-            # Handle JSON serialization
             data = profile_data.copy()
-            if 'notification_preferences' in data:
+            if 'notification_preferences' in data and not isinstance(data['notification_preferences'], str):
                 data['notification_preferences'] = json.dumps(data['notification_preferences'])
-            
-            columns = ', '.join(data.keys())
-            placeholders = ', '.join(['?'] * len(data))
-            query = f"INSERT INTO profiles ({columns}) VALUES ({placeholders})"
-            
+            self._validate_columns("profiles", data.keys())
+            cols = ', '.join(data.keys())
+            placeholders = ', '.join(['%s'] * len(data))
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()))
-                conn.commit()
-                return self.get_profile(data['id'])
+                cur = self._cursor(conn)
+                cur.execute(f"INSERT INTO profiles ({cols}) VALUES ({placeholders})", list(data.values()))
+            return self.get_profile(data['id'])
         except Exception:
             logger.exception("Error creating profile")
             return None
@@ -392,17 +472,17 @@ class Database:
     def update_profile(self, user_id: str, profile_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = profile_data.copy()
-            if 'notification_preferences' in data:
+            if 'notification_preferences' in data and not isinstance(data['notification_preferences'], str):
                 data['notification_preferences'] = json.dumps(data['notification_preferences'])
-            
-            set_clause = ', '.join([f"{k} = ?" for k in data.keys()])
-            query = f"UPDATE profiles SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
-            
+            self._validate_columns("profiles", data.keys())
+            set_clause = ', '.join([f"{k} = %s" for k in data.keys()])
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()) + [user_id])
-                conn.commit()
-                return self.get_profile(user_id)
+                cur = self._cursor(conn)
+                cur.execute(
+                    f"UPDATE profiles SET {set_clause}, updated_at = NOW() WHERE id = %s",
+                    list(data.values()) + [user_id],
+                )
+            return self.get_profile(user_id)
         except Exception:
             logger.exception("Error updating profile")
             return None
@@ -412,47 +492,45 @@ class Database:
     def create_bible_study_session(self, session_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = session_data.copy()
-            import uuid
-            if 'id' not in data: data['id'] = str(uuid.uuid4())
-            # SQLite doesn't have arrays, convert to string
+            if 'id' not in data:
+                data['id'] = str(uuid.uuid4())
             if isinstance(data.get('verses'), list):
                 data['verses'] = ','.join(map(str, data['verses']))
-            
-            columns = ', '.join(data.keys())
-            placeholders = ', '.join(['?'] * len(data))
-            query = f"INSERT INTO bible_study_sessions ({columns}) VALUES ({placeholders})"
-            
+            self._validate_columns("bible_study_sessions", data.keys())
+            cols = ', '.join(data.keys())
+            placeholders = ', '.join(['%s'] * len(data))
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()))
-                conn.commit()
-                return self.get_bible_study_session(data['id'])
+                cur = self._cursor(conn)
+                cur.execute(f"INSERT INTO bible_study_sessions ({cols}) VALUES ({placeholders})", list(data.values()))
+            return self.get_bible_study_session(data['id'])
         except Exception:
             logger.exception("Error creating bible study session")
             return None
 
     def get_bible_study_sessions(self, user_id: str) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM bible_study_sessions WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
-            return [self.to_dict(row) for row in cursor.fetchall()]
+            cur = self._cursor(conn)
+            cur.execute("SELECT * FROM bible_study_sessions WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+            return [self.to_dict(r) for r in cur.fetchall()]
 
     def get_bible_study_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM bible_study_sessions WHERE id = ?", (session_id,))
-            return self.to_dict(cursor.fetchone())
+            cur = self._cursor(conn)
+            cur.execute("SELECT * FROM bible_study_sessions WHERE id = %s", (session_id,))
+            return self.to_dict(cur.fetchone())
 
     def update_bible_study_session(self, session_id: str, session_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = session_data.copy()
-            set_clause = ', '.join([f"{k} = ?" for k in data.keys()])
-            query = f"UPDATE bible_study_sessions SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            self._validate_columns("bible_study_sessions", data.keys())
+            set_clause = ', '.join([f"{k} = %s" for k in data.keys()])
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()) + [session_id])
-                conn.commit()
-                return self.get_bible_study_session(session_id)
+                cur = self._cursor(conn)
+                cur.execute(
+                    f"UPDATE bible_study_sessions SET {set_clause}, updated_at = NOW() WHERE id = %s",
+                    list(data.values()) + [session_id],
+                )
+            return self.get_bible_study_session(session_id)
         except Exception:
             logger.exception("Error updating session")
             return None
@@ -460,72 +538,72 @@ class Database:
     def create_bible_study_message(self, message_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = message_data.copy()
-            import uuid
-            if 'id' not in data: data['id'] = str(uuid.uuid4())
-            columns = ', '.join(data.keys())
-            placeholders = ', '.join(['?'] * len(data))
-            query = f"INSERT INTO bible_study_messages ({columns}) VALUES ({placeholders})"
+            if 'id' not in data:
+                data['id'] = str(uuid.uuid4())
+            self._validate_columns("bible_study_messages", data.keys())
+            cols = ', '.join(data.keys())
+            placeholders = ', '.join(['%s'] * len(data))
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()))
-                conn.commit()
-                # Return the created message
-                cursor.execute("SELECT * FROM bible_study_messages WHERE id = ?", (data['id'],))
-                return self.to_dict(cursor.fetchone())
+                cur = self._cursor(conn)
+                cur.execute(f"INSERT INTO bible_study_messages ({cols}) VALUES ({placeholders})", list(data.values()))
+                cur.execute("SELECT * FROM bible_study_messages WHERE id = %s", (data['id'],))
+                return self.to_dict(cur.fetchone())
         except Exception:
             logger.exception("Error creating message")
             return None
 
     def get_bible_study_messages(self, session_id: str) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM bible_study_messages WHERE session_id = ? ORDER BY created_at ASC", (session_id,))
-            return [self.to_dict(row) for row in cursor.fetchall()]
+            cur = self._cursor(conn)
+            cur.execute("SELECT * FROM bible_study_messages WHERE session_id = %s ORDER BY created_at ASC", (session_id,))
+            return [self.to_dict(r) for r in cur.fetchall()]
 
     # ==================== Emotional Support Operations ====================
 
     def create_emotional_support_session(self, session_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = session_data.copy()
-            import uuid
-            if 'id' not in data: data['id'] = str(uuid.uuid4())
-            if 'provided_scriptures' in data: data['provided_scriptures'] = json.dumps(data['provided_scriptures'])
-            
-            columns = ', '.join(data.keys())
-            placeholders = ', '.join(['?'] * len(data))
-            query = f"INSERT INTO emotional_support_sessions ({columns}) VALUES ({placeholders})"
+            if 'id' not in data:
+                data['id'] = str(uuid.uuid4())
+            if 'provided_scriptures' in data and not isinstance(data['provided_scriptures'], str):
+                data['provided_scriptures'] = json.dumps(data['provided_scriptures'])
+            self._validate_columns("emotional_support_sessions", data.keys())
+            cols = ', '.join(data.keys())
+            placeholders = ', '.join(['%s'] * len(data))
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()))
-                conn.commit()
-                return self.get_emotional_support_session(data['id'])
+                cur = self._cursor(conn)
+                cur.execute(f"INSERT INTO emotional_support_sessions ({cols}) VALUES ({placeholders})", list(data.values()))
+            return self.get_emotional_support_session(data['id'])
         except Exception:
             logger.exception("Error creating emotional session")
             return None
 
     def get_emotional_support_sessions(self, user_id: str) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM emotional_support_sessions WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
-            return [self.to_dict(row) for row in cursor.fetchall()]
+            cur = self._cursor(conn)
+            cur.execute("SELECT * FROM emotional_support_sessions WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+            return [self.to_dict(r) for r in cur.fetchall()]
 
     def get_emotional_support_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM emotional_support_sessions WHERE id = ?", (session_id,))
-            return self.to_dict(cursor.fetchone())
+            cur = self._cursor(conn)
+            cur.execute("SELECT * FROM emotional_support_sessions WHERE id = %s", (session_id,))
+            return self.to_dict(cur.fetchone())
 
     def update_emotional_support_session(self, session_id: str, session_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = session_data.copy()
-            if 'provided_scriptures' in data: data['provided_scriptures'] = json.dumps(data['provided_scriptures'])
-            set_clause = ', '.join([f"{k} = ?" for k in data.keys()])
-            query = f"UPDATE emotional_support_sessions SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            if 'provided_scriptures' in data and not isinstance(data['provided_scriptures'], str):
+                data['provided_scriptures'] = json.dumps(data['provided_scriptures'])
+            self._validate_columns("emotional_support_sessions", data.keys())
+            set_clause = ', '.join([f"{k} = %s" for k in data.keys()])
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()) + [session_id])
-                conn.commit()
-                return self.get_emotional_support_session(session_id)
+                cur = self._cursor(conn)
+                cur.execute(
+                    f"UPDATE emotional_support_sessions SET {set_clause}, updated_at = NOW() WHERE id = %s",
+                    list(data.values()) + [session_id],
+                )
+            return self.get_emotional_support_session(session_id)
         except Exception:
             logger.exception("Error updating emotional session")
             return None
@@ -533,47 +611,46 @@ class Database:
     def create_emotional_support_message(self, message_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = message_data.copy()
-            import uuid
-            if 'id' not in data: data['id'] = str(uuid.uuid4())
-            columns = ', '.join(data.keys())
-            placeholders = ', '.join(['?'] * len(data))
-            query = f"INSERT INTO emotional_support_messages ({columns}) VALUES ({placeholders})"
+            if 'id' not in data:
+                data['id'] = str(uuid.uuid4())
+            self._validate_columns("emotional_support_messages", data.keys())
+            cols = ', '.join(data.keys())
+            placeholders = ', '.join(['%s'] * len(data))
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()))
-                conn.commit()
-                cursor.execute("SELECT * FROM emotional_support_messages WHERE id = ?", (data['id'],))
-                return self.to_dict(cursor.fetchone())
+                cur = self._cursor(conn)
+                cur.execute(f"INSERT INTO emotional_support_messages ({cols}) VALUES ({placeholders})", list(data.values()))
+                cur.execute("SELECT * FROM emotional_support_messages WHERE id = %s", (data['id'],))
+                return self.to_dict(cur.fetchone())
         except Exception:
             logger.exception("Error creating support message")
             return None
 
     def get_emotional_support_messages(self, session_id: str) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM emotional_support_messages WHERE session_id = ? ORDER BY created_at ASC", (session_id,))
-            return [self.to_dict(row) for row in cursor.fetchall()]
+            cur = self._cursor(conn)
+            cur.execute("SELECT * FROM emotional_support_messages WHERE session_id = %s ORDER BY created_at ASC", (session_id,))
+            return [self.to_dict(r) for r in cur.fetchall()]
 
     # ==================== Devotion Operations ====================
 
     def get_devotion_settings(self, user_id: str) -> Optional[Dict[str, Any]]:
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM devotion_settings WHERE user_id = ?", (user_id,))
-            return self.to_dict(cursor.fetchone())
+            cur = self._cursor(conn)
+            cur.execute("SELECT * FROM devotion_settings WHERE user_id = %s", (user_id,))
+            return self.to_dict(cur.fetchone())
 
     def create_devotion_settings(self, settings_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = settings_data.copy()
-            if 'topics' in data: data['topics'] = json.dumps(data['topics'])
-            columns = ', '.join(data.keys())
-            placeholders = ', '.join(['?'] * len(data))
-            query = f"INSERT INTO devotion_settings ({columns}) VALUES ({placeholders})"
+            if 'topics' in data and not isinstance(data['topics'], str):
+                data['topics'] = json.dumps(data['topics'])
+            self._validate_columns("devotion_settings", data.keys())
+            cols = ', '.join(data.keys())
+            placeholders = ', '.join(['%s'] * len(data))
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()))
-                conn.commit()
-                return self.get_devotion_settings(data['user_id'])
+                cur = self._cursor(conn)
+                cur.execute(f"INSERT INTO devotion_settings ({cols}) VALUES ({placeholders})", list(data.values()))
+            return self.get_devotion_settings(data['user_id'])
         except Exception:
             logger.exception("Error creating devotion settings")
             return None
@@ -581,14 +658,17 @@ class Database:
     def update_devotion_settings(self, user_id: str, settings_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = settings_data.copy()
-            if 'topics' in data: data['topics'] = json.dumps(data['topics'])
-            set_clause = ', '.join([f"{k} = ?" for k in data.keys()])
-            query = f"UPDATE devotion_settings SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?"
+            if 'topics' in data and not isinstance(data['topics'], str):
+                data['topics'] = json.dumps(data['topics'])
+            self._validate_columns("devotion_settings", data.keys())
+            set_clause = ', '.join([f"{k} = %s" for k in data.keys()])
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()) + [user_id])
-                conn.commit()
-                return self.get_devotion_settings(user_id)
+                cur = self._cursor(conn)
+                cur.execute(
+                    f"UPDATE devotion_settings SET {set_clause}, updated_at = NOW() WHERE user_id = %s",
+                    list(data.values()) + [user_id],
+                )
+            return self.get_devotion_settings(user_id)
         except Exception:
             logger.exception("Error updating devotion settings")
             return None
@@ -596,40 +676,43 @@ class Database:
     def create_devotion(self, devotion_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = devotion_data.copy()
-            import uuid
-            if 'id' not in data: data['id'] = str(uuid.uuid4())
-            if 'scripture_reading' in data: data['scripture_reading'] = json.dumps(data['scripture_reading'])
-            columns = ', '.join(data.keys())
-            placeholders = ', '.join(['?'] * len(data))
-            query = f"INSERT INTO devotions ({columns}) VALUES ({placeholders})"
+            if 'id' not in data:
+                data['id'] = str(uuid.uuid4())
+            if 'scripture_reading' in data and not isinstance(data['scripture_reading'], str):
+                data['scripture_reading'] = json.dumps(data['scripture_reading'])
+            self._validate_columns("devotions", data.keys())
+            cols = ', '.join(data.keys())
+            placeholders = ', '.join(['%s'] * len(data))
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()))
-                conn.commit()
-                cursor.execute("SELECT * FROM devotions WHERE id = ?", (data['id'],))
-                return self.to_dict(cursor.fetchone())
+                cur = self._cursor(conn)
+                cur.execute(f"INSERT INTO devotions ({cols}) VALUES ({placeholders})", list(data.values()))
+                cur.execute("SELECT * FROM devotions WHERE id = %s", (data['id'],))
+                return self.to_dict(cur.fetchone())
         except Exception:
             logger.exception("Error creating devotion")
             return None
 
     def get_devotions(self, user_id: str) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM devotions WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
-            return [self.to_dict(row) for row in cursor.fetchall()]
+            cur = self._cursor(conn)
+            cur.execute("SELECT * FROM devotions WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+            return [self.to_dict(r) for r in cur.fetchall()]
 
     def update_devotion(self, devotion_id: str, devotion_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = devotion_data.copy()
-            if 'scripture_reading' in data: data['scripture_reading'] = json.dumps(data['scripture_reading'])
-            set_clause = ', '.join([f"{k} = ?" for k in data.keys()])
-            query = f"UPDATE devotions SET {set_clause} WHERE id = ?"
+            if 'scripture_reading' in data and not isinstance(data['scripture_reading'], str):
+                data['scripture_reading'] = json.dumps(data['scripture_reading'])
+            self._validate_columns("devotions", data.keys())
+            set_clause = ', '.join([f"{k} = %s" for k in data.keys()])
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()) + [devotion_id])
-                conn.commit()
-                cursor.execute("SELECT * FROM devotions WHERE id = ?", (devotion_id,))
-                return self.to_dict(cursor.fetchone())
+                cur = self._cursor(conn)
+                cur.execute(
+                    f"UPDATE devotions SET {set_clause} WHERE id = %s",
+                    list(data.values()) + [devotion_id],
+                )
+                cur.execute("SELECT * FROM devotions WHERE id = %s", (devotion_id,))
+                return self.to_dict(cur.fetchone())
         except Exception:
             logger.exception("Error updating devotion")
             return None
@@ -637,17 +720,16 @@ class Database:
     def create_devotion_message(self, message_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = message_data.copy()
-            import uuid
-            if 'id' not in data: data['id'] = str(uuid.uuid4())
-            columns = ', '.join(data.keys())
-            placeholders = ', '.join(['?'] * len(data))
-            query = f"INSERT INTO devotion_messages ({columns}) VALUES ({placeholders})"
+            if 'id' not in data:
+                data['id'] = str(uuid.uuid4())
+            self._validate_columns("devotion_messages", data.keys())
+            cols = ', '.join(data.keys())
+            placeholders = ', '.join(['%s'] * len(data))
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()))
-                conn.commit()
-                cursor.execute("SELECT * FROM devotion_messages WHERE id = ?", (data['id'],))
-                return self.to_dict(cursor.fetchone())
+                cur = self._cursor(conn)
+                cur.execute(f"INSERT INTO devotion_messages ({cols}) VALUES ({placeholders})", list(data.values()))
+                cur.execute("SELECT * FROM devotion_messages WHERE id = %s", (data['id'],))
+                return self.to_dict(cur.fetchone())
         except Exception:
             logger.exception("Error creating devotion message")
             return None
@@ -655,9 +737,9 @@ class Database:
     def get_devotion_messages(self, devotion_id: str) -> List[Dict[str, Any]]:
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM devotion_messages WHERE devotion_id = ? ORDER BY created_at ASC", (devotion_id,))
-                return [self.to_dict(row) for row in cursor.fetchall()]
+                cur = self._cursor(conn)
+                cur.execute("SELECT * FROM devotion_messages WHERE devotion_id = %s ORDER BY created_at ASC", (devotion_id,))
+                return [self.to_dict(r) for r in cur.fetchall()]
         except Exception:
             logger.exception("Error getting devotion messages")
             return []
@@ -665,147 +747,130 @@ class Database:
     # ==================== Bible Operations ====================
 
     async def fetch_bible_chapter_from_api(self, book: str, chapter: int, version: str = "KJV") -> List[Dict[str, Any]]:
-        """Fetch Bible chapter from API and cache it locally"""
-        # 1. Try local cache first
+        # Always check local DB first — after seed_kjv.py runs, KJV is fully seeded
+        # and will never reach the external call below.
         local_verses = self.get_bible_chapter_local(book, chapter, version)
         if local_verses:
-            logger.info(f"📚 Loaded {book} {chapter} from local cache")
+            logger.info(f"Loaded {book} {chapter} ({version}) from local DB")
             return local_verses
 
-        # 2. Fetch from API if not found locally
-        logger.info(f"🌐 Fetching {book} {chapter} from external API...")
+        # Fallback for translations not yet seeded locally
+        logger.info(f"Fetching {book} {chapter} ({version}) from bible-api.com...")
         fetched_verses = []
         try:
             import httpx
-            # Format book name for bible-api.com
             formatted_book = book.replace(" ", "+")
             url = f"https://bible-api.com/{formatted_book}+{chapter}?translation={version.lower()}"
-            
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(url)
                 if response.status_code == 200:
                     data = response.json()
                     for v in data.get("verses", []):
                         fetched_verses.append({
-                            "book": book,
-                            "chapter": chapter,
+                            "book": book, "chapter": chapter,
                             "verse": v.get("verse"),
                             "text": v.get("text", "").strip(),
-                            "version": version.upper()
+                            "version": version.upper(),
                         })
-                    
-                    # 3. Save to local cache for next time
                     if fetched_verses:
                         self.save_bible_verses(fetched_verses)
-                        
                     return fetched_verses
         except Exception:
-            logger.exception("Error fetching from API")
-
+            logger.exception("Error fetching from external Bible API")
         return []
 
     def get_bible_chapter_local(self, book: str, chapter: int, version: str = "KJV") -> List[Dict[str, Any]]:
-        """Get all verses in a chapter from local DB"""
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT * FROM bible_verses WHERE LOWER(book) = LOWER(?) AND chapter = ? AND version = ? ORDER BY verse ASC",
-                (book, chapter, version.upper())
+            cur = self._cursor(conn)
+            cur.execute(
+                "SELECT * FROM bible_verses WHERE LOWER(book) = LOWER(%s) AND chapter = %s AND version = %s ORDER BY verse ASC",
+                (book, chapter, version.upper()),
             )
-            return [dict(row) for row in cursor.fetchall()]
+            return [dict(r) for r in cur.fetchall()]
 
     def save_bible_verses(self, verses: List[Dict[str, Any]]):
-        """Save multiple verses to local DB"""
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
+                cur = self._cursor(conn)
                 for v in verses:
-                    cursor.execute(
-                        """INSERT OR IGNORE INTO bible_verses 
-                           (book, chapter, verse, text, version) 
-                           VALUES (?, ?, ?, ?, ?)""",
-                        (v['book'], v['chapter'], v['verse'], v['text'], v.get('version', 'KJV').upper())
+                    cur.execute(
+                        """INSERT INTO bible_verses (book, chapter, verse, text, version)
+                           VALUES (%s, %s, %s, %s, %s)
+                           ON CONFLICT (book, chapter, verse, version) DO NOTHING""",
+                        (v['book'], v['chapter'], v['verse'], v['text'], v.get('version', 'KJV').upper()),
                     )
-                conn.commit()
-                logger.info(f"💾 Cached {len(verses)} verses locally")
+                logger.info(f"Cached {len(verses)} verses locally")
         except Exception:
             logger.exception("Error saving verses to cache")
 
-    def _parse_bible_json(self, book, chapter, content):
-        """Helper to parse API.Bible complex JSON output"""
-        verses = []
-        for item in content:
-            if not (isinstance(item, dict) and item.get("type") == "tag" and item.get("name") == "p"):
-                continue
-            for content_item in item.get("items", []):
-                if isinstance(content_item, dict) and content_item.get("type") == "tag" and content_item.get("name") == "verse":
-                    verse_num = content_item.get("attrs", {}).get("number")
-                    verse_id = content_item.get("attrs", {}).get("id")
-                    verses.append({
-                        "id": verse_id, "number": verse_num, "text": "Fetching detailed text...",
-                        "book": book, "chapter": chapter
-                    })
-        return verses
-
     def get_bible_verse(self, book: str, chapter: int, verse: int, version: str = "KJV") -> Optional[Dict[str, Any]]:
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT * FROM bible_verses WHERE LOWER(book) = LOWER(?) AND chapter = ? AND verse = ? AND version = ?", 
-                (book, chapter, verse, version.upper())
+            cur = self._cursor(conn)
+            cur.execute(
+                "SELECT * FROM bible_verses WHERE LOWER(book) = LOWER(%s) AND chapter = %s AND verse = %s AND version = %s",
+                (book, chapter, verse, version.upper()),
             )
-            return self.to_dict(cursor.fetchone())
+            return self.to_dict(cur.fetchone())
 
     def search_bible_verses(self, query: str) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM bible_verses WHERE text LIKE ?", (f"%{query}%",))
-            return [self.to_dict(row) for row in cursor.fetchall()]
+            cur = self._cursor(conn)
+            cur.execute("SELECT * FROM bible_verses WHERE text ILIKE %s", (f"%{query}%",))
+            return [self.to_dict(r) for r in cur.fetchall()]
 
     def get_scripture_references(self, category: str) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM scripture_references WHERE category = ?", (category,))
-            return [self.to_dict(row) for row in cursor.fetchall()]
+            cur = self._cursor(conn)
+            cur.execute("SELECT * FROM scripture_references WHERE category = %s", (category,))
+            return [self.to_dict(r) for r in cur.fetchall()]
 
     # ==================== User Activity Operations ====================
 
     def get_user_activity(self, user_id: str, limit: int = 5) -> List[Dict[str, Any]]:
         activities = []
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            
-            # Bible sessions
-            cursor.execute("SELECT id, book, chapter, created_at FROM bible_study_sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT ?", (user_id, limit))
-            for row in cursor.fetchall():
+            cur = self._cursor(conn)
+
+            cur.execute(
+                "SELECT id, book, chapter, created_at FROM bible_study_sessions WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
+                (user_id, limit),
+            )
+            for row in cur.fetchall():
                 activities.append({
-                    "type": "bible_study", "title": f"{row['book']} {row['chapter']}", 
-                    "subtitle": "Bible Study", "created_at": row['created_at'], "path": "/app/bible-study"
+                    "type": "bible_study", "title": f"{row['book']} {row['chapter']}",
+                    "subtitle": "Bible Study", "created_at": row['created_at'], "path": "/app/bible-study",
                 })
-            
-            # Support sessions
-            cursor.execute("SELECT id, mood, created_at FROM emotional_support_sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT ?", (user_id, limit))
-            for row in cursor.fetchall():
-                 activities.append({
-                    "type": "support", "title": row['mood'], 
-                    "subtitle": "Emotional Support", "created_at": row['created_at'], "path": "/app/emotional-support"
+
+            cur.execute(
+                "SELECT id, mood, created_at FROM emotional_support_sessions WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
+                (user_id, limit),
+            )
+            for row in cur.fetchall():
+                activities.append({
+                    "type": "support", "title": row['mood'],
+                    "subtitle": "Emotional Support", "created_at": row['created_at'], "path": "/app/emotional-support",
                 })
-            
-            # Devotions
-            cursor.execute("SELECT id, day_plan_summary, created_at FROM devotions WHERE user_id = ? ORDER BY created_at DESC LIMIT ?", (user_id, limit))
-            for row in cursor.fetchall():
-                 activities.append({
-                    "type": "devotion", "title": (row['day_plan_summary'] or "Daily Devotion")[:30], 
-                    "subtitle": "Devotion", "created_at": row['created_at'], "path": "/app/devotion"
+
+            cur.execute(
+                "SELECT id, day_plan_summary, created_at FROM devotions WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
+                (user_id, limit),
+            )
+            for row in cur.fetchall():
+                activities.append({
+                    "type": "devotion", "title": (row['day_plan_summary'] or "Daily Devotion")[:30],
+                    "subtitle": "Devotion", "created_at": row['created_at'], "path": "/app/devotion",
                 })
-            # AI Chat sessions
-            cursor.execute("SELECT id, title, created_at FROM ai_chat_sessions WHERE user_id = ? ORDER BY created_at DESC LIMIT ?", (user_id, limit))
-            for row in cursor.fetchall():
-                 activities.append({
-                    "type": "chat", "title": row['title'] or "Conversation", 
-                    "subtitle": "AI Chat", "created_at": row['created_at'], "path": "/app/ai-chat"
+
+            cur.execute(
+                "SELECT id, title, created_at FROM ai_chat_sessions WHERE user_id = %s ORDER BY created_at DESC LIMIT %s",
+                (user_id, limit),
+            )
+            for row in cur.fetchall():
+                activities.append({
+                    "type": "chat", "title": row['title'] or "Conversation",
+                    "subtitle": "AI Chat", "created_at": row['created_at'], "path": "/app/ai-chat",
                 })
-        
+
         activities.sort(key=lambda x: x["created_at"], reverse=True)
         return activities[:limit]
 
@@ -814,46 +879,46 @@ class Database:
     def create_note(self, user_id: str, note_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = note_data.copy()
-            import uuid
             data['id'] = str(uuid.uuid4())
             data['user_id'] = user_id
-            if 'tags' in data: data['tags'] = json.dumps(data['tags'])
-            
-            columns = ', '.join(data.keys())
-            placeholders = ', '.join(['?'] * len(data))
-            query = f"INSERT INTO notes ({columns}) VALUES ({placeholders})"
+            if 'tags' in data and not isinstance(data['tags'], str):
+                data['tags'] = json.dumps(data['tags'])
+            self._validate_columns("notes", data.keys())
+            cols = ', '.join(data.keys())
+            placeholders = ', '.join(['%s'] * len(data))
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()))
-                conn.commit()
-                cursor.execute("SELECT * FROM notes WHERE id = ?", (data['id'],))
-                return self.to_dict(cursor.fetchone())
+                cur = self._cursor(conn)
+                cur.execute(f"INSERT INTO notes ({cols}) VALUES ({placeholders})", list(data.values()))
+                cur.execute("SELECT * FROM notes WHERE id = %s", (data['id'],))
+                return self.to_dict(cur.fetchone())
         except Exception:
             logger.exception("Error creating note")
             return None
 
     def get_note(self, note_id: str, user_id: str) -> Optional[Dict[str, Any]]:
         with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM notes WHERE id = ? AND user_id = ?", (note_id, user_id))
-            return self.to_dict(cursor.fetchone())
+            cur = self._cursor(conn)
+            cur.execute("SELECT * FROM notes WHERE id = %s AND user_id = %s", (note_id, user_id))
+            return self.to_dict(cur.fetchone())
 
     def get_notes(self, user_id: str, source_type: Optional[str] = None) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:
-            cursor = conn.cursor()
+            cur = self._cursor(conn)
             if source_type:
-                cursor.execute("SELECT * FROM notes WHERE user_id = ? AND source_type = ? ORDER BY created_at DESC", (user_id, source_type))
+                cur.execute(
+                    "SELECT * FROM notes WHERE user_id = %s AND source_type = %s ORDER BY created_at DESC",
+                    (user_id, source_type),
+                )
             else:
-                cursor.execute("SELECT * FROM notes WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
-            return [self.to_dict(row) for row in cursor.fetchall()]
+                cur.execute("SELECT * FROM notes WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+            return [self.to_dict(r) for r in cur.fetchall()]
 
     def delete_note(self, note_id: str, user_id: str) -> bool:
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM notes WHERE id = ? AND user_id = ?", (note_id, user_id))
-                conn.commit()
-                return cursor.rowcount > 0
+                cur = self._cursor(conn)
+                cur.execute("DELETE FROM notes WHERE id = %s AND user_id = %s", (note_id, user_id))
+                return cur.rowcount > 0
         except Exception:
             logger.exception("Error deleting note")
             return False
@@ -868,15 +933,18 @@ class Database:
     def update_note(self, note_id: str, user_id: str, note_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = note_data.copy()
-            if 'tags' in data: data['tags'] = json.dumps(data['tags'])
-            set_clause = ', '.join([f"{k} = ?" for k in data.keys()])
-            query = f"UPDATE notes SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?"
+            if 'tags' in data and not isinstance(data['tags'], str):
+                data['tags'] = json.dumps(data['tags'])
+            self._validate_columns("notes", data.keys())
+            set_clause = ', '.join([f"{k} = %s" for k in data.keys()])
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()) + [note_id, user_id])
-                conn.commit()
-                cursor.execute("SELECT * FROM notes WHERE id = ?", (note_id,))
-                return self.to_dict(cursor.fetchone())
+                cur = self._cursor(conn)
+                cur.execute(
+                    f"UPDATE notes SET {set_clause}, updated_at = NOW() WHERE id = %s AND user_id = %s",
+                    list(data.values()) + [note_id, user_id],
+                )
+                cur.execute("SELECT * FROM notes WHERE id = %s", (note_id,))
+                return self.to_dict(cur.fetchone())
         except Exception:
             logger.exception("Error updating note")
             return None
@@ -886,17 +954,16 @@ class Database:
     def create_prayer(self, prayer_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = prayer_data.copy()
-            import uuid
-            if 'id' not in data: data['id'] = str(uuid.uuid4())
-            columns = ', '.join(data.keys())
-            placeholders = ', '.join(['?'] * len(data))
-            query = f"INSERT INTO prayers ({columns}) VALUES ({placeholders})"
+            if 'id' not in data:
+                data['id'] = str(uuid.uuid4())
+            self._validate_columns("prayers", data.keys())
+            cols = ', '.join(data.keys())
+            placeholders = ', '.join(['%s'] * len(data))
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()))
-                conn.commit()
-                cursor.execute("SELECT * FROM prayers WHERE id = ?", (data['id'],))
-                return self.to_dict(cursor.fetchone())
+                cur = self._cursor(conn)
+                cur.execute(f"INSERT INTO prayers ({cols}) VALUES ({placeholders})", list(data.values()))
+                cur.execute("SELECT * FROM prayers WHERE id = %s", (data['id'],))
+                return self.to_dict(cur.fetchone())
         except Exception:
             logger.exception("Error creating prayer")
             return None
@@ -904,103 +971,106 @@ class Database:
     def delete_prayer(self, prayer_id: str, user_id: str) -> bool:
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM prayers WHERE id = ? AND user_id = ?", (prayer_id, user_id))
-                conn.commit()
-                return cursor.rowcount > 0
+                cur = self._cursor(conn)
+                cur.execute("DELETE FROM prayers WHERE id = %s AND user_id = %s", (prayer_id, user_id))
+                return cur.rowcount > 0
         except Exception:
             logger.exception("Error deleting prayer")
             return False
 
+    def get_prayers(self, user_id: str) -> List[Dict[str, Any]]:
+        try:
+            with self.get_connection() as conn:
+                cur = self._cursor(conn)
+                cur.execute("SELECT * FROM prayers WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+                return [self.to_dict(r) for r in cur.fetchall()]
+        except Exception:
+            logger.exception("Error getting prayers")
+            return []
+
     # ==================== Dashboard Stats ====================
 
     def get_user_stats(self, user_id: str) -> Dict[str, Any]:
-        stats = {
-            "streak_days": 1, 
-            "time_today_minutes": 15, 
-            "total_reflections": 0,
-            "streak_history": [False] * 7
-        }
+        stats = {"streak_days": 1, "time_today_minutes": 15, "total_reflections": 0, "streak_history": [False] * 7}
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Total reflections (from notes)
-                cursor.execute("SELECT COUNT(*) as count FROM notes WHERE user_id = ?", (user_id,))
-                stats["total_reflections"] = cursor.fetchone()["count"]
-                
-                # Calculate streak history (last 7 days starting from Sunday)
-                # We'll get all devotions from exactly the last 7 days inclusive of today
+                cur = self._cursor(conn)
+
+                cur.execute("SELECT COUNT(*) AS count FROM notes WHERE user_id = %s", (user_id,))
+                stats["total_reflections"] = cur.fetchone()["count"]
+
                 today = datetime.now()
-                # Find the most recent Sunday
                 days_since_sunday = (today.weekday() + 1) % 7
                 sunday = today - timedelta(days=days_since_sunday)
-                
+
                 history = []
                 for i in range(7):
                     day_check = sunday + timedelta(days=i)
                     day_str = day_check.strftime("%Y-%m-%d")
-                    # Check for any meaningful activity
-                    cursor.execute("""
-                        SELECT EXISTS(SELECT 1 FROM devotions WHERE user_id = ? AND date(created_at) = ?) OR
-                        EXISTS(SELECT 1 FROM bible_study_sessions WHERE user_id = ? AND date(created_at) = ?) OR
-                        EXISTS(SELECT 1 FROM emotional_support_sessions WHERE user_id = ? AND date(created_at) = ?) OR
-                        EXISTS(SELECT 1 FROM notes WHERE user_id = ? AND date(created_at) = ?)
-                    """, (user_id, day_str, user_id, day_str, user_id, day_str, user_id, day_str))
-                    history.append(bool(cursor.fetchone()[0]))
-                
+                    cur.execute(
+                        """SELECT (
+                            EXISTS(SELECT 1 FROM devotions WHERE user_id = %s AND created_at::date = %s) OR
+                            EXISTS(SELECT 1 FROM bible_study_sessions WHERE user_id = %s AND created_at::date = %s) OR
+                            EXISTS(SELECT 1 FROM emotional_support_sessions WHERE user_id = %s AND created_at::date = %s) OR
+                            EXISTS(SELECT 1 FROM notes WHERE user_id = %s AND created_at::date = %s)
+                        ) AS has_activity""",
+                        (user_id, day_str, user_id, day_str, user_id, day_str, user_id, day_str),
+                    )
+                    history.append(bool(cur.fetchone()['has_activity']))
+
                 stats["streak_history"] = history
-                # Current streak is consecutive completed days backwards from today
-                streak = 0
                 today_idx = (today.weekday() + 1) % 7
+                streak = 0
                 for i in range(today_idx, -1, -1):
-                    if history[i]: streak += 1
-                    else: break
+                    if history[i]:
+                        streak += 1
+                    else:
+                        break
                 stats["streak_days"] = streak
-                    
+
             return stats
         except Exception:
             logger.exception("Error getting user stats")
             return stats
 
-    def get_prayers(self, user_id: str) -> List[Dict[str, Any]]:
-        try:
-            with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT * FROM prayers WHERE user_id = ? ORDER BY created_at DESC", 
-                    (user_id,)
-                )
-                return [self.to_dict(row) for row in cursor.fetchall()]
-        except Exception:
-            logger.exception("Error getting prayers")
-            return []
+    # ==================== Cached Verse Operations ====================
 
     def get_cached_verse(self, user_id: str, date_str: str) -> Optional[Dict[str, Any]]:
+        import json as _json
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT verse_text as verse, verse_reference as reference, aria_insight as insight, daily_manna FROM cached_verses WHERE user_id = ? AND cached_date = ?",
-                    (user_id, date_str)
+                cur = self._cursor(conn)
+                cur.execute(
+                    "SELECT verse_text AS verse, verse_reference AS reference, aria_insight AS insight, daily_manna FROM cached_verses WHERE user_id = %s AND cached_date = %s",
+                    (user_id, date_str),
                 )
-                row = cursor.fetchone()
-                return dict(row) if row else None
+                row = cur.fetchone()
+                if not row:
+                    return None
+                result = dict(row)
+                manna = result.get("daily_manna")
+                if manna and isinstance(manna, str):
+                    try:
+                        result["daily_manna"] = _json.loads(manna)
+                    except _json.JSONDecodeError:
+                        pass  # leave as plain string (old cache rows)
+                return result
         except Exception:
             logger.exception("Error getting cached verse")
             return None
 
     def save_cached_verse(self, user_id: str, date_str: str, verse_data: Dict[str, Any]) -> bool:
+        import json as _json
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                # Delete old caches for this user
-                cursor.execute("DELETE FROM cached_verses WHERE user_id = ?", (user_id,))
-                cursor.execute(
-                    "INSERT INTO cached_verses (user_id, verse_text, verse_reference, aria_insight, daily_manna, cached_date) VALUES (?, ?, ?, ?, ?, ?)",
-                    (user_id, verse_data["verse"], verse_data["reference"], verse_data.get("insight"), verse_data.get("daily_manna"), date_str)
+                cur = self._cursor(conn)
+                cur.execute("DELETE FROM cached_verses WHERE user_id = %s", (user_id,))
+                manna = verse_data.get("daily_manna")
+                manna_str = _json.dumps(manna) if isinstance(manna, dict) else manna
+                cur.execute(
+                    "INSERT INTO cached_verses (user_id, verse_text, verse_reference, aria_insight, daily_manna, cached_date) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (user_id, verse_data["verse"], verse_data["reference"], verse_data.get("insight"), manna_str, date_str),
                 )
-                conn.commit()
                 return True
         except Exception:
             logger.exception("Error saving cached verse")
@@ -1010,29 +1080,34 @@ class Database:
 
     def create_chat_session(self, user_id: str, title: str = "New Conversation") -> Optional[Dict[str, Any]]:
         try:
-            import uuid
             session_id = str(uuid.uuid4())
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "INSERT INTO ai_chat_sessions (id, user_id, title) VALUES (?, ?, ?)",
-                    (session_id, user_id, title)
+                cur = self._cursor(conn)
+                cur.execute(
+                    "INSERT INTO ai_chat_sessions (id, user_id, title) VALUES (%s, %s, %s)",
+                    (session_id, user_id, title),
                 )
-                conn.commit()
-                return {"id": session_id, "user_id": user_id, "title": title}
+            return {"id": session_id, "user_id": user_id, "title": title}
         except Exception:
             logger.exception("Error creating chat session")
+            return None
+
+    def get_chat_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        try:
+            with self.get_connection() as conn:
+                cur = self._cursor(conn)
+                cur.execute("SELECT * FROM ai_chat_sessions WHERE id = %s", (session_id,))
+                return self.to_dict(cur.fetchone())
+        except Exception:
+            logger.exception("Error getting chat session")
             return None
 
     def get_chat_sessions(self, user_id: str) -> List[Dict[str, Any]]:
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT * FROM ai_chat_sessions WHERE user_id = ? ORDER BY updated_at DESC", 
-                    (user_id,)
-                )
-                return [self.to_dict(row) for row in cursor.fetchall()]
+                cur = self._cursor(conn)
+                cur.execute("SELECT * FROM ai_chat_sessions WHERE user_id = %s ORDER BY updated_at DESC", (user_id,))
+                return [self.to_dict(r) for r in cur.fetchall()]
         except Exception:
             logger.exception("Error getting chat sessions")
             return []
@@ -1040,12 +1115,9 @@ class Database:
     def get_chat_session_messages(self, session_id: str) -> List[Dict[str, Any]]:
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT * FROM ai_chat_messages WHERE session_id = ? ORDER BY created_at ASC", 
-                    (session_id,)
-                )
-                return [self.to_dict(row) for row in cursor.fetchall()]
+                cur = self._cursor(conn)
+                cur.execute("SELECT * FROM ai_chat_messages WHERE session_id = %s ORDER BY created_at ASC", (session_id,))
+                return [self.to_dict(r) for r in cur.fetchall()]
         except Exception:
             logger.exception("Error getting chat messages")
             return []
@@ -1053,21 +1125,20 @@ class Database:
     def create_chat_message(self, message_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
             data = message_data.copy()
-            import uuid
-            if 'id' not in data: data['id'] = str(uuid.uuid4())
-            columns = ', '.join(data.keys())
-            placeholders = ', '.join(['?'] * len(data))
-            query = f"INSERT INTO ai_chat_messages ({columns}) VALUES ({placeholders})"
+            if 'id' not in data:
+                data['id'] = str(uuid.uuid4())
+            self._validate_columns("ai_chat_messages", data.keys())
+            cols = ', '.join(data.keys())
+            placeholders = ', '.join(['%s'] * len(data))
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, list(data.values()))
-                cursor.execute(
-                    "UPDATE ai_chat_sessions SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", 
-                    (data['session_id'],)
+                cur = self._cursor(conn)
+                cur.execute(f"INSERT INTO ai_chat_messages ({cols}) VALUES ({placeholders})", list(data.values()))
+                cur.execute(
+                    "UPDATE ai_chat_sessions SET updated_at = NOW() WHERE id = %s",
+                    (data['session_id'],),
                 )
-                conn.commit()
-                cursor.execute("SELECT * FROM ai_chat_messages WHERE id = ?", (data['id'],))
-                return self.to_dict(cursor.fetchone())
+                cur.execute("SELECT * FROM ai_chat_messages WHERE id = %s", (data['id'],))
+                return self.to_dict(cur.fetchone())
         except Exception:
             logger.exception("Error creating chat message")
             return None
@@ -1075,15 +1146,15 @@ class Database:
     def update_chat_session_title(self, session_id: str, title: str) -> bool:
         try:
             with self.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "UPDATE ai_chat_sessions SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", 
-                    (title, session_id)
+                cur = self._cursor(conn)
+                cur.execute(
+                    "UPDATE ai_chat_sessions SET title = %s, updated_at = NOW() WHERE id = %s",
+                    (title, session_id),
                 )
-                conn.commit()
-                return cursor.rowcount > 0
+                return cur.rowcount > 0
         except Exception:
             logger.exception("Error updating chat session title")
             return False
+
 
 db = Database()

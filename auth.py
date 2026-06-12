@@ -40,8 +40,15 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
     """Create a JWT access token"""
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "jti": str(uuid.uuid4())})
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
+
+def create_refresh_token(user_id: str, email: str) -> tuple[str, datetime]:
+    """Create an opaque refresh token, persist it, and return (token, expires_at)."""
+    token = str(uuid.uuid4())
+    expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+    db.store_refresh_token(token, user_id, expires_at.strftime("%Y-%m-%d %H:%M:%S"))
+    return token, expires_at
 
 def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
     """Decode and verify a JWT access token"""
@@ -59,13 +66,20 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     )
     token = credentials.credentials
     payload = decode_access_token(token)
-    if not payload: raise credentials_exception
-    
+    if not payload:
+        raise credentials_exception
+
+    jti: Optional[str] = payload.get("jti")
+    if jti and db.is_token_revoked(jti):
+        raise credentials_exception
+
     user_id: str = payload.get("sub")
-    if not user_id: raise credentials_exception
-    
+    if not user_id:
+        raise credentials_exception
+
     profile = db.get_profile(user_id)
-    if profile is None: raise credentials_exception
+    if profile is None:
+        raise credentials_exception
     return profile
 
 # --- Refactored Local Auth (replacing Supabase) ---
@@ -91,24 +105,26 @@ def supabase_auth_signup(email: str, password: str, full_name: Optional[str] = N
             }
             db.create_profile(profile_data)
             
-            # Auto-login: generate token
+            # Auto-login: generate tokens
             access_token = create_access_token(data={"sub": user_id, "email": email})
-            
+            refresh_token, _ = create_refresh_token(user_id, email)
+
             return {
-                "success": True, 
+                "success": True,
                 "message": "Sign up successful",
                 "access_token": access_token,
+                "refresh_token": refresh_token,
                 "token_type": "bearer",
                 "user": {
-                    "id": user_id, 
-                    "email": email, 
+                    "id": user_id,
+                    "email": email,
                     "full_name": profile_data["full_name"]
                 }
             }
         return {"success": False, "error": "Failed to create user"}
-    except Exception as e:
+    except Exception:
         logger.exception("Signup error")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "Registration failed. Please try again."}
 
 def supabase_auth_login(email: str, password: str) -> Dict[str, Any]:
     """Login using local SQLite instead of Supabase"""
@@ -121,29 +137,38 @@ def supabase_auth_login(email: str, password: str) -> Dict[str, Any]:
         profile = db.get_profile(user_id)
         
         access_token = create_access_token(data={"sub": user_id, "email": email})
-        
+        refresh_token, _ = create_refresh_token(user_id, email)
+
         return {
             "success": True,
             "access_token": access_token,
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "user": {
-                "id": user_id, 
-                "email": email, 
+                "id": user_id,
+                "email": email,
                 "full_name": profile["full_name"] if profile else email.split("@")[0]
             }
         }
-    except Exception as e:
+    except Exception:
         logger.exception("Login error")
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "Login failed. Please try again."}
 
 def supabase_auth_logout() -> Dict[str, Any]:
     """Logout locally"""
     # No server-side session yet, just return success
     return {"success": True, "message": "Logged out"}
 
-def blacklist_token(token: str): 
-    # Optional: implement token revocation
-    pass
+def blacklist_token(token: str) -> None:
+    payload = decode_access_token(token)
+    if not payload:
+        return
+    jti: Optional[str] = payload.get("jti")
+    exp = payload.get("exp")
+    if not jti or not exp:
+        return
+    expires_at = datetime.fromtimestamp(exp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    db.revoke_token(jti, expires_at)
 
 def get_current_user_websocket(websocket: WebSocket) -> Dict[str, Any]:
     """Get the current authenticated user from WebSocket connection"""

@@ -18,6 +18,7 @@ import {
   Unlock,
   KeyRound
 } from 'lucide-react'
+import { toast } from 'sonner'
 import { notesService } from '../services/api'
 import { useNotes, useCreateNote, useUpdateNote, useDeleteNote } from '../hooks/use-notes'
 import { AnimatedBackground } from '../components/ui/SharedComponents'
@@ -140,7 +141,9 @@ export const Notes = () => {
       setShowEditor(false)
       setEditingNote(null)
       setFormData({ title: '', content: '', source_type: 'general', source_reference: '', tags: [], is_locked: false, password: '' })
-    } catch { }
+    } catch (err) {
+      toast.error((err as Error).message || 'Failed to save note')
+    }
   }
 
   const handleUnlock = async (e) => {
@@ -163,7 +166,7 @@ export const Notes = () => {
       try {
         await deleteNote.mutateAsync(id)
       } catch {
-        alert('Could not delete the note. Please try again.')
+        toast.error('Could not delete the note. Please try again.')
       }
     }
   }

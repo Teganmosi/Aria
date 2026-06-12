@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { toast } from 'sonner'
 import useAuth from '../hooks/useAuth'
 import { registerSchema, type RegisterFormData } from '../schemas/auth'
 
@@ -10,7 +11,6 @@ export const Register = () => {
   const navigate = useNavigate()
   const { register: authRegister, isAuthenticated } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
-  const [serverError, setServerError] = useState('')
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 1024)
 
   const {
@@ -30,11 +30,10 @@ export const Register = () => {
   }, [isAuthenticated, navigate])
 
   const onSubmit = async (values: RegisterFormData) => {
-    setServerError('')
     try {
       await authRegister(values.email, values.password, values.fullName)
     } catch (err) {
-      setServerError((err as Error).message || 'Failed to create account')
+      toast.error((err as Error).message || 'Failed to create account')
     }
   }
 
@@ -98,12 +97,6 @@ export const Register = () => {
             <h2 className="font-serif" style={{ fontSize: '2.5rem', color: 'var(--text-main)', marginBottom: '0.5rem', lineHeight: 1.2 }}>Create Your Account</h2>
             <p className="text-[var(--text-secondary)] text-base">Start your spiritual journey with Aria today.</p>
           </div>
-
-          {serverError && (
-            <div style={{ background: '#FEE2E2', color: '#991B1B', padding: '1rem', borderRadius: '8px', marginBottom: '2rem', fontSize: '0.9rem', fontWeight: 500 }}>
-              {serverError}
-            </div>
-          )}
 
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
             <div>

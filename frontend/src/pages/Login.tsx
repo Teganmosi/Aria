@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { toast } from 'sonner'
 import useAuth from '../hooks/useAuth'
 import { loginSchema, type LoginFormData } from '../schemas/auth'
 
@@ -10,7 +11,6 @@ export const Login = () => {
   const navigate = useNavigate()
   const { login, isAuthenticated } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
-  const [serverError, setServerError] = useState('')
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 1024)
 
   const {
@@ -30,11 +30,10 @@ export const Login = () => {
   }, [isAuthenticated, navigate])
 
   const onSubmit = async (values: LoginFormData) => {
-    setServerError('')
     try {
       await login(values.email, values.password)
     } catch (err) {
-      setServerError((err as Error).message || 'Failed to sign in')
+      toast.error((err as Error).message || 'Failed to sign in')
     }
   }
 
@@ -98,12 +97,6 @@ export const Login = () => {
             <h2 className="font-serif" style={{ fontSize: '2.5rem', color: 'var(--text-main)', marginBottom: '0.5rem', lineHeight: 1.2 }}>Welcome Back</h2>
             <p className="text-[var(--text-secondary)] text-base">Enter your details to return to your moment of peace.</p>
           </div>
-
-          {serverError && (
-            <div style={{ background: '#FEE2E2', color: '#991B1B', padding: '1rem', borderRadius: '8px', marginBottom: '2rem', fontSize: '0.9rem', fontWeight: 500 }}>
-              {serverError}
-            </div>
-          )}
 
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-6">
             <div>

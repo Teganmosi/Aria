@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -375,7 +375,7 @@ class Prayer(PrayerBase):
 
 
 class AIRequest(BaseModel):
-    messages: List[Dict[str, str]]
+    messages: List[Dict[str, str]] = Field(..., max_length=50)
     mode: str = Field(
         default="general", pattern="^(general|bibleStudy|emotionalSupport|devotion)$"
     )
@@ -395,6 +395,8 @@ class AIChatSession(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    model_config = ConfigDict(from_attributes=True)
+
 
 class AIChatSessionCreate(BaseModel):
     title: Optional[str] = "New Conversation"
@@ -406,6 +408,8 @@ class AIChatMessage(BaseModel):
     role: str
     content: str
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AIChatMessageCreate(BaseModel):
@@ -427,13 +431,13 @@ class TokenData(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: str
-    password: str
+    email: EmailStr
+    password: str = Field(..., min_length=8)
 
 
 class UserRegister(BaseModel):
-    email: str
-    password: str
+    email: EmailStr
+    password: str = Field(..., min_length=8)
     full_name: Optional[str] = None
 
 
