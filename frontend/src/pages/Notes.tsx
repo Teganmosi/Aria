@@ -43,32 +43,20 @@ const NoteCard = ({ note, onEdit, onDelete, onUnlock }) => {
 
   return (
     <div
-      className="glass-panel"
-      style={{
-        padding: '1.75rem',
-        borderRadius: '20px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '1rem',
-        cursor: 'pointer',
-        transition: 'all 0.3s ease',
-        border: '1px solid var(--border-color)',
-        background: 'var(--bg-card)',
-        position: 'relative',
-        opacity: note.is_locked ? 0.9 : 1
-      }}
+      className="glass-panel flex flex-col gap-4 cursor-pointer transition-all duration-300 ease-in-out border border-[var(--border-color)] bg-[var(--bg-card)] relative rounded-[20px]"
+      style={{ padding: '1.75rem', opacity: note.is_locked ? 0.9 : 1 }}
       onClick={() => note.is_locked ? onUnlock(note) : onEdit(note)}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--brand-solid)', fontSize: '0.65rem', fontWeight: 800, letterSpacing: '0.1em' }}>
+      <div className="flex justify-between items-start">
+        <div className="flex items-center gap-2 text-[var(--brand-solid)] font-extrabold tracking-widest" style={{ fontSize: '0.65rem' }}>
           {getSourceIcon(note.source_type)}
           {note.source_type.toUpperCase()}
           {note.is_locked && <Lock size={12} style={{ marginLeft: '0.2rem' }} />}
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div className="flex gap-2">
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(note.id); }}
-            style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+            className="bg-transparent border-0 text-[var(--text-muted)] cursor-pointer"
           >
             <Trash2 size={14} />
           </button>
@@ -86,8 +74,8 @@ const NoteCard = ({ note, onEdit, onDelete, onUnlock }) => {
         {note.is_locked ? '••••••••••••••••••••••••' : note.content}
       </p>
 
-      <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
-        <div style={{ display: 'flex', gap: '0.4rem' }}>
+      <div className="mt-auto flex justify-between items-center pt-4 border-t border-[var(--border-color)]">
+        <div className="flex gap-[0.4rem]">
           {note.tags?.slice(0, 2).map((t, i) => (
             <span key={i} style={{ fontSize: '0.65rem', color: 'var(--text-muted)', background: 'var(--input-bg)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>#{t}</span>
           ))}
@@ -181,18 +169,19 @@ export const Notes = () => {
   }
 
   return (
-    <div style={{ minHeight: '100%', position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="min-h-full relative flex flex-col overflow-hidden">
       <AnimatedBackground />
 
       {/* Header Area */}
-      <header style={{ padding: '2.5rem 3rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
+      <header className="flex justify-between items-center z-10" style={{ padding: '2.5rem 3rem' }}>
         <div>
           <h1 className="font-serif" style={{ fontSize: '2.2rem', color: 'var(--text-main)', fontWeight: 500, marginBottom: '0.25rem' }}>Your Journal</h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '1rem' }}>Insights, prayers, and reflections from your journey.</p>
         </div>
         <button
           onClick={() => { setEditingNote(null); setFormData({ title: '', content: '', source_type: 'general', source_reference: '', tags: [], is_locked: false, password: '' }); setShowEditor(true); }}
-          style={{ background: 'var(--brand-solid)', color: 'var(--bg-main)', padding: '0.8rem 2rem', borderRadius: '3rem', border: 'none', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: 'var(--shadow-main)' }}
+          className="bg-[var(--brand-solid)] text-[var(--bg-main)] rounded-[3rem] border-0 font-semibold cursor-pointer flex items-center gap-2 shadow-[var(--shadow-main)]"
+          style={{ padding: '0.8rem 2rem' }}
         >
           <Plus size={18} />
           NEW ENTRY
@@ -200,9 +189,9 @@ export const Notes = () => {
       </header>
 
       {/* Constraints & Filters */}
-      <div style={{ padding: '0 3rem', marginBottom: '2.5rem', display: 'flex', gap: '1.5rem', zIndex: 10 }}>
-        <div style={{ flex: 1, position: 'relative' }}>
-          <Search size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+      <div className="flex gap-6 z-10" style={{ padding: '0 3rem', marginBottom: '2.5rem' }}>
+        <div className="flex-1 relative">
+          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
           <input
             type="text"
             placeholder="Search your reflections..."
@@ -225,11 +214,11 @@ export const Notes = () => {
       </div>
 
       {/* Notes Grid */}
-      <div style={{ flex: 1, padding: '0 3rem 4rem', overflowY: 'auto', zIndex: 10 }}>
+      <div className="flex-1 overflow-y-auto z-10" style={{ padding: '0 3rem 4rem' }}>
         {isLoading ? (
-          <div style={{ textAlign: 'center', marginTop: '4rem', color: 'var(--text-muted)' }}>Preparing your journal...</div>
+          <div className="text-center mt-16 text-[var(--text-muted)]">Preparing your journal...</div>
         ) : filteredNotes.length === 0 ? (
-          <div style={{ textAlign: 'center', marginTop: '8rem', color: 'var(--text-muted)' }}>
+          <div className="text-center mt-32 text-[var(--text-muted)]">
             <FileText size={48} style={{ marginBottom: '1.5rem', opacity: 0.2 }} />
             <p>Your journal is waiting for its first entry.</p>
           </div>
@@ -250,15 +239,15 @@ export const Notes = () => {
 
       {/* Journal Editor Modal */}
       {showEditor && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(10px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
-          <div className="glass-panel" style={{ width: '100%', maxWidth: '700px', background: 'var(--bg-main)', borderRadius: '32px', overflow: 'hidden', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-lg)' }}>
-            <div style={{ padding: '2rem 2.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-[10px] z-[100] flex items-center justify-center p-8">
+          <div className="glass-panel w-full bg-[var(--bg-main)] rounded-[32px] overflow-hidden border border-[var(--border-color)] shadow-[var(--shadow-lg)]" style={{ maxWidth: '700px' }}>
+            <div className="flex justify-between items-center border-b border-[var(--border-color)]" style={{ padding: '2rem 2.5rem' }}>
               <h2 className="font-serif" style={{ fontSize: '1.5rem', color: 'var(--text-main)', margin: 0 }}>{editingNote ? 'Refine Entry' : 'New Journal Entry'}</h2>
-              <button onClick={() => setShowEditor(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', cursor: 'pointer' }}><X size={24} /></button>
+              <button onClick={() => setShowEditor(false)} className="bg-transparent border-0 text-[var(--text-main)] cursor-pointer"><X size={24} /></button>
             </div>
 
             <form onSubmit={handleSave} style={{ padding: '2.5rem' }}>
-              <div style={{ marginBottom: '2rem' }}>
+              <div className="mb-8">
                 <label style={{ display: 'block', fontSize: '0.65rem', letterSpacing: '0.15em', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.75rem' }}>TITLE OF REFLECTION</label>
                 <input
                   type="text"
@@ -271,7 +260,7 @@ export const Notes = () => {
                 />
               </div>
 
-              <div style={{ marginBottom: '2.5rem' }}>
+              <div className="mb-10">
                 <label style={{ display: 'block', fontSize: '0.65rem', letterSpacing: '0.15em', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '1rem' }}>JOURNAL CONTENT</label>
                 <textarea
                   value={formData.content}
@@ -283,8 +272,8 @@ export const Notes = () => {
                 />
               </div>
 
-              <div style={{ display: 'flex', gap: '1.5rem' }}>
-                <div style={{ flex: 1 }}>
+              <div className="flex gap-6">
+                <div className="flex-1">
                   <label style={{ display: 'block', fontSize: '0.65rem', letterSpacing: '0.15em', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>ENTRY SOURCE</label>
                   <select
                     value={formData.source_type}
@@ -297,7 +286,7 @@ export const Notes = () => {
                     <option value="devotion">Daily Devotion</option>
                   </select>
                 </div>
-                <div style={{ flex: 1 }}>
+                <div className="flex-1">
                   <label style={{ display: 'block', fontSize: '0.65rem', letterSpacing: '0.15em', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>TAGS (comma separated)</label>
                   <input
                     type="text"
@@ -309,10 +298,14 @@ export const Notes = () => {
                 </div>
               </div>
 
-              <div style={{ marginTop: '2rem', padding: '1.5rem', background: 'var(--input-bg)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: formData.is_locked ? '1.5rem' : 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: formData.is_locked ? 'var(--brand-solid)' : 'var(--bg-card)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: formData.is_locked ? 'var(--bg-main)' : 'var(--text-muted)', transition: 'all 0.3s ease' }}>
+              <div className="mt-8 p-6 bg-[var(--input-bg)] rounded-[16px] border border-[var(--border-color)]">
+                <div className="flex justify-between items-center" style={{ marginBottom: formData.is_locked ? '1.5rem' : 0 }}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-[10px] flex items-center justify-center transition-all duration-300 ease-in-out"
+                      style={{
+                        background: formData.is_locked ? 'var(--brand-solid)' : 'var(--bg-card)',
+                        color: formData.is_locked ? 'var(--bg-main)' : 'var(--text-muted)'
+                      }}>
                       <Lock size={18} />
                     </div>
                     <div>
@@ -322,17 +315,19 @@ export const Notes = () => {
                   </div>
                   <div
                     onClick={() => setFormData({ ...formData, is_locked: !formData.is_locked })}
-                    style={{ width: '48px', height: '24px', borderRadius: '12px', background: formData.is_locked ? 'var(--brand-solid)' : 'var(--border-color)', position: 'relative', cursor: 'pointer', transition: 'all 0.3s ease' }}
+                    className="w-12 h-6 rounded-xl relative cursor-pointer transition-all duration-300 ease-in-out"
+                    style={{ background: formData.is_locked ? 'var(--brand-solid)' : 'var(--border-color)' }}
                   >
-                    <div style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'white', position: 'absolute', top: '3px', left: formData.is_locked ? '27px' : '3px', transition: 'all 0.3s ease' }} />
+                    <div className="w-[18px] h-[18px] rounded-full bg-white absolute top-[3px] transition-all duration-300 ease-in-out"
+                      style={{ left: formData.is_locked ? '27px' : '3px' }} />
                   </div>
                 </div>
 
                 {formData.is_locked && (
                   <div style={{ animation: 'fadeIn 0.3s ease' }}>
                     <label style={{ display: 'block', fontSize: '0.65rem', letterSpacing: '0.15em', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>SET PASSWORD / PIN</label>
-                    <div style={{ position: 'relative' }}>
-                      <KeyRound size={16} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                    <div className="relative">
+                      <KeyRound size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                       <input
                         type="password"
                         placeholder="Enter secret code..."
@@ -345,10 +340,11 @@ export const Notes = () => {
                 )}
               </div>
 
-              <div style={{ marginTop: '3.5rem' }}>
+              <div className="mt-14">
                 <button
                   type="submit"
-                  style={{ width: '100%', background: 'var(--brand-solid)', color: 'var(--bg-main)', padding: '1.25rem', borderRadius: '12px', border: 'none', fontSize: '1.1rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem' }}
+                  className="w-full bg-[var(--brand-solid)] text-[var(--bg-main)] rounded-xl border-0 text-[1.1rem] font-bold cursor-pointer flex items-center justify-center gap-3"
+                  style={{ padding: '1.25rem' }}
                 >
                   {editingNote ? 'SAVE REFLECTION' : 'CLOSE JOURNAL ENTRY'}
                 </button>
@@ -360,17 +356,17 @@ export const Notes = () => {
 
       {/* Unlock Modal */}
       {promptLock && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(15px)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
-          <div className="glass-panel" style={{ width: '100%', maxWidth: '400px', background: 'var(--bg-main)', borderRadius: '24px', padding: '2.5rem', border: '1px solid var(--border-color)', textAlign: 'center' }}>
-            <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'var(--brand-solid)', color: 'var(--bg-main)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem' }}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-[15px] z-[200] flex items-center justify-center p-8">
+          <div className="glass-panel w-full bg-[var(--bg-main)] rounded-[24px] border border-[var(--border-color)] text-center" style={{ maxWidth: '400px', padding: '2.5rem' }}>
+            <div className="w-16 h-16 rounded-[20px] bg-[var(--brand-solid)] text-[var(--bg-main)] flex items-center justify-center mx-auto mb-6">
               <Lock size={32} />
             </div>
             <h2 className="font-serif" style={{ fontSize: '1.5rem', color: 'var(--text-main)', marginBottom: '0.5rem' }}>Locked Insight</h2>
             <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem', fontSize: '0.9rem' }}>This reflection is protected. Please enter your password or PIN to view.</p>
 
             <form onSubmit={handleUnlock}>
-              <div style={{ position: 'relative', marginBottom: '1rem' }}>
-                <KeyRound size={18} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <div className="relative mb-4">
+                <KeyRound size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
                 <input
                   type="password"
                   placeholder="Secret code..."
@@ -383,7 +379,7 @@ export const Notes = () => {
 
               {unlockError && <p style={{ color: '#ff6b6b', fontSize: '0.8rem', marginBottom: '1rem', marginTop: '-0.5rem' }}>{unlockError}</p>}
 
-              <div style={{ display: 'flex', gap: '1rem' }}>
+              <div className="flex gap-4">
                 <button
                   type="button"
                   onClick={() => { setPromptLock(null); setUnlockPassword(''); setUnlockError(''); }}

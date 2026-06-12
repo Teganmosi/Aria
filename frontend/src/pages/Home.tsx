@@ -29,9 +29,9 @@ const FaithStreak = ({ days, streak }) => {
   sunday.setDate(today.getDate() - today.getDay())
 
   return (
-    <div style={{ background: 'var(--bg-card)', borderRadius: '24px', padding: '1.5rem', boxShadow: 'var(--shadow-main)', minHeight: '180px', border: '1px solid var(--border-color)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
-        <div style={{ width: '40px', height: '40px', background: 'var(--bg-alt)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div className="bg-[var(--bg-card)] rounded-3xl p-6 shadow-[var(--shadow-main)] min-h-[180px] border border-[var(--border-color)]">
+      <div className="flex items-center gap-3 mb-5">
+        <div className="w-10 h-10 bg-[var(--bg-alt)] rounded-xl flex items-center justify-center">
           <Flame size={20} color="var(--brand-accent)" />
         </div>
         <div>
@@ -39,7 +39,7 @@ const FaithStreak = ({ days, streak }) => {
           <h4 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-main)', fontWeight: 700 }}>{streak} Day Streak</h4>
         </div>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1rem' }}>
+      <div className="flex justify-between mb-4">
         {dayLabels.map((day, i) => {
           const isCompleted = days && days[i]
           const currentDay = new Date(sunday)
@@ -47,7 +47,7 @@ const FaithStreak = ({ days, streak }) => {
           const displayDate = currentDay.getDate()
 
           return (
-            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+            <div key={i} className="flex flex-col items-center gap-2">
               <span style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--text-muted)' }}>{day}</span>
               <div style={{
                 width: '30px', height: '30px', borderRadius: '50%',
@@ -67,10 +67,10 @@ const FaithStreak = ({ days, streak }) => {
 
 const ActionCard = ({ icon: Icon, title, subtitle, background, onClick }) => (
   <div className="action-card" style={{ background }} onClick={onClick}>
-    <div style={{ width: '40px', height: '40px', background: 'rgba(255,255,255,0.1)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.1)' }}>
       <Icon size={20} color="#fff" />
     </div>
-    <div style={{ flex: 1 }}>
+    <div className="flex-1">
       <h4 style={{ margin: 0, fontSize: '1rem', color: '#fff', fontWeight: 600 }}>{title}</h4>
       <p style={{ margin: 0, fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)' }}>{subtitle}</p>
     </div>
@@ -80,8 +80,8 @@ const ActionCard = ({ icon: Icon, title, subtitle, background, onClick }) => (
 
 const JourneyCard = ({ icon: Icon, tag, time, title, desc, progress, onClick }) => (
   <div className="journey-card" onClick={onClick} style={{ cursor: onClick ? 'pointer' : 'default' }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-      <div style={{ width: '48px', height: '48px', background: 'var(--bg-alt)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <div className="flex justify-between items-start">
+      <div className="w-12 h-12 bg-[var(--bg-alt)] rounded-[14px] flex items-center justify-center">
         <Icon size={24} color="var(--brand-accent)" />
       </div>
       {tag && <span style={{ fontSize: '0.6rem', fontWeight: 800, color: 'var(--brand-accent)', background: 'var(--bg-alt)', padding: '0.4rem 0.8rem', borderRadius: '20px', letterSpacing: '0.05em' }}>{tag}</span>}
@@ -93,11 +93,11 @@ const JourneyCard = ({ icon: Icon, tag, time, title, desc, progress, onClick }) 
     </div>
     {progress !== undefined && (
       <div style={{ marginTop: 'auto', paddingTop: '1.5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+        <div className="flex justify-between mb-2" style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)' }}>
           <span>PROGRESS</span>
           <span>{progress}%</span>
         </div>
-        <div style={{ height: '6px', background: 'var(--bg-alt)', borderRadius: '3px' }}>
+        <div className="h-[6px] bg-[var(--bg-alt)] rounded-[3px]">
           <div style={{ height: '100%', width: `${progress}%`, background: 'var(--brand-accent)', borderRadius: '3px' }} />
         </div>
       </div>
@@ -144,7 +144,7 @@ export const Home = () => {
     if (diffHrs < 24) return `${diffHrs}H AGO`
     return `${Math.round(diffHrs / 24)}D AGO`
   }
-  
+
   const handleSaveManna = async () => {
     if (isSaved || !verseObj.daily_manna) return
     const mannaText = verseObj.daily_manna
@@ -167,21 +167,21 @@ export const Home = () => {
           <p className="home-greeting">{greeting}, {(user?.full_name ?? 'SANCTUARY').split(' ')[0].toUpperCase()}</p>
           <h1 className="home-title" style={{ fontSize: isMobile ? '2rem' : '3.5rem' }}>Let's walk in faith today.</h1>
         </div>
-        <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+        <div className="flex gap-6 items-center">
           <Settings
             size={22}
             color="var(--text-main)"
-            style={{ cursor: 'pointer' }}
+            className="cursor-pointer"
             onClick={() => navigate('/app/profile')}
           />
           <div
-            style={{ width: '44px', height: '44px', borderRadius: '50%', background: 'var(--bg-alt)', overflow: 'hidden', border: '2px solid var(--bg-card)', boxShadow: 'var(--shadow-main)', cursor: 'pointer' }}
+            className="w-11 h-11 rounded-full bg-[var(--bg-alt)] overflow-hidden border-2 border-[var(--bg-card)] shadow-[var(--shadow-main)] cursor-pointer"
             onClick={() => navigate('/app/profile')}
           >
             {user?.avatar_url ? (
-              <img src={user.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Profile" />
+              <img src={user.avatar_url} className="w-full h-full object-cover" alt="Profile" />
             ) : (
-              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+              <div className="w-full h-full flex items-center justify-center font-bold text-[var(--text-secondary)]" style={{ fontSize: '0.9rem' }}>
                 {getInitials(user?.full_name)}
               </div>
             )}
@@ -192,7 +192,7 @@ export const Home = () => {
       {/* Top Feature Grid */}
       <div className="top-feature-grid">
         {/* Quote Card */}
-        <div style={{ background: 'var(--bg-card)', padding: isMobile ? '1.5rem' : '2.5rem', borderRadius: '24px', boxShadow: 'var(--shadow-main)', border: '1px solid var(--border-color)', position: 'relative', overflow: 'hidden' }}>
+        <div className="bg-[var(--bg-card)] rounded-3xl shadow-[var(--shadow-main)] border border-[var(--border-color)] relative overflow-hidden" style={{ padding: isMobile ? '1.5rem' : '2.5rem' }}>
           <Quote size={isMobile ? 24 : 40} color="var(--brand-accent)" style={{ opacity: 0.2, marginBottom: '1.5rem' }} />
           <p style={{ fontSize: isMobile ? '1.25rem' : '1.75rem', lineHeight: '1.4', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", fontStyle: 'italic', margin: '0 0 1.5rem' }}>
             "{verseObj.verse}"
@@ -208,7 +208,7 @@ export const Home = () => {
         </div>
 
         {/* Right Stack */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div className="flex flex-col gap-6">
           <FaithStreak streak={stats.streak_days} days={stats.streak_history} />
           <ActionCard icon={MessageSquare} title="Guided Presence" subtitle="Start a Conversation" background="#0B192C" onClick={() => navigate('/app/ai-chat')} />
           <ActionCard icon={Bookmark} title="Deep Reflection" subtitle="Begin Devotion" background="var(--brand-accent)" onClick={() => navigate('/app/devotion')} />
@@ -217,8 +217,8 @@ export const Home = () => {
       </div>
 
       {/* Spiritual Journey */}
-      <div style={{ marginBottom: '5rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2.5rem' }}>
+      <div className="mb-20">
+        <div className="flex justify-between items-end mb-10">
           <div>
             <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.15em', marginBottom: '0.5rem' }}>YOUR SPIRITUAL JOURNEY</p>
             <h3 style={{ margin: 0, fontSize: '2rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif" }}>Continuing the Path</h3>
@@ -258,31 +258,27 @@ export const Home = () => {
       </div>
 
       {/* Bottom Manna */}
-      <div style={{
-        background: 'var(--gradient-card)', borderRadius: '40px', padding: isMobile ? '3rem 1.5rem' : '5rem',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
-        border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-main)'
-      }}>
-        <div style={{ width: '60px', height: '60px', background: 'var(--brand-accent)', borderRadius: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2rem', boxShadow: '0 8px 20px rgba(245, 206, 77, 0.2)' }}>
+      <div className="bg-[var(--gradient-card)] rounded-[40px] flex flex-col items-center text-center border border-[var(--border-color)] shadow-[var(--shadow-main)]" style={{ padding: isMobile ? '3rem 1.5rem' : '5rem' }}>
+        <div className="w-[60px] h-[60px] bg-[var(--brand-accent)] rounded-[18px] flex items-center justify-center mb-8" style={{ boxShadow: '0 8px 20px rgba(245, 206, 77, 0.2)' }}>
           <Sparkles size={28} color="var(--text-inverse)" />
         </div>
         <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.2em', marginBottom: '1.5rem' }}>DAILY MANNA</p>
         <h2 style={{ fontSize: isMobile ? '1.4rem' : '1.8rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", maxWidth: '600px', lineHeight: 1.6, marginBottom: '3rem' }}>
           "{verseObj.daily_manna || "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."}"
         </h2>
-        <button 
+        <button
           onClick={handleSaveManna}
           disabled={isSaved}
           style={{
-            background: isSaved ? '#10b981' : 'var(--text-main)', 
-            color: 'var(--bg-main)', 
-            border: 'none', 
-            padding: '1.25rem 3rem', 
+            background: isSaved ? '#10b981' : 'var(--text-main)',
+            color: 'var(--bg-main)',
+            border: 'none',
+            padding: '1.25rem 3rem',
             borderRadius: '50px',
-            fontSize: '0.8rem', 
-            fontWeight: 800, 
-            letterSpacing: '0.1em', 
-            cursor: isSaved ? 'default' : 'pointer', 
+            fontSize: '0.8rem',
+            fontWeight: 800,
+            letterSpacing: '0.1em',
+            cursor: isSaved ? 'default' : 'pointer',
             transition: 'all 0.3s',
             display: 'flex',
             alignItems: 'center',

@@ -35,7 +35,7 @@ export const AIChat = () => {
       setIsLoading(true)
       setCurrentSessionId(session.id)
       setSessionTitle(session.title || 'Conversation')
-      setShowHistory(false) // Close sidebar on mobile after selection
+      setShowHistory(false)
 
       const history = await aiChatService.getMessages(session.id)
       setMessages(history.map(m => ({
@@ -61,10 +61,10 @@ export const AIChat = () => {
     const assistantId = crypto.randomUUID()
     try {
       setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '' }]);
-      
+
       let fullResponse = '';
       let isFirstChunk = true;
-      
+
       const stream = aiChatService.chatStream(
         newMessages,
         currentSessionId,
@@ -80,7 +80,6 @@ export const AIChat = () => {
         setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: fullResponse } : m));
       }
 
-      // If it was a new session, refresh history to show it
       if (!currentSessionId) {
         const { data: history } = await refetchSessions()
         if (history && history.length > 0) {
@@ -118,28 +117,29 @@ export const AIChat = () => {
 
       {/* Top Header */}
       <header className="chat-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div className="flex items-center gap-4">
           <button
-            className="mobile-only"
+            className="mobile-only bg-transparent border-0 text-[var(--text-secondary)] cursor-pointer"
             onClick={() => setShowHistory(true)}
-            style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
           >
             <History size={20} />
           </button>
           <h1 className="font-serif" style={{ fontSize: '1.25rem', color: 'var(--text-secondary)', fontWeight: 500, margin: 0 }}>{sessionTitle}</h1>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+        <div className="flex items-center gap-6">
           <button
             onClick={() => setIsCustomizing(true)}
-            style={{ background: 'transparent', border: 'none', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.8rem', letterSpacing: '0.05em', fontWeight: 600, cursor: 'pointer' }}
+            className="bg-transparent border-0 flex items-center gap-2 text-[var(--text-secondary)] text-[0.8rem] font-semibold cursor-pointer"
+            style={{ letterSpacing: '0.05em' }}
           >
             <Sparkles size={16} />
             <span className="desktop-only">CUSTOMIZE ARIA</span>
           </button>
           <button
             onClick={() => setIsVoiceCallOpen(true)}
-            style={{ background: 'transparent', border: 'none', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-secondary)', fontSize: '0.8rem', letterSpacing: '0.05em', fontWeight: 600, cursor: 'pointer' }}
+            className="bg-transparent border-0 flex items-center gap-2 text-[var(--text-secondary)] text-[0.8rem] font-semibold cursor-pointer"
+            style={{ letterSpacing: '0.05em' }}
           >
             <Mic size={16} />
             <span className="desktop-only text-brand">CALL ARIA</span>
@@ -150,25 +150,24 @@ export const AIChat = () => {
       <div className="chat-main">
         {/* Mobile History Overlay */}
         {showHistory && (
-          <button 
-            className="history-overlay" 
-            onClick={() => setShowHistory(false)} 
+          <button
+            className="history-overlay border-0 p-0"
+            onClick={() => setShowHistory(false)}
             onKeyDown={(e) => e.key === 'Escape' && setShowHistory(false)}
             aria-label="Close history sidebar"
-            style={{ border: 'none', padding: 0 }}
           />
         )}
 
         {/* Sidebar - History */}
         <div className={`chat-sidebar ${showHistory ? 'open' : ''}`}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+          <div className="flex justify-between items-center mb-8">
             <h3 style={{ fontSize: '0.75rem', letterSpacing: '0.15em', color: 'var(--text-muted)', margin: 0 }}>RECENT CONVERSATIONS</h3>
-            <button className="mobile-only" onClick={() => setShowHistory(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)' }}>
+            <button className="mobile-only bg-transparent border-0 text-[var(--text-muted)]" onClick={() => setShowHistory(false)}>
               <X size={20} />
             </button>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div className="flex flex-col gap-4">
             <button
               onClick={() => {
                 setCurrentSessionId(null);
@@ -191,9 +190,8 @@ export const AIChat = () => {
                   key={session.id}
                   onClick={() => loadSession(session)}
                   onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && loadSession(session)}
-                  className={`session-card ${currentSessionId === session.id ? 'active' : ''}`}
+                  className={`session-card ${currentSessionId === session.id ? 'active' : ''} bg-transparent text-left w-full`}
                   aria-label={`Select conversation: ${session.title || 'Conversation'}`}
-                  style={{ background: 'transparent', textAlign: 'left', width: '100%' }}
                 >
                   <h4 className="font-serif" style={{
                     fontStyle: 'italic',
@@ -216,17 +214,17 @@ export const AIChat = () => {
 
         {/* Main Content Area */}
         <div className="chat-content">
-          <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '300px', height: '300px', background: 'var(--brand-accent)', opacity: 0.1, filter: 'blur(100px)', zIndex: 0, pointerEvents: 'none' }}></div>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-[var(--brand-accent)] opacity-10 blur-[100px] z-0 pointer-events-none"></div>
 
           {messages.length === 0 ? (
-            <div style={{ marginTop: 'auto', marginBottom: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 1, textAlign: 'center', padding: '0 1rem' }}>
-              <div style={{ position: 'relative', marginBottom: '3rem' }}>
+            <div className="mt-auto mb-auto flex flex-col items-center z-[1] text-center px-4">
+              <div className="relative mb-12">
                 <button
-                  className="voice-circle"
+                  className="voice-circle w-[180px] h-[180px] bg-[var(--bg-card)] rounded-full flex flex-col items-center justify-center shadow-[var(--shadow-main)] gap-4 cursor-pointer border border-[var(--border-color)] p-0"
                   onClick={() => setIsVoiceCallOpen(true)}
                   onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setIsVoiceCallOpen(true)}
                   aria-label="Tap to call Aria"
-                  style={{ width: '180px', height: '180px', background: 'var(--bg-card)', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: 'var(--shadow-main)', gap: '1rem', cursor: 'pointer', border: '1px solid var(--border-color)', padding: 0 }}>
+                >
                   <div className="voice-circle-inner">
                     <Mic size={24} />
                   </div>
@@ -234,7 +232,7 @@ export const AIChat = () => {
                 </button>
               </div>
 
-              <div style={{ maxWidth: '600px', marginBottom: '3rem' }}>
+              <div className="mb-12" style={{ maxWidth: '600px' }}>
                 <h2 className="hero-quote font-serif" style={{ fontSize: '2.5rem', color: 'var(--text-main)', lineHeight: 1.3, marginBottom: '1.5rem', fontWeight: 400 }}>
                   "Speak, Lord, for your servant is listening."
                 </h2>
@@ -243,7 +241,7 @@ export const AIChat = () => {
                 </p>
               </div>
 
-              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <div className="flex gap-3 flex-wrap justify-center">
                 <button
                   onClick={() => { setChatInput("I'd like to pray for strength"); }}
                   style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', padding: '0.75rem 1.5rem', borderRadius: '2rem', fontSize: '0.8rem', color: 'var(--text-main)', fontWeight: 600, cursor: 'pointer' }}
@@ -259,7 +257,7 @@ export const AIChat = () => {
               </div>
             </div>
           ) : (
-            <div style={{ width: '100%', maxWidth: '800px', zIndex: 1, display: 'flex', flexDirection: 'column', gap: '1.5rem', paddingBottom: '12rem' }}>
+            <div className="w-full z-[1] flex flex-col gap-6 pb-48" style={{ maxWidth: '800px' }}>
               {messages.map((msg) => (
                 <div key={msg.id} style={{ alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }} className="message-bubble">
                   <div style={{
@@ -285,25 +283,7 @@ export const AIChat = () => {
               {/* Floating Call Button for active chats */}
               <button
                 onClick={() => setIsVoiceCallOpen(true)}
-                className="floating-call-btn"
-                style={{
-                  position: 'fixed',
-                  bottom: '8rem',
-                  right: '2rem',
-                  width: '56px',
-                  height: '56px',
-                  borderRadius: '50%',
-                  background: 'var(--brand-solid)',
-                  color: 'var(--bg-main)',
-                  border: 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: 'var(--shadow-main)',
-                  cursor: 'pointer',
-                  zIndex: 90,
-                  transition: 'all 0.3s ease'
-                }}
+                className="floating-call-btn fixed bottom-32 right-8 w-14 h-14 rounded-full bg-[var(--brand-solid)] text-[var(--bg-main)] border-0 flex items-center justify-center shadow-[var(--shadow-main)] cursor-pointer z-[90] transition-all duration-300 ease-in-out"
               >
                 <Mic size={24} />
               </button>
@@ -323,12 +303,12 @@ export const AIChat = () => {
               />
               <button
                 onClick={handleSend}
-                style={{ position: 'absolute', right: '1rem', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: 'var(--brand-solid)', cursor: 'pointer' }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 bg-transparent border-0 text-[var(--brand-solid)] cursor-pointer"
               >
                 <Send size={20} />
               </button>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'center', width: '100%', maxWidth: '800px', marginTop: '1rem', fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
+            <div className="flex justify-center w-full mt-4" style={{ maxWidth: '800px', fontSize: '0.6rem', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>
               <span className="desktop-only text-center">END-TO-END ENCRYPTED SANCTUARY</span>
             </div>
           </div>
@@ -343,11 +323,11 @@ export const AIChat = () => {
 
       {/* Customization Modal */}
       {isCustomizing && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(15px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
-          <div className="glass-panel" style={{ width: '100%', maxWidth: '500px', background: 'var(--bg-main)', borderRadius: '32px', padding: '3rem', border: '1px solid var(--border-color)' }}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-[15px] z-[100] flex items-center justify-center p-8">
+          <div className="glass-panel w-full bg-[var(--bg-main)] rounded-[32px] p-12 border border-[var(--border-color)]" style={{ maxWidth: '500px' }}>
             <h2 className="font-serif" style={{ fontSize: '1.75rem', color: 'var(--text-main)', marginBottom: '2rem' }}>Customize Aria</h2>
 
-            <div style={{ marginBottom: '1.5rem' }}>
+            <div className="mb-6">
               <label htmlFor="aria-voice-select" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>ARIA'S VOICE</label>
               <select
                 id="aria-voice-select"
@@ -365,7 +345,7 @@ export const AIChat = () => {
               </select>
             </div>
 
-            <div style={{ marginBottom: '1.5rem' }}>
+            <div className="mb-6">
               <label htmlFor="aria-custom-persona" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>ARIA'S CUSTOM PERSONA</label>
               <textarea
                 id="aria-custom-persona"
@@ -376,7 +356,7 @@ export const AIChat = () => {
               />
             </div>
 
-            <div style={{ marginBottom: '2rem' }}>
+            <div className="mb-8">
               <label htmlFor="aria-personal-context" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>TELL ARIA ABOUT YOU</label>
               <textarea
                 id="aria-personal-context"
@@ -393,7 +373,7 @@ export const AIChat = () => {
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '1rem' }}>
+            <div className="flex gap-4">
               <button
                 onClick={handleSaveCustomization}
                 style={{ flex: 1, padding: '1rem', background: 'var(--brand-solid)', color: 'var(--bg-main)', border: 'none', borderRadius: '12px', fontWeight: 600, cursor: 'pointer' }}

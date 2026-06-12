@@ -35,35 +35,23 @@ export const AppLayout = () => {
   ]
 
   return (
-    <div style={{ display: 'flex', height: '100vh', width: '100vw', background: 'var(--bg-main)', color: 'var(--text-main)', overflow: 'hidden', flexDirection: 'column' }}>
+    <div className="flex h-screen w-screen bg-[var(--bg-main)] text-[var(--text-main)] overflow-hidden flex-col">
 
       {/* Header */}
-      <header 
-        style={{ 
-          height: '64px', 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between', 
-          padding: '0 1.25rem', 
-          borderBottom: '1px solid var(--border-color)', 
-          background: 'var(--glass-bg)', 
-          backdropFilter: 'blur(10px)', 
-          zIndex: 100 
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <button 
+      <header className="h-16 flex items-center justify-between px-5 border-b border-[var(--border-color)] bg-[var(--glass-bg)] backdrop-blur-[10px] z-[100]">
+        <div className="flex items-center gap-4">
+          <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            style={{ background: 'transparent', border: 'none', color: 'var(--text-main)', cursor: 'pointer', padding: '0.5rem' }}
+            className="bg-transparent border-0 text-[var(--text-main)] cursor-pointer p-2"
           >
             {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
           <h2 className="font-serif" style={{ fontStyle: 'italic', fontSize: '1.5rem', color: 'var(--text-main)', margin: 0 }}>Aria</h2>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div className="flex items-center gap-4">
           <ThemeToggle />
           <NavLink to="/app/profile">
-            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--bg-alt)', overflow: 'hidden' }}>
+            <div className="w-8 h-8 rounded-full bg-[var(--bg-alt)] overflow-hidden">
               <Settings size={18} style={{ margin: '7px', color: 'var(--text-secondary)' }} />
             </div>
           </NavLink>
@@ -73,42 +61,20 @@ export const AppLayout = () => {
       {/* Mobile Slide-out Menu */}
       {mobileMenuOpen && (
         <>
-          <div 
-            className="mobile-only"
+          <div
+            className="mobile-only fixed inset-0 bg-black/50 z-[998] backdrop-blur-[4px]"
             onClick={() => setMobileMenuOpen(false)}
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0,0,0,0.5)',
-              zIndex: 998,
-              backdropFilter: 'blur(4px)'
-            }}
           />
-          <nav 
-            className="mobile-only"
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              bottom: 0,
-              width: '280px',
-              background: 'var(--bg-card)',
-              zIndex: 999,
-              padding: '1.5rem',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '0.5rem',
-              boxShadow: '4px 0 20px rgba(0,0,0,0.1)',
-              overflowY: 'auto'
-            }}
+          <nav
+            className="mobile-only fixed top-0 left-0 bottom-0 w-[280px] bg-[var(--bg-card)] z-[999] p-6 flex flex-col gap-2 shadow-[4px_0_20px_rgba(0,0,0,0.1)] overflow-y-auto"
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
+            <div className="flex justify-between items-center mb-8">
               <h3 style={{ fontSize: '0.75rem', letterSpacing: '0.15em', color: 'var(--text-muted)', margin: 0 }}>MENU</h3>
-              <button onClick={() => setMobileMenuOpen(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)' }}>
+              <button onClick={() => setMobileMenuOpen(false)} className="bg-transparent border-0 text-[var(--text-muted)]">
                 <X size={20} />
               </button>
             </div>
-            
+
             {navItems.map((item) => (
               <NavLink
                 key={item.path}
@@ -131,7 +97,7 @@ export const AppLayout = () => {
                 {item.label}
               </NavLink>
             ))}
-            
+
             <div style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--border-color)' }}>
               <p style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '1rem' }}>MORE</p>
               {moreNavItems.map((item) => (
@@ -162,10 +128,9 @@ export const AppLayout = () => {
       )}
 
       {/* Main Content */}
-      <main style={{ flex: 1, position: 'relative', overflowY: 'auto', background: 'var(--bg-main)' }}>
+      <main className="flex-1 relative overflow-y-auto bg-[var(--bg-main)]">
         <Outlet />
       </main>
     </div>
   )
 }
-

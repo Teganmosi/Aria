@@ -41,44 +41,23 @@ const ActivityRow = ({ activity, onClick }) => {
             onKeyDown={handleKeyDown}
             role="button"
             tabIndex={0}
-            className="glass-panel"
-            style={{
-                padding: '1.5rem',
-                borderRadius: '20px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '1.5rem',
-                cursor: 'pointer',
-                transition: 'all 0.3s ease',
-                border: '1px solid var(--border-color)',
-                marginBottom: '1rem',
-                background: 'var(--bg-card)'
-            }}
+            className="glass-panel p-6 rounded-[20px] flex items-center gap-6 cursor-pointer transition-all duration-300 ease-in-out border border-[var(--border-color)] mb-4 bg-[var(--bg-card)]"
         >
-            <div style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '12px',
-                background: 'var(--bg-alt)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'var(--brand-accent)'
-            }}>
+            <div className="w-12 h-12 rounded-xl bg-[var(--bg-alt)] flex items-center justify-center text-[var(--brand-accent)]">
                 {getIcon()}
             </div>
-            <div style={{ flex: 1 }}>
+            <div className="flex-1">
                 <p style={{ margin: 0, fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.1em' }}>
                     {activity.subtitle?.toUpperCase() || ''}
                 </p>
                 <h4 style={{ margin: '0.2rem 0', fontSize: '1.1rem', color: 'var(--text-main)', fontWeight: 600 }}>
                     {activity.title}
                 </h4>
-                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                <div className="flex gap-4 items-center">
+                    <span className="flex items-center gap-[0.3rem] text-xs text-[var(--text-muted)]">
                         <Clock size={12} /> {getRelativeTime(activity.created_at)}
                     </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    <span className="flex items-center gap-[0.3rem] text-xs text-[var(--text-muted)]">
                         <Calendar size={12} /> {new Date(activity.created_at).toLocaleDateString()}
                     </span>
                 </div>
@@ -107,16 +86,16 @@ export const ActivityHistory = () => {
     const renderContent = () => {
         if (loading) {
             return (
-                <div style={{ textAlign: 'center', padding: '4rem' }}>
+                <div className="text-center p-16">
                     <div className="loading-spinner"></div>
-                    <p style={{ marginTop: '1rem', color: 'var(--text-muted)' }}>Gathering your milestones...</p>
+                    <p className="mt-4 text-[var(--text-muted)]">Gathering your milestones...</p>
                 </div>
             )
         }
 
         if (activities.length > 0) {
             return (
-                <div style={{ display: 'grid', gap: '1rem' }}>
+                <div className="grid gap-4">
                     {activities.map((activity, idx) => (
                         <ActivityRow
                             key={activity.id || idx}
@@ -129,7 +108,7 @@ export const ActivityHistory = () => {
         }
 
         return (
-            <div style={{ textAlign: 'center', padding: '5rem', background: 'var(--bg-card)', borderRadius: '32px', border: '1px solid var(--border-color)' }}>
+            <div className="text-center bg-[var(--bg-card)] rounded-[32px] border border-[var(--border-color)]" style={{ padding: '5rem' }}>
                 <Sparkles size={48} color="var(--brand-accent)" style={{ opacity: 0.3, marginBottom: '1.5rem' }} />
                 <h3 style={{ color: 'var(--text-main)', marginBottom: '1rem' }}>A New Path Awaits</h3>
                 <p style={{ color: 'var(--text-secondary)', maxWidth: '400px', margin: '0 auto 2rem' }}>
@@ -137,7 +116,8 @@ export const ActivityHistory = () => {
                 </p>
                 <button
                     onClick={() => navigate('/app/ai-chat')}
-                    style={{ background: 'var(--brand-solid)', color: 'var(--bg-main)', border: 'none', padding: '1rem 2rem', borderRadius: '12px', fontWeight: 600, cursor: 'pointer' }}
+                    className="bg-[var(--brand-solid)] text-[var(--bg-main)] border-0 rounded-xl font-semibold cursor-pointer"
+                    style={{ padding: '1rem 2rem' }}
                 >
                     START YOUR FIRST SESSION
                 </button>
@@ -146,11 +126,11 @@ export const ActivityHistory = () => {
     }
 
     return (
-        <div className="home-container" style={{ paddingTop: '4rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '3rem' }}>
+        <div className="home-container pt-16">
+            <div className="flex items-center gap-4 mb-12">
                 <button
                     onClick={() => navigate(-1)}
-                    style={{ background: 'var(--bg-alt)', border: 'none', width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                    className="bg-[var(--bg-alt)] border-0 w-10 h-10 rounded-full flex items-center justify-center cursor-pointer"
                 >
                     <ArrowLeft size={20} color="var(--text-main)" />
                 </button>
