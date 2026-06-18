@@ -74,7 +74,7 @@ describe('API Service Exports', () => {
 
 describe('ErrorBoundary Component', () => {
   it('should be importable', async () => {
-    const { default: ErrorBoundary } = await import('../components/ErrorBoundary')
+    const { ErrorBoundary } = await import('../components/ErrorBoundary')
     expect(ErrorBoundary).toBeDefined()
   })
 })

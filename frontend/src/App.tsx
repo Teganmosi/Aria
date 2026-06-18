@@ -14,6 +14,7 @@ import { AppLayout } from './components/AppLayout'
 
 // Lazy loaded pages for code splitting
 const LandingPage = lazy(() => import('./pages/LandingPage'))
+const Teaser = lazy(() => import('./pages/Teaser'))
 const Home = lazy(() => import('./pages/Home'))
 const AIChat = lazy(() => import('./pages/AIChat'))
 const Bible = lazy(() => import('./pages/Bible'))
@@ -132,6 +133,7 @@ function App() {
           <Route path="/" element={<PublicRoute><LazyLoad><PageTransition><LandingPage /></PageTransition></LazyLoad></PublicRoute>} />
           <Route path="/login" element={<PublicRoute><PageTransition><Login /></PageTransition></PublicRoute>} />
           <Route path="/register" element={<PublicRoute><PageTransition><Register /></PageTransition></PublicRoute>} />
+          <Route path="/teaser" element={<LazyLoad><Teaser /></LazyLoad>} />
 
           {/* Protected App Routes */}
           <Route path="/app" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>

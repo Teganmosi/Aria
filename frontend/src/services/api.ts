@@ -37,6 +37,13 @@ export const authService = {
     const { data } = await axiosPrivate.post('/auth/logout')
     return data
   },
+
+  exchangeOAuthToken: async (accessToken: string) => {
+    const { data } = await axiosBase.post('/auth/oauth/exchange', {
+      access_token: accessToken,
+    })
+    return data
+  },
 }
 
 // Profile Service
@@ -368,3 +375,28 @@ export const notesService = {
     return data
   },
 }
+
+// Text to Speech Service
+export const ttsService = {
+  generateSpeech: async (text: string, voice = 'Idera', responseFormat = 'mp3'): Promise<Blob> => {
+    const { data } = await axiosPrivate.post(
+      '/tts',
+      { text, voice, response_format: responseFormat },
+      { responseType: 'blob' }
+    )
+    return data
+  },
+  getSpeechUrl: (text: string, voice = 'Idera', responseFormat = 'mp3'): string => {
+    const token = localStorage.getItem('authToken') || ''
+    const params = new URLSearchParams({
+      text,
+      voice,
+      response_format: responseFormat,
+    })
+    if (token) {
+      params.append('token', token)
+    }
+    return `${API_BASE_URL}/tts?${params.toString()}`
+  },
+}
+

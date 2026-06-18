@@ -9,7 +9,7 @@ import { loginSchema, type LoginFormData } from '../schemas/auth'
 
 export const Login = () => {
   const navigate = useNavigate()
-  const { login, isAuthenticated } = useAuth()
+  const { login, isAuthenticated, exchangeOAuthToken } = useAuth()
   const [showPassword, setShowPassword] = useState(false)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 1024)
 
@@ -29,12 +29,43 @@ export const Login = () => {
     if (isAuthenticated) navigate('/app/home')
   }, [isAuthenticated, navigate])
 
+  useEffect(() => {
+    const handleOAuthCallback = async () => {
+      const hash = window.location.hash
+      if (hash) {
+        const params = new URLSearchParams(hash.substring(1))
+        const accessToken = params.get('access_token')
+        const refreshToken = params.get('refresh_token')
+        
+        if (accessToken) {
+          const toastId = toast.loading('Signing in with Google...')
+          try {
+            await exchangeOAuthToken(accessToken, refreshToken || '')
+            toast.success('Successfully signed in!', { id: toastId })
+            navigate('/app/home')
+          } catch (err) {
+            toast.error((err as Error).message || 'OAuth sign in failed', { id: toastId })
+          } finally {
+            window.history.replaceState(null, '', window.location.pathname)
+          }
+        }
+      }
+    }
+    handleOAuthCallback()
+  }, [navigate, exchangeOAuthToken])
+
   const onSubmit = async (values: LoginFormData) => {
     try {
       await login(values.email, values.password)
     } catch (err) {
       toast.error((err as Error).message || 'Failed to sign in')
     }
+  }
+
+  const handleGoogleLogin = () => {
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8002/api/v1'
+    const redirectTo = window.location.origin + '/login'
+    window.location.href = `${backendUrl}/auth/oauth/google?redirect_to=${encodeURIComponent(redirectTo)}`
   }
 
   return (
@@ -144,8 +175,8 @@ export const Login = () => {
               <span style={{ background: 'var(--bg-card)', padding: '0 1rem', fontSize: '0.75rem', color: 'var(--text-muted)', zIndex: 1, letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600 }}>OR CONTINUE WITH</span>
             </div>
             <div className="flex gap-4">
-              <button style={{ flex: 1, padding: '1rem', background: 'var(--input-bg)', border: 'none', borderRadius: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>Google</button>
-              <button style={{ flex: 1, padding: '1rem', background: 'var(--input-bg)', border: 'none', borderRadius: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>Apple</button>
+              <button type="button" onClick={handleGoogleLogin} style={{ flex: 1, padding: '1rem', background: 'var(--input-bg)', border: 'none', borderRadius: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>Google</button>
+              <button type="button" style={{ flex: 1, padding: '1rem', background: 'var(--input-bg)', border: 'none', borderRadius: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>Apple</button>
             </div>
             <p className="mt-12 text-base text-[var(--text-secondary)]">
               New to the sanctuary? <Link to="/register" style={{ color: 'var(--text-main)', fontWeight: 600, textDecoration: 'none', borderBottom: '1px solid var(--text-main)', paddingBottom: '2px', marginLeft: '0.5rem' }}>Create an account</Link>

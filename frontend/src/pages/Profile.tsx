@@ -126,13 +126,13 @@ export const Profile = () => {
             icon={<BookOpen size={20} />}
             title="Bible Translation"
             subtitle="Current: King James Version (KJV)"
-            action={() => showMessage('Translation settings coming soon!')}
+            action={() => toast.info('Translation settings coming soon!')}
           />
           <SettingsCard
             icon={<Clock size={20} />}
             title="Devotion Reminders"
             subtitle="Adjust your daily morning reflection time"
-            action={() => showMessage('Notification settings coming soon!')}
+            action={() => toast.info('Notification settings coming soon!')}
           />
         </div>
 
@@ -175,7 +175,7 @@ export const Profile = () => {
             icon={<ShieldCheck size={20} />}
             title="Privacy & Security"
             subtitle="Manage your password and session data"
-            action={() => showMessage('Security settings coming soon!')}
+            action={() => toast.info('Security settings coming soon!')}
           />
         </div>
 

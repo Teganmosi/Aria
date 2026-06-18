@@ -61,4 +61,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       // user stays logged in with stale data — non-critical
     }
   },
+
+  exchangeOAuthToken: async (accessToken: string, refreshToken?: string): Promise<AuthResponse> => {
+    const response: AuthResponse = await authService.exchangeOAuthToken(accessToken)
+    if (response.access_token) {
+      setTokens(response.access_token, response.refresh_token ?? refreshToken ?? '')
+      const userData = response.user ?? response.data?.user ?? ({} as User)
+      set({ user: userData, isAuthenticated: true, showAuthModal: false })
+    }
+    return response
+  },
 }))

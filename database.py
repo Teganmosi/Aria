@@ -9,10 +9,35 @@ from typing import Optional, Dict, Any, List
 import psycopg2
 import psycopg2.extras
 from psycopg2.pool import ThreadedConnectionPool
+from supabase import create_client, Client
 
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+# Monkeypatch to fix a bug in supabase-py 2.7.0 client.py where realtime client is hardcoded to None,
+# causing AttributeErrors during sign_in_with_password because the library tries to do self.realtime.set_auth().
+try:
+    from supabase._sync.client import SyncClient
+    
+    def safe_listen_to_auth_events(self, event, session):
+        access_token = self.supabase_key
+        if event in ["SIGNED_IN", "TOKEN_REFRESHED", "SIGNED_OUT"]:
+            self._postgrest = None
+            self._storage = None
+            self._functions = None
+            access_token = session.access_token if session else self.supabase_key
+
+        self.options.headers["Authorization"] = self._create_auth_header(access_token)
+
+        # Only call set_auth if realtime is initialized and not None
+        if self.realtime is not None:
+            self.realtime.set_auth(access_token)
+
+    SyncClient._listen_to_auth_events = safe_listen_to_auth_events
+    logger.info("Successfully patched Supabase SyncClient._listen_to_auth_events for safety")
+except Exception as e:
+    logger.error(f"Failed to patch Supabase SyncClient: {e}")
 
 
 class Database:
@@ -55,17 +80,37 @@ class Database:
         if bad:
             raise ValueError(f"Disallowed column(s) for table '{table}': {bad}")
 
+    _client: Optional[Client] = None
+
     def __init__(self):
         if hasattr(self, '_initialized'):
             return
         self._initialized = True
+        
+        # Initialize Supabase client if credentials are provided
+        if settings.supabase_url and settings.supabase_key:
+            try:
+                self.__class__._client = create_client(settings.supabase_url, settings.supabase_key)
+                logger.info("Supabase client initialized with anon key")
+            except Exception as e:
+                logger.error(f"⚠️ Failed to initialize Supabase client (possibly invalid key): {e}")
+
         if not self.__class__._pool:
             self.__class__._pool = ThreadedConnectionPool(
                 minconn=1,
                 maxconn=10,
                 dsn=settings.database_url,
             )
+
+        # Ensure tables exist in the database (whether local or remote Supabase)
         self._ensure_tables()
+
+    @property
+    def client(self) -> Client:
+        if not self.__class__._client:
+            raise RuntimeError("Supabase client is not initialized. Please check your SUPABASE_URL and SUPABASE_KEY configuration.")
+        return self.__class__._client
+
 
     @contextmanager
     def get_connection(self):
@@ -81,26 +126,55 @@ class Database:
 
     def _ensure_tables(self):
         try:
+            # Dynamically check existing id column types to prevent foreign key datatype mismatches (UUID vs TEXT)
+            id_type = None
+            try:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute("""
+                        SELECT data_type 
+                        FROM information_schema.columns 
+                        WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'id'
+                        UNION ALL
+                        SELECT data_type 
+                        FROM information_schema.columns 
+                        WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'id'
+                    """)
+                    rows = cur.fetchall()
+                    for r in rows:
+                        if r and r[0]:
+                            val = r[0].upper()
+                            id_type = "UUID" if "UUID" in val else "TEXT"
+                            logger.info(f"Detected users/profiles id type from database: {id_type}")
+                            break
+            except Exception as e:
+                logger.warning(f"Failed to auto-detect users/profiles id type: {e}")
+
+            if not id_type:
+                is_supabase_db = "supabase.co" in settings.database_url or "supabase.com" in settings.database_url
+                id_type = "UUID" if is_supabase_db else "TEXT"
+                logger.info(f"Fallback id type determined: {id_type}")
+            
             with self.get_connection() as conn:
                 cur = conn.cursor()
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS users (
-                    id TEXT PRIMARY KEY,
+                    id {id_type} PRIMARY KEY,
                     email TEXT NOT NULL UNIQUE,
                     hashed_password TEXT NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS profiles (
-                    id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                    id {id_type} PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                     email TEXT NOT NULL UNIQUE,
                     full_name TEXT,
                     avatar_url TEXT,
                     preferred_bible_version TEXT DEFAULT 'NIV',
-                    notification_preferences TEXT DEFAULT '{"email": true, "push": true}',
+                    notification_preferences TEXT DEFAULT '{{\"email\": true, \"push\": true}}',
                     spiritual_journey_notes TEXT,
                     aria_custom_prompt TEXT,
                     aria_personal_context TEXT,
@@ -110,10 +184,10 @@ class Database:
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS prayers (
                     id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL,
+                    user_id {id_type} NOT NULL,
                     title TEXT,
                     content TEXT NOT NULL,
                     isanswered BOOLEAN DEFAULT FALSE,
@@ -121,10 +195,10 @@ class Database:
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS bible_study_sessions (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    id {id_type} PRIMARY KEY,
+                    user_id {id_type} NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                     book TEXT NOT NULL,
                     chapter INTEGER NOT NULL,
                     verses TEXT NOT NULL,
@@ -138,20 +212,20 @@ class Database:
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS bible_study_messages (
-                    id TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL REFERENCES bible_study_sessions(id) ON DELETE CASCADE,
+                    id {id_type} PRIMARY KEY,
+                    session_id {id_type} NOT NULL REFERENCES bible_study_sessions(id) ON DELETE CASCADE,
                     role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
                     content TEXT NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS emotional_support_sessions (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    id {id_type} PRIMARY KEY,
+                    user_id {id_type} NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                     mood TEXT NOT NULL,
                     situation_description TEXT,
                     is_realtime BOOLEAN DEFAULT FALSE,
@@ -163,19 +237,19 @@ class Database:
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS emotional_support_messages (
-                    id TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL REFERENCES emotional_support_sessions(id) ON DELETE CASCADE,
+                    id {id_type} PRIMARY KEY,
+                    session_id {id_type} NOT NULL REFERENCES emotional_support_sessions(id) ON DELETE CASCADE,
                     role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
                     content TEXT NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS devotion_settings (
-                    user_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+                    user_id {id_type} PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
                     preferred_time TEXT NOT NULL,
                     timezone TEXT NOT NULL,
                     duration_minutes INTEGER DEFAULT 15,
@@ -186,10 +260,10 @@ class Database:
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS devotions (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    id {id_type} PRIMARY KEY,
+                    user_id {id_type} NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                     scheduled_for TIMESTAMP WITH TIME ZONE NOT NULL,
                     day_plan_summary TEXT,
                     scripture_reading TEXT,
@@ -225,10 +299,10 @@ class Database:
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS user_favorites (
                     id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    user_id {id_type} NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                     item_type TEXT NOT NULL CHECK (item_type IN ('verse', 'prayer', 'devotion')),
                     item_id TEXT NOT NULL,
                     notes TEXT,
@@ -237,10 +311,10 @@ class Database:
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS journal_entries (
                     id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    user_id {id_type} NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                     title TEXT,
                     content TEXT NOT NULL,
                     mood TEXT,
@@ -250,10 +324,10 @@ class Database:
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS cached_verses (
                     id SERIAL PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    user_id {id_type} NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                     verse_text TEXT NOT NULL,
                     verse_reference TEXT NOT NULL,
                     aria_insight TEXT,
@@ -262,10 +336,10 @@ class Database:
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS notes (
                     id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    user_id {id_type} NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                     title TEXT,
                     content TEXT NOT NULL,
                     source_type TEXT DEFAULT 'general',
@@ -278,30 +352,30 @@ class Database:
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS devotion_messages (
-                    id TEXT PRIMARY KEY,
-                    devotion_id TEXT NOT NULL REFERENCES devotions(id) ON DELETE CASCADE,
+                    id {id_type} PRIMARY KEY,
+                    devotion_id {id_type} NOT NULL REFERENCES devotions(id) ON DELETE CASCADE,
                     role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
                     content TEXT NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS ai_chat_sessions (
-                    id TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                    id {id_type} PRIMARY KEY,
+                    user_id {id_type} NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
                     title TEXT,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
                 """)
 
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS ai_chat_messages (
-                    id TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL REFERENCES ai_chat_sessions(id) ON DELETE CASCADE,
+                    id {id_type} PRIMARY KEY,
+                    session_id {id_type} NOT NULL REFERENCES ai_chat_sessions(id) ON DELETE CASCADE,
                     role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
                     content TEXT NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -315,10 +389,10 @@ class Database:
                     expires_at TIMESTAMP WITH TIME ZONE NOT NULL
                 )
                 """)
-                cur.execute("""
+                cur.execute(f"""
                 CREATE TABLE IF NOT EXISTS refresh_tokens (
                     token TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL,
+                    user_id {id_type} NOT NULL,
                     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     revoked BOOLEAN DEFAULT FALSE,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -331,7 +405,6 @@ class Database:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_emotional_support_sessions_user_id ON emotional_support_sessions (user_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_devotions_user_id ON devotions (user_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_devotion_messages_devotion_id ON devotion_messages (devotion_id)")
-
         except Exception:
             logger.exception("Error ensuring tables")
 
@@ -379,7 +452,7 @@ class Database:
             with self.get_connection() as conn:
                 cur = self._cursor(conn)
                 cur.execute(
-                    "INSERT INTO users (id, email, hashed_password) VALUES (%s, %s, %s)",
+                    "INSERT INTO users (id, email, hashed_password) VALUES (%s, %s, %s) ON CONFLICT (id) DO NOTHING",
                     (user_id, email, hashed_password),
                 )
                 return True

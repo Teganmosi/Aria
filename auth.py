@@ -82,22 +82,48 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         raise credentials_exception
     return profile
 
-# --- Refactored Local Auth (replacing Supabase) ---
+def get_current_user_from_token(token: str) -> Dict[str, Any]:
+    """Get the current authenticated user from a raw token string"""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    payload = decode_access_token(token)
+    if not payload:
+        raise credentials_exception
+
+    jti: Optional[str] = payload.get("jti")
+    if jti and db.is_token_revoked(jti):
+        raise credentials_exception
+
+    user_id: str = payload.get("sub")
+    if not user_id:
+        raise credentials_exception
+
+    profile = db.get_profile(user_id)
+    if profile is None:
+        raise credentials_exception
+    return profile
+
+# --- Supabase Auth Integration ---
 
 def supabase_auth_signup(email: str, password: str, full_name: Optional[str] = None) -> Dict[str, Any]:
-    """Sign up using local SQLite instead of Supabase"""
+    """Sign up using Supabase Auth"""
     try:
-        # Check if user already exists
-        existing = db.get_user_by_email(email)
-        if existing:
-            return {"success": False, "error": "User already exists"}
-            
-        user_id = str(uuid.uuid4())
-        hashed_pw = get_password_hash(password)
+        response = db.client.auth.sign_up({
+            "email": email,
+            "password": password,
+            "options": {"data": {"full_name": full_name} if full_name else {}}
+        })
         
-        # Create user record
-        if db.create_user(user_id, email, hashed_pw):
-            # Create profile record
+        if response.user:
+            user_id = response.user.id
+            
+            # Create user record in our database first to satisfy foreign key constraint
+            db.create_user(user_id, email, "")
+            
+            # Create profile record in our database
             profile_data = {
                 "id": user_id, 
                 "email": email,
@@ -105,13 +131,16 @@ def supabase_auth_signup(email: str, password: str, full_name: Optional[str] = N
             }
             db.create_profile(profile_data)
             
-            # Auto-login: generate tokens
-            access_token = create_access_token(data={"sub": user_id, "email": email})
-            refresh_token, _ = create_refresh_token(user_id, email)
+            # Auto-login: generate tokens if session is returned
+            access_token = None
+            refresh_token = None
+            if response.session:
+                access_token = create_access_token(data={"sub": user_id, "email": email})
+                refresh_token, _ = create_refresh_token(user_id, email)
 
             return {
                 "success": True,
-                "message": "Sign up successful",
+                "message": "Sign up successful! " + ("Please confirm your email." if not response.session else ""),
                 "access_token": access_token,
                 "refresh_token": refresh_token,
                 "token_type": "bearer",
@@ -122,42 +151,68 @@ def supabase_auth_signup(email: str, password: str, full_name: Optional[str] = N
                 }
             }
         return {"success": False, "error": "Failed to create user"}
-    except Exception:
+    except Exception as e:
         logger.exception("Signup error")
-        return {"success": False, "error": "Registration failed. Please try again."}
+        # Extract a clean message if possible
+        err_msg = str(e)
+        if "User already registered" in err_msg:
+            err_msg = "User already exists"
+        return {"success": False, "error": err_msg}
 
 def supabase_auth_login(email: str, password: str) -> Dict[str, Any]:
-    """Login using local SQLite instead of Supabase"""
+    """Login using Supabase Auth"""
     try:
-        user = db.get_user_by_email(email)
-        if not user or not verify_password(password, user["hashed_password"]):
-            return {"success": False, "error": "Invalid email or password"}
-            
-        user_id = user["id"]
-        profile = db.get_profile(user_id)
+        response = db.client.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
         
-        access_token = create_access_token(data={"sub": user_id, "email": email})
-        refresh_token, _ = create_refresh_token(user_id, email)
+        if response.user and response.session:
+            user_id = response.user.id
+            user_email = response.user.email
+            
+            profile = db.get_profile(user_id)
+            if not profile:
+                metadata = response.user.user_metadata or {}
+                full_name = metadata.get("full_name") or user_email.split("@")[0]
+                # Create user record in our database first to satisfy foreign key constraint
+                db.create_user(user_id, user_email, "")
+                
+                profile_data = {
+                    "id": user_id,
+                    "email": user_email,
+                    "full_name": full_name
+                }
+                db.create_profile(profile_data)
+                profile = db.get_profile(user_id)
+            
+            access_token = create_access_token(data={"sub": user_id, "email": user_email})
+            refresh_token, _ = create_refresh_token(user_id, user_email)
 
-        return {
-            "success": True,
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "token_type": "bearer",
-            "user": {
-                "id": user_id,
-                "email": email,
-                "full_name": profile["full_name"] if profile else email.split("@")[0]
+            return {
+                "success": True,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer",
+                "user": {
+                    "id": user_id,
+                    "email": user_email,
+                    "full_name": profile["full_name"] if profile else user_email.split("@")[0]
+                }
             }
-        }
-    except Exception:
+        return {"success": False, "error": "Invalid email or password"}
+    except Exception as e:
         logger.exception("Login error")
-        return {"success": False, "error": "Login failed. Please try again."}
+        return {"success": False, "error": str(e)}
 
 def supabase_auth_logout() -> Dict[str, Any]:
-    """Logout locally"""
-    # No server-side session yet, just return success
-    return {"success": True, "message": "Logged out"}
+    """Logout from Supabase Auth"""
+    try:
+        db.client.auth.sign_out()
+        return {"success": True, "message": "Logged out successfully"}
+    except Exception:
+        logger.exception("Logout error")
+        return {"success": True, "message": "Logged out"}
 
 def blacklist_token(token: str) -> None:
     payload = decode_access_token(token)
@@ -186,3 +241,50 @@ def get_current_user_websocket(websocket: WebSocket) -> Dict[str, Any]:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
     
     return profile
+
+
+def supabase_oauth_exchange(access_token: str) -> Dict[str, Any]:
+    """Exchange a Supabase access token for local JWT access and refresh tokens"""
+    try:
+        response = db.client.auth.get_user(access_token)
+        if not response or not response.user:
+            return {"success": False, "error": "Invalid Supabase token"}
+            
+        user_id = response.user.id
+        user_email = response.user.email
+        
+        profile = db.get_profile(user_id)
+        if not profile:
+            metadata = response.user.user_metadata or {}
+            full_name = metadata.get("full_name") or user_email.split("@")[0]
+            avatar_url = metadata.get("avatar_url")
+            # Create user record in our database first to satisfy foreign key constraint
+            db.create_user(user_id, user_email, "")
+            
+            profile_data = {
+                "id": user_id,
+                "email": user_email,
+                "full_name": full_name,
+                "avatar_url": avatar_url
+            }
+            db.create_profile(profile_data)
+            profile = db.get_profile(user_id)
+            
+        local_access_token = create_access_token(data={"sub": user_id, "email": user_email})
+        local_refresh_token, _ = create_refresh_token(user_id, user_email)
+        
+        return {
+            "success": True,
+            "access_token": local_access_token,
+            "refresh_token": local_refresh_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user_id,
+                "email": user_email,
+                "full_name": profile["full_name"] if profile else user_email.split("@")[0]
+            }
+        }
+    except Exception as e:
+        logger.exception("OAuth exchange error")
+        return {"success": False, "error": str(e)}
+

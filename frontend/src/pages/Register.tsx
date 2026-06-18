@@ -37,6 +37,13 @@ export const Register = () => {
     }
   }
 
+  const handleGoogleLogin = () => {
+    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8002/api/v1'
+    const redirectTo = window.location.origin + '/login'
+    window.location.href = `${backendUrl}/auth/oauth/google?redirect_to=${encodeURIComponent(redirectTo)}`
+  }
+
+
   return (
     <div className="responsive-stack flex min-h-screen w-screen overflow-x-hidden bg-[var(--bg-main)]">
 
@@ -143,6 +150,21 @@ export const Register = () => {
               {errors.password && <p className="text-red-600 text-[0.8rem] mt-1">{errors.password.message}</p>}
             </div>
 
+            <div>
+              <label htmlFor="confirmPassword" style={{ fontSize: '0.75rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Confirm Password</label>
+              <div className="relative">
+                <input
+                  id="confirmPassword"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  placeholder="••••••••"
+                  style={{ width: '100%', padding: '1rem 1.25rem', background: 'var(--input-bg)', border: '1px solid transparent', borderRadius: '12px', fontSize: '1rem', color: 'var(--text-main)', outline: 'none' }}
+                  {...register('confirmPassword')}
+                />
+              </div>
+              {errors.confirmPassword && <p className="text-red-600 text-[0.8rem] mt-1">{errors.confirmPassword.message}</p>}
+            </div>
+
             <button type="submit" disabled={isSubmitting} style={{ marginTop: '1rem', width: '100%', padding: '1.25rem', borderRadius: '3rem', border: 'none', background: 'var(--brand-solid)', color: 'var(--bg-main)', fontSize: '1.05rem', fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.2s' }}>
               {isSubmitting ? 'Creating Account...' : 'Create Account'}
             </button>
@@ -154,8 +176,8 @@ export const Register = () => {
               <span style={{ background: 'var(--bg-card)', padding: '0 1rem', fontSize: '0.75rem', color: 'var(--text-muted)', zIndex: 1, letterSpacing: '0.05em', textTransform: 'uppercase', fontWeight: 600 }}>OR SIGN UP WITH</span>
             </div>
             <div className="flex gap-4">
-              <button style={{ flex: 1, padding: '1rem', background: 'var(--input-bg)', border: 'none', borderRadius: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>Google</button>
-              <button style={{ flex: 1, padding: '1rem', background: 'var(--input-bg)', border: 'none', borderRadius: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>Apple</button>
+              <button type="button" onClick={handleGoogleLogin} style={{ flex: 1, padding: '1rem', background: 'var(--input-bg)', border: 'none', borderRadius: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>Google</button>
+              <button type="button" style={{ flex: 1, padding: '1rem', background: 'var(--input-bg)', border: 'none', borderRadius: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>Apple</button>
             </div>
             <p className="mt-10 text-base text-[var(--text-secondary)]">
               Already have an account? <Link to="/login" style={{ color: 'var(--text-main)', fontWeight: 600, textDecoration: 'none', borderBottom: '1px solid var(--text-main)', paddingBottom: '2px', marginLeft: '0.5rem' }}>Log in</Link>

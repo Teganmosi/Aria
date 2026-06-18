@@ -6,7 +6,7 @@ import {
   ArrowLeft, Bookmark, Volume2, Share2, Sparkles, X, Check,
   PlayCircle, StopCircle, SkipForward, SkipBack, Settings2
 } from 'lucide-react'
-import { bibleService, homeService } from '../services/api'
+import { bibleService, homeService, ttsService } from '../services/api'
 import { AnimatedBackground } from '../components/ui/SharedComponents'
 
 const BIBLE_BOOKS = {
@@ -41,6 +41,25 @@ const BIBLE_BOOKS = {
 const SAVED_KEY = 'aria_saved_verses'
 const VOICE_KEY = 'aria_tts_voice'
 
+const YARNGPT_VOICES = [
+  { name: 'Idera', desc: 'Melodic, gentle' },
+  { name: 'Emma', desc: 'Authoritative, deep' },
+  { name: 'Zainab', desc: 'Soothing, gentle' },
+  { name: 'Osagie', desc: 'Smooth, calm' },
+  { name: 'Wura', desc: 'Young, sweet' },
+  { name: 'Jude', desc: 'Warm, confident' },
+  { name: 'Chinenye', desc: 'Engaging, warm' },
+  { name: 'Tayo', desc: 'Upbeat, energetic' },
+  { name: 'Regina', desc: 'Mature, warm' },
+  { name: 'Femi', desc: 'Rich, reassuring' },
+  { name: 'Adaora', desc: 'Warm, engaging' },
+  { name: 'Umar', desc: 'Calm, smooth' },
+  { name: 'Mary', desc: 'Energetic, youthful' },
+  { name: 'Nonso', desc: 'Bold, resonant' },
+  { name: 'Remi', desc: 'Melodious, warm' },
+  { name: 'Adam', desc: 'Deep, clear' }
+]
+
 const getSavedVerses = (): string[] => {
   try { return JSON.parse(localStorage.getItem(SAVED_KEY) || '[]') } catch { return [] }
 }
@@ -62,10 +81,9 @@ const BookCard = ({ book, isSelected, onClick }) => (
   </button>
 )
 
-const VerseCard = ({ verse, bookName, chapterNum, isActiveReading, chapterPlaying, verseId, getSelectedVoice }) => {
+const VerseCard = ({ verse, bookName, chapterNum, isActiveReading, chapterPlaying, verseId, isPlaying, onPlayToggle }) => {
   const ref = `${bookName} ${chapterNum}:${verse.verse || verse.number}`
   const [isSaved, setIsSaved] = useState(() => getSavedVerses().includes(ref))
-  const [isPlaying, setIsPlaying] = useState(false)
   const [shareToast, setShareToast] = useState(false)
 
   const handleBookmark = useCallback(() => {
@@ -85,20 +103,6 @@ const VerseCard = ({ verse, bookName, chapterNum, isActiveReading, chapterPlayin
       } catch { /* clipboard blocked */ }
     }
   }, [verse.text, ref])
-
-  const handlePlayAudio = useCallback(() => {
-    if (!('speechSynthesis' in window)) { alert('Text to speech is not supported in your browser.'); return }
-    if (isPlaying) { window.speechSynthesis.cancel(); setIsPlaying(false); return }
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(verse.text)
-    utterance.rate = 0.9
-    const voice = getSelectedVoice?.()
-    if (voice) utterance.voice = voice
-    utterance.onend = () => setIsPlaying(false)
-    utterance.onerror = () => setIsPlaying(false)
-    window.speechSynthesis.speak(utterance)
-    setIsPlaying(true)
-  }, [verse.text, isPlaying, getSelectedVoice])
 
   return (
     <div
@@ -123,7 +127,7 @@ const VerseCard = ({ verse, bookName, chapterNum, isActiveReading, chapterPlayin
         {!chapterPlaying && (
           <button
             className={`verse-action ${isPlaying ? 'saved' : ''}`}
-            onClick={handlePlayAudio}
+            onClick={onPlayToggle}
             title={isPlaying ? 'Stop playing' : 'Listen to verse'}
             style={isPlaying ? { color: 'var(--brand-accent)', borderColor: 'var(--brand-accent)' } : {}}
           >
@@ -153,104 +157,112 @@ export const Bible = () => {
   const [showChapterOverlay, setShowChapterOverlay] = useState(false)
   const [chapterPlaying, setChapterPlaying] = useState(false)
   const [activeVerseIdx, setActiveVerseIdx] = useState<number | null>(null)
+  const [currentlyPlayingVerseIdx, setCurrentlyPlayingVerseIdx] = useState<number | null>(null)
   const chapterPlayingRef = useRef(false)
-  const speakVerseRef = useRef<((idx: number) => void) | null>(null)
-  const [availableVoices, setAvailableVoices] = useState([])
-  const [selectedVoiceName, setSelectedVoiceName] = useState(() => localStorage.getItem(VOICE_KEY) || '')
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [selectedVoiceName, setSelectedVoiceName] = useState(() => localStorage.getItem(VOICE_KEY) || 'Idera')
   const [showVoicePicker, setShowVoicePicker] = useState(false)
-  const selectedVoiceNameRef = useRef(selectedVoiceName)
 
-  useEffect(() => { selectedVoiceNameRef.current = selectedVoiceName }, [selectedVoiceName])
-
-  useEffect(() => {
-    if (!('speechSynthesis' in window)) return
-    const load = () => {
-      const voices = window.speechSynthesis.getVoices()
-      if (voices.length) setAvailableVoices(voices)
+  const stopAudio = useCallback(() => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
     }
-    load()
-    window.speechSynthesis.addEventListener('voiceschanged', load)
-    return () => window.speechSynthesis.removeEventListener('voiceschanged', load)
+    setCurrentlyPlayingVerseIdx(null)
+    setChapterPlaying(false)
+    setActiveVerseIdx(null)
+    chapterPlayingRef.current = false
   }, [])
 
-  const getSelectedVoice = useCallback(() => {
-    if (!selectedVoiceNameRef.current) return null
-    return window.speechSynthesis.getVoices().find(v => v.name === selectedVoiceNameRef.current) || null
-  }, [])
+  const playVerseAudio = useCallback(async (idx: number, isChapterPlayback = false) => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+      audioRef.current = null
+    }
+    
+    if (idx >= verses.length) {
+      stopAudio()
+      return
+    }
+    
+    if (isChapterPlayback) {
+      setActiveVerseIdx(idx)
+      const el = document.getElementById(`verse-row-${idx}`)
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    } else {
+      setCurrentlyPlayingVerseIdx(idx)
+    }
+    
+    try {
+      const voice = selectedVoiceName || 'Idera'
+      const url = ttsService.getSpeechUrl(verses[idx].text, voice)
+      
+      const audio = new Audio(url)
+      audioRef.current = audio
+      
+      audio.onended = () => {
+        if (isChapterPlayback && chapterPlayingRef.current) {
+          playVerseAudio(idx + 1, true)
+        } else {
+          stopAudio()
+        }
+      }
+      
+      audio.onerror = () => {
+        stopAudio()
+      }
+      
+      await audio.play()
+    } catch (err) {
+      console.error("TTS playback error:", err)
+      stopAudio()
+    }
+  }, [verses, selectedVoiceName, stopAudio])
+
+  const handlePlayToggle = useCallback((idx: number) => {
+    if (currentlyPlayingVerseIdx === idx) {
+      stopAudio()
+    } else {
+      playVerseAudio(idx, false)
+    }
+  }, [currentlyPlayingVerseIdx, playVerseAudio, stopAudio])
 
   const handleSelectVoice = useCallback((name: string) => {
     setSelectedVoiceName(name)
-    selectedVoiceNameRef.current = name
     localStorage.setItem(VOICE_KEY, name)
     setShowVoicePicker(false)
   }, [])
 
-  const speakVerse = useCallback((idx: number) => {
-    if (!chapterPlayingRef.current || idx >= verses.length) {
-      chapterPlayingRef.current = false
-      setChapterPlaying(false)
-      setActiveVerseIdx(null)
-      return
-    }
-    setActiveVerseIdx(idx)
-    const el = document.getElementById(`verse-row-${idx}`)
-    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(verses[idx].text)
-    utterance.rate = 0.9
-    const voice = getSelectedVoice()
-    if (voice) utterance.voice = voice
-    utterance.onend = () => speakVerseRef.current?.(idx + 1)
-    utterance.onerror = () => {
-      chapterPlayingRef.current = false
-      setChapterPlaying(false)
-      setActiveVerseIdx(null)
-    }
-    window.speechSynthesis.speak(utterance)
-  }, [verses, getSelectedVoice])
-
-  useEffect(() => { speakVerseRef.current = speakVerse }, [speakVerse])
-
   const startChapterPlayback = useCallback(() => {
-    if (!('speechSynthesis' in window)) { alert('Text to speech is not supported in your browser.'); return }
     if (verses.length === 0) return
-    window.speechSynthesis.cancel()
     chapterPlayingRef.current = true
     setChapterPlaying(true)
-    setActiveVerseIdx(0)
-    speakVerse(0)
-  }, [verses, speakVerse])
+    playVerseAudio(0, true)
+  }, [verses, playVerseAudio])
 
   const stopChapterPlayback = useCallback(() => {
-    chapterPlayingRef.current = false
-    window.speechSynthesis.cancel()
-    setChapterPlaying(false)
-    setActiveVerseIdx(null)
-  }, [])
+    stopAudio()
+  }, [stopAudio])
 
   const skipVerse = useCallback((direction: 1 | -1) => {
     setActiveVerseIdx(prev => {
       const next = (prev ?? 0) + direction
       if (next < 0 || next >= verses.length) return prev
       chapterPlayingRef.current = true
-      speakVerseRef.current?.(next)
+      playVerseAudio(next, true)
       return next
     })
-  }, [verses.length])
+  }, [verses.length, playVerseAudio])
 
   // Stop playback when verses change (chapter or book changed)
   useEffect(() => {
-    chapterPlayingRef.current = false
-    window.speechSynthesis.cancel()
-    setChapterPlaying(false)
-    setActiveVerseIdx(null)
-  }, [verses])
+    stopAudio()
+  }, [verses, stopAudio])
 
   // Stop on unmount
   useEffect(() => () => {
-    chapterPlayingRef.current = false
-    window.speechSynthesis.cancel()
-  }, [])
+    stopAudio()
+  }, [stopAudio])
 
   useEffect(() => {
     const fetchVerseOfDay = async () => {
@@ -376,46 +388,21 @@ export const Bible = () => {
               <h3 className="font-serif">Reading Voice</h3>
               <button className="picker-close" onClick={() => setShowVoicePicker(false)}><X size={20} /></button>
             </div>
-            {availableVoices.length === 0 ? (
-              <div className="voice-empty">No voices available on this device.</div>
-            ) : (
               <div className="voice-list">
-                <button
-                  className={`voice-item ${selectedVoiceName === '' ? 'active' : ''}`}
-                  onClick={() => handleSelectVoice('')}
-                >
-                  <div className="voice-item-info">
-                    <span className="voice-name">System Default</span>
-                    <span className="voice-lang">Browser default voice</span>
-                  </div>
-                  {selectedVoiceName === '' && <Check size={16} color="var(--brand-accent)" />}
-                </button>
-                {['en', 'other'].map(group => {
-                  const voices = availableVoices.filter(v =>
-                    group === 'en' ? v.lang.startsWith('en') : !v.lang.startsWith('en')
-                  )
-                  if (!voices.length) return null
-                  return (
-                    <div key={group}>
-                      <p className="voice-group-label">{group === 'en' ? 'English' : 'Other Languages'}</p>
-                      {voices.map(voice => (
-                        <button
-                          key={voice.name}
-                          className={`voice-item ${selectedVoiceName === voice.name ? 'active' : ''}`}
-                          onClick={() => handleSelectVoice(voice.name)}
-                        >
-                          <div className="voice-item-info">
-                            <span className="voice-name">{voice.name}</span>
-                            <span className="voice-lang">{voice.lang}{voice.localService ? ' · Local' : ' · Online'}</span>
-                          </div>
-                          {selectedVoiceName === voice.name && <Check size={16} color="var(--brand-accent)" />}
-                        </button>
-                      ))}
+                {YARNGPT_VOICES.map(voice => (
+                  <button
+                    key={voice.name}
+                    className={`voice-item ${selectedVoiceName === voice.name ? 'active' : ''}`}
+                    onClick={() => handleSelectVoice(voice.name)}
+                  >
+                    <div className="voice-item-info">
+                      <span className="voice-name">{voice.name}</span>
+                      <span className="voice-lang">{voice.desc}</span>
                     </div>
-                  )
-                })}
+                    {selectedVoiceName === voice.name && <Check size={16} color="var(--brand-accent)" />}
+                  </button>
+                ))}
               </div>
-            )}
           </div>
         </div>
       )}
@@ -662,7 +649,8 @@ export const Bible = () => {
                         verseId={`verse-row-${idx}`}
                         isActiveReading={chapterPlaying && activeVerseIdx === idx}
                         chapterPlaying={chapterPlaying}
-                        getSelectedVoice={getSelectedVoice}
+                        isPlaying={currentlyPlayingVerseIdx === idx}
+                        onPlayToggle={() => handlePlayToggle(idx)}
                       />
                     ))}
                   </div>

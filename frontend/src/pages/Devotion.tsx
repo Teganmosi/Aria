@@ -1,7 +1,8 @@
 // @ts-nocheck
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Sun, Sparkles, Heart, RefreshCw, Check, Send, Volume2, VolumeX } from 'lucide-react'
-import { aiService, devotionService } from '../services/api'
+import { aiService, devotionService, ttsService } from '../services/api'
+import { useAuthStore } from '../store/auth-store'
 import { AnimatedBackground } from '../components/ui/SharedComponents'
 
 const DURATION_OPTIONS = [
@@ -20,8 +21,30 @@ export const Devotion = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [devotionId, setDevotionId] = useState(null)
   const [teachingPlaying, setTeachingPlaying] = useState(false)
+  const { user } = useAuthStore()
   const messagesEndRef = useRef(null)
-  const teachingUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+
+  const FRONTEND_VOICE_MAP = {
+    alloy: 'Osagie',
+    ash: 'Jude',
+    ballad: 'Femi',
+    coral: 'Adaora',
+    echo: 'Umar',
+    sage: 'Osagie',
+    stella: 'Wura',
+    verse: 'Idera',
+  }
+
+  // Stop audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+    }
+  }, [])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -125,21 +148,38 @@ export const Devotion = () => {
     }
   }
 
-  const toggleTeachingAudio = useCallback((text: string) => {
+  const toggleTeachingAudio = useCallback(async (text: string) => {
     if (teachingPlaying) {
-      window.speechSynthesis.cancel()
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
       setTeachingPlaying(false)
       return
     }
-    const utt = new SpeechSynthesisUtterance(text)
-    utt.rate = 0.92
-    utt.pitch = 1
-    utt.onend = () => setTeachingPlaying(false)
-    utt.onerror = () => setTeachingPlaying(false)
-    teachingUtteranceRef.current = utt
-    window.speechSynthesis.speak(utt)
-    setTeachingPlaying(true)
-  }, [teachingPlaying])
+    
+    try {
+      const userVoice = user?.aria_voice || 'verse'
+      const voice = FRONTEND_VOICE_MAP[userVoice] || 'Idera'
+      const url = ttsService.getSpeechUrl(text, voice)
+      
+      const audio = new Audio(url)
+      audioRef.current = audio
+      
+      audio.onended = () => {
+        setTeachingPlaying(false)
+      }
+      audio.onerror = () => {
+        setTeachingPlaying(false)
+      }
+      
+      await audio.play()
+      setTeachingPlaying(true)
+    } catch (err) {
+      console.error("Teaching TTS playback error:", err)
+      setTeachingPlaying(false)
+    }
+  }, [teachingPlaying, user?.aria_voice])
 
   return (
     <div className="min-h-full relative flex flex-col overflow-hidden">

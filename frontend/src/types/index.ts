@@ -123,6 +123,7 @@ export interface AuthState {
   register: (email: string, password: string, fullName: string) => Promise<AuthResponse>
   logout: () => void
   refreshUser: () => Promise<void>
+  exchangeOAuthToken: (accessToken: string, refreshToken?: string) => Promise<AuthResponse>
 }
 
 // ─── WebSocket ───────────────────────────────────────────────────────────────

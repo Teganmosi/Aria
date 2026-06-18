@@ -8,10 +8,13 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     nvidia_api_key: str = ""
     api_bible_key: str = ""
+    yarngpt_api_key: str = ""
+    google_application_credentials: Optional[str] = None
+    gcp_service_account_json: Optional[str] = None
     
-    # Supabase (Legacy/Empty)
-    supabase_url: Optional[str] = ""
-    supabase_key: Optional[str] = ""
+    # Supabase Configuration
+    supabase_url: str = ""
+    supabase_key: str = ""
     
     # Database
     database_url: str = "postgresql://postgres:password@localhost:5433/aria"
@@ -21,6 +24,7 @@ class Settings(BaseSettings):
     redis_enabled: bool = False
     
     # Application Configuration
+    aria_custom_prompt: Optional[str] = None # Added support for custom prompt
     app_name: str = "Aria - Your Spiritual Companion"
     app_version: str = "1.0.0"
     debug: bool = False
@@ -44,6 +48,9 @@ class Settings(BaseSettings):
         self.openai_api_key = os.getenv('OPENAI_API_KEY', self.openai_api_key)
         self.nvidia_api_key = os.getenv('NVIDIA_API_KEY', self.nvidia_api_key)
         self.api_bible_key = os.getenv('API_BIBLE_KEY', self.api_bible_key)
+        self.yarngpt_api_key = os.getenv('YARNGPT_API_KEY', self.yarngpt_api_key)
+        self.google_application_credentials = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', self.google_application_credentials)
+        self.gcp_service_account_json = os.getenv('GCP_SERVICE_ACCOUNT_JSON', self.gcp_service_account_json)
         env_secret = os.getenv('SECRET_KEY')
         if env_secret:
             self.secret_key = env_secret

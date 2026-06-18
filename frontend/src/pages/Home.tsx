@@ -6,7 +6,7 @@ import {
   Settings, Bookmark, ArrowRight, Quote, AlignLeft,
   BookOpen, ChevronRight, CheckCircle2, Volume2, VolumeX
 } from 'lucide-react'
-import { notesService } from '../services/api'
+import { notesService, ttsService } from '../services/api'
 import { useHomeData } from '../hooks/use-home-data'
 import { useAuthStore } from '../store/auth-store'
 
@@ -112,7 +112,19 @@ export const Home = () => {
   const [isSaved, setIsSaved] = useState(false)
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
   const [mannaPlaying, setMannaPlaying] = useState(false)
-  const mannaUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  
+  // Maps stored user voices to YarnGPT voice names
+  const FRONTEND_VOICE_MAP = {
+    alloy: 'Osagie',
+    ash: 'Jude',
+    ballad: 'Femi',
+    coral: 'Adaora',
+    echo: 'Umar',
+    sage: 'Osagie',
+    stella: 'Wura',
+    verse: 'Idera',
+  }
 
   const { data: homeData } = useHomeData()
   const stats = homeData?.stats ?? { streak_days: 7, streak_history: [true, true, true, true, true, true, false] }
@@ -147,6 +159,16 @@ export const Home = () => {
     return `${Math.round(diffHrs / 24)}D AGO`
   }
 
+  // Stop audio on unmount
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
+    }
+  }, [])
+
   const handleSaveManna = async () => {
     if (isSaved || !verseObj.daily_manna) return
     const manna = verseObj.daily_manna
@@ -164,9 +186,12 @@ export const Home = () => {
     } catch { }
   }
 
-  const toggleMannaAudio = useCallback(() => {
+  const toggleMannaAudio = useCallback(async () => {
     if (mannaPlaying) {
-      window.speechSynthesis.cancel()
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current = null
+      }
       setMannaPlaying(false)
       return
     }
@@ -175,15 +200,29 @@ export const Home = () => {
     const text = typeof manna === 'object'
       ? `${manna.title}. ${manna.reflection} ${manna.prayer} Today's application: ${manna.application}`
       : manna
-    const utt = new SpeechSynthesisUtterance(text)
-    utt.rate = 0.92
-    utt.pitch = 1
-    utt.onend = () => setMannaPlaying(false)
-    utt.onerror = () => setMannaPlaying(false)
-    mannaUtteranceRef.current = utt
-    window.speechSynthesis.speak(utt)
-    setMannaPlaying(true)
-  }, [mannaPlaying, verseObj.daily_manna])
+
+    try {
+      const userVoice = user?.aria_voice || 'verse'
+      const voice = FRONTEND_VOICE_MAP[userVoice] || 'Idera'
+      const url = ttsService.getSpeechUrl(text, voice)
+      
+      const audio = new Audio(url)
+      audioRef.current = audio
+      
+      audio.onended = () => {
+        setMannaPlaying(false)
+      }
+      audio.onerror = () => {
+        setMannaPlaying(false)
+      }
+      
+      await audio.play()
+      setMannaPlaying(true)
+    } catch (err) {
+      console.error("Manna TTS playback error:", err)
+      setMannaPlaying(false)
+    }
+  }, [mannaPlaying, verseObj.daily_manna, user?.aria_voice])
 
   return (
     <div className="home-container">

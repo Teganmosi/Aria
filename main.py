@@ -380,6 +380,34 @@ async def get_me(current_user: Dict[str, Any] = Depends(get_current_user)):
     return current_user
 
 
+@app.get("/api/v1/auth/oauth/google")
+async def oauth_google(redirect_to: str):
+    """Redirect user to Supabase Google OAuth authorize endpoint"""
+    from fastapi.responses import RedirectResponse
+    if not settings.supabase_url:
+        raise HTTPException(status_code=400, detail="Supabase URL not configured")
+    authorize_url = f"{settings.supabase_url}/auth/v1/authorize?provider=google&redirect_to={redirect_to}"
+    return RedirectResponse(url=authorize_url)
+
+
+class OAuthExchangeRequest(BaseModel):
+    access_token: str
+
+
+@app.post("/api/v1/auth/oauth/exchange", response_model=Dict[str, Any])
+async def oauth_exchange(request_data: OAuthExchangeRequest):
+    """Exchange a Supabase OAuth access token for a backend local JWT token"""
+    from auth import supabase_oauth_exchange
+    result = supabase_oauth_exchange(request_data.access_token)
+    if not result.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.get("error", "OAuth exchange failed"),
+        )
+    return result
+
+
+
 # ==================== Profile Endpoints ====================
 
 
@@ -1166,6 +1194,241 @@ async def create_voice_session(
     }
 
 
+# GCP Service Account Credentials Setup
+if settings.google_application_credentials:
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = settings.google_application_credentials
+    logger.info(f"🔑 Google Cloud credentials file path set to: {settings.google_application_credentials}")
+elif settings.gcp_service_account_json:
+    try:
+        if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+            gcp_creds_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gcp-credentials-temp.json")
+            creds_data = json.loads(settings.gcp_service_account_json)
+            with open(gcp_creds_path, "w", encoding="utf-8") as f:
+                json.dump(creds_data, f)
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gcp_creds_path
+            logger.info("🔑 Google Cloud Service Account credentials written dynamically from environment string.")
+    except Exception as e:
+        logger.error(f"❌ Failed to set up dynamic GCP credentials from GCP_SERVICE_ACCOUNT_JSON: {e}")
+
+_GCP_VOICE_MAP = {
+    "Idera": {"language_code": "en-GB", "name": "en-GB-Neural2-A"},
+    "Emma": {"language_code": "en-GB", "name": "en-GB-Neural2-B"},
+    "Zainab": {"language_code": "en-GB", "name": "en-GB-Neural2-C"},
+    "Osagie": {"language_code": "en-GB", "name": "en-GB-Neural2-D"},
+    "Wura": {"language_code": "en-US", "name": "en-US-Neural2-F"},
+    "Jude": {"language_code": "en-US", "name": "en-US-Neural2-D"},
+    "Chinenye": {"language_code": "en-US", "name": "en-US-Neural2-H"},
+    "Tayo": {"language_code": "en-US", "name": "en-US-Neural2-I"},
+    "Regina": {"language_code": "en-US", "name": "en-US-Neural2-F"},
+    "Femi": {"language_code": "en-GB", "name": "en-GB-Neural2-D"},
+    "Adaora": {"language_code": "en-GB", "name": "en-GB-Neural2-A"},
+    "Umar": {"language_code": "en-US", "name": "en-US-Neural2-J"},
+    "Mary": {"language_code": "en-US", "name": "en-US-Neural2-C"},
+    "Nonso": {"language_code": "en-US", "name": "en-US-Neural2-J"},
+    "Remi": {"language_code": "en-GB", "name": "en-GB-Neural2-C"},
+    "Adam": {"language_code": "en-US", "name": "en-US-Neural2-D"},
+}
+
+def _is_gcp_tts_configured() -> bool:
+    """Check if Google Cloud credentials are set up"""
+    creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    return bool(creds_path and os.path.exists(creds_path))
+
+def _generate_gcp_tts(text: str, voice_name: str, response_format: str) -> Optional[bytes]:
+    """Generate speech using Google Cloud Text-to-Speech premium voices"""
+    try:
+        from google.cloud import texttospeech
+        
+        voice_info = _GCP_VOICE_MAP.get(voice_name, {"language_code": "en-US", "name": "en-US-Neural2-F"})
+        
+        client = texttospeech.TextToSpeechClient()
+        synthesis_input = texttospeech.SynthesisInput(text=text)
+        
+        voice = texttospeech.VoiceSelectionParams(
+            language_code=voice_info["language_code"],
+            name=voice_info["name"]
+        )
+        
+        encoding_map = {
+            "mp3": texttospeech.AudioEncoding.MP3,
+            "wav": texttospeech.AudioEncoding.LINEAR16,
+            "ogg": texttospeech.AudioEncoding.OGG_OPUS,
+            "opus": texttospeech.AudioEncoding.OGG_OPUS,
+            "flac": texttospeech.AudioEncoding.LINEAR16,
+        }
+        encoding = encoding_map.get(response_format.lower(), texttospeech.AudioEncoding.MP3)
+        
+        audio_config = texttospeech.AudioConfig(
+            audio_encoding=encoding
+        )
+        
+        response = client.synthesize_speech(
+            input=synthesis_input,
+            voice=voice,
+            audio_config=audio_config
+        )
+        return response.audio_content
+    except Exception:
+        logger.exception(f"Error generating Google Cloud TTS for voice {voice_name}")
+        return None
+
+
+class TTSRequest(BaseModel):
+    text: str = Field(..., max_length=2000)
+    voice: Optional[str] = "Idera"
+    response_format: Optional[str] = "mp3"
+
+
+async def _generate_tts_bytes(text: str, voice: str, response_format: str) -> bytes:
+    """Generate TTS bytes using GCP (primary), YarnGPT, or OpenAI (fallbacks)"""
+    # 1. Try Google Cloud Text-to-Speech
+    if _is_gcp_tts_configured():
+        logger.info(f"Generating TTS using Google Cloud (voice={voice})")
+        gcp_bytes = _generate_gcp_tts(text, voice, response_format)
+        if gcp_bytes:
+            return gcp_bytes
+        logger.warning("Google Cloud TTS generation failed; attempting fallback...")
+
+    # 2. Try YarnGPT
+    if settings.yarngpt_api_key and settings.yarngpt_api_key != "your_yarngpt_api_key_here":
+        logger.info(f"Generating TTS using YarnGPT (voice={voice})")
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                headers = {
+                    "Authorization": f"Bearer {settings.yarngpt_api_key}",
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "text": text,
+                    "voice": voice,
+                    "response_format": response_format
+                }
+                response = await client.post(
+                    "https://yarngpt.ai/api/v1/tts",
+                    headers=headers,
+                    json=payload
+                )
+                if response.status_code == 200:
+                    return response.content
+                else:
+                    logger.error(f"YarnGPT TTS API returned error {response.status_code}: {response.text}")
+        except Exception:
+            logger.exception("YarnGPT TTS generation failed; attempting fallback...")
+
+    # 3. Try OpenAI
+    if settings.openai_api_key and settings.openai_api_key != "your_openai_api_key_here":
+        logger.info(f"Generating TTS using OpenAI (voice={voice})")
+        try:
+            from openai import AsyncOpenAI
+            oai = AsyncOpenAI(api_key=settings.openai_api_key)
+            openai_voice_map = {
+                "Osagie": "alloy", "Jude": "echo", "Femi": "onyx",
+                "Adaora": "nova", "Umar": "echo", "Wura": "shimmer", "Idera": "nova"
+            }
+            oai_voice = openai_voice_map.get(voice, "nova")
+            oai_format = response_format.lower()
+            if oai_format not in ["mp3", "opus", "aac", "flac", "wav", "pcm"]:
+                oai_format = "mp3"
+            tts_response = await oai.audio.speech.create(
+                model="tts-1",
+                voice=oai_voice,
+                input=text,
+                response_format=oai_format,
+            )
+            return tts_response.content
+        except Exception:
+            logger.exception("OpenAI TTS generation failed")
+
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="No Text-to-Speech provider is available or configured."
+    )
+
+
+@app.post("/api/v1/tts")
+async def text_to_speech(request: TTSRequest):
+    """Proxy Text-to-Speech requests to the active TTS provider with fallback"""
+    try:
+        content = await _generate_tts_bytes(request.text, request.voice, request.response_format)
+        
+        from fastapi.responses import StreamingResponse
+        import io
+        
+        content_types = {
+            "mp3": "audio/mpeg",
+            "wav": "audio/wav",
+            "opus": "audio/opus",
+            "flac": "audio/flac"
+        }
+        media_type = content_types.get(request.response_format.lower(), "audio/mpeg")
+        
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type=media_type
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Unexpected error during POST TTS request")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error during speech conversion: {e}"
+        )
+
+
+@app.get("/api/v1/tts")
+async def text_to_speech_get(
+    text: str,
+    voice: Optional[str] = "Idera",
+    response_format: Optional[str] = "mp3",
+    token: Optional[str] = None
+):
+    """Proxy Text-to-Speech requests to the active TTS provider via GET for progressive streaming"""
+    if token:
+        try:
+            from auth import get_current_user_from_token
+            get_current_user_from_token(token)
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired authentication token."
+            )
+            
+    try:
+        content = await _generate_tts_bytes(text, voice, response_format)
+        
+        from fastapi.responses import StreamingResponse
+        import io
+        
+        content_types = {
+            "mp3": "audio/mpeg",
+            "wav": "audio/wav",
+            "opus": "audio/opus",
+            "flac": "audio/flac"
+        }
+        media_type = content_types.get(response_format.lower(), "audio/mpeg")
+        
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache",
+        }
+        
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type=media_type,
+            headers=headers
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Unexpected error during GET TTS request")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected error during speech conversion: {e}"
+        )
+
+
 # ==================== Voice Call WebSocket ====================
 
 
@@ -1199,11 +1462,16 @@ class VoiceCallManager:
 voice_call_manager = VoiceCallManager()
 
 
-# Maps Realtime API voice names → TTS voice names (different model families)
+# Maps Realtime API voice names → YarnGPT voice names
 _TTS_VOICE_MAP: Dict[str, str] = {
-    "alloy": "alloy", "ash": "echo", "ballad": "fable",
-    "coral": "nova", "echo": "echo", "sage": "nova",
-    "stella": "shimmer", "verse": "nova",
+    "alloy": "Osagie",
+    "ash": "Jude",
+    "ballad": "Femi",
+    "coral": "Adaora",
+    "echo": "Umar",
+    "sage": "Osagie",
+    "stella": "Wura",
+    "verse": "Idera",
 }
 
 
@@ -1227,6 +1495,18 @@ def _pcm16_to_wav(pcm_bytes: bytes, sample_rate: int = 24000) -> bytes:
         wf.setframerate(sample_rate)
         wf.writeframes(pcm_bytes)
     return buf.getvalue()
+
+
+def _wav_to_pcm16(wav_bytes: bytes) -> bytes:
+    """Extract raw PCM bytes from a WAV container."""
+    import io, wave
+    try:
+        with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
+            params = wf.getparams()
+            return wf.readframes(params.nframes)
+    except Exception:
+        logger.exception("Error converting WAV to PCM")
+        return b""
 
 
 @app.websocket("/ws/voice-call/{call_id}")
@@ -1315,19 +1595,67 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
             )
 
             await voice_call_manager.send_message(call_id, {"type": "aria_speaking", "speaking": True})
-            tts_response = await oai.audio.speech.create(
-                model="tts-1",
-                voice=tts_voice,
-                input=ai_text,
-                response_format="pcm",
-            )
-            pcm_out = tts_response.content
-            chunk_size = 8192
-            for i in range(0, len(pcm_out), chunk_size):
-                await voice_call_manager.send_message(call_id, {
-                    "type": "audio_output",
-                    "audio": base64.b64encode(pcm_out[i:i + chunk_size]).decode(),
-                })
+            pcm_out = b""
+            
+            # 1. Try Google Cloud TTS (WAV format)
+            if _is_gcp_tts_configured():
+                logger.info(f"Generating WebSocket voice using Google Cloud (voice={tts_voice})")
+                gcp_bytes = _generate_gcp_tts(ai_text, tts_voice, "wav")
+                if gcp_bytes:
+                    pcm_out = _wav_to_pcm16(gcp_bytes)
+            
+            # 2. Try YarnGPT
+            if not pcm_out and settings.yarngpt_api_key and settings.yarngpt_api_key != "your_yarngpt_api_key_here":
+                try:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        headers = {
+                            "Authorization": f"Bearer {settings.yarngpt_api_key}",
+                            "Content-Type": "application/json"
+                        }
+                        payload = {
+                            "text": ai_text,
+                            "voice": tts_voice,
+                            "response_format": "wav"
+                        }
+                        response = await client.post(
+                            "https://yarngpt.ai/api/v1/tts",
+                            headers=headers,
+                            json=payload
+                        )
+                        if response.status_code == 200:
+                            pcm_out = _wav_to_pcm16(response.content)
+                        else:
+                            logger.error(f"YarnGPT WebSocket TTS API returned error {response.status_code}: {response.text}")
+                except Exception:
+                    logger.exception("Error generating WebSocket voice with YarnGPT")
+            
+            # 3. Fallback to OpenAI if both GCP and YarnGPT fail or are unconfigured
+            if not pcm_out:
+                logger.info("Falling back to OpenAI for WebSocket Voice Call TTS")
+                try:
+                    openai_voice_map = {
+                        "Osagie": "alloy", "Jude": "echo", "Femi": "onyx",
+                        "Adaora": "nova", "Umar": "echo", "Wura": "shimmer", "Idera": "nova"
+                    }
+                    oai_voice = openai_voice_map.get(tts_voice, "nova")
+                    tts_response = await oai.audio.speech.create(
+                        model="tts-1",
+                        voice=oai_voice,
+                        input=ai_text,
+                        response_format="pcm",
+                    )
+                    pcm_out = tts_response.content
+                except Exception:
+                    logger.exception("Failed to fallback to OpenAI for Voice Call TTS")
+
+            if pcm_out:
+                chunk_size = 8192
+                for i in range(0, len(pcm_out), chunk_size):
+                    await voice_call_manager.send_message(call_id, {
+                        "type": "audio_output",
+                        "audio": base64.b64encode(pcm_out[i:i + chunk_size]).decode(),
+                    })
         except Exception:
             logger.exception("[VoiceCall] process_turn error")
         finally:

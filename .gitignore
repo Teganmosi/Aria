@@ -35,4 +35,5 @@ htmlcov/
 # OS generated files
 .DS_Store
 Thumbs.db
+gcp-credentials-temp.json
 ```

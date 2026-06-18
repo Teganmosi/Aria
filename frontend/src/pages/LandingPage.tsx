@@ -2,6 +2,75 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MessageSquare, Mic, BookOpen, Calendar, ArrowRight, Play, Sparkles } from 'lucide-react'
 import { AnimatedBackground, ThemeToggle } from '../components/ui/SharedComponents'
+import InteractiveCanvas from '../components/ui/InteractiveCanvas'
+import BreathingSpace from '../components/ui/BreathingSpace'
+
+// Reusable Spotlight Bento Card Component
+interface BentoCardProps {
+  children: React.ReactNode
+  className?: string
+  style?: React.CSSProperties
+  backgroundImage?: string
+}
+
+const BentoCard = ({ children, className = '', style = {}, backgroundImage = '' }: BentoCardProps) => {
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [coords, setCoords] = useState({ x: -1000, y: -1000 })
+  const [isHovered, setIsHovered] = useState(false)
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!cardRef.current) return
+    const rect = cardRef.current.getBoundingClientRect()
+    setCoords({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    })
+  }
+
+  // Choose spotlight glow color based on the card background to optimize contrast
+  const isDarkCard = style.background === '#0B192C'
+  const isYellowCard = style.background === 'var(--brand-accent)'
+  
+  let spotlightColor = 'rgba(245, 206, 77, 0.08)' // default golden glow
+  if (isYellowCard) {
+    spotlightColor = 'rgba(11, 25, 44, 0.12)' // dark contrast glow on yellow card
+  } else if (isDarkCard) {
+    spotlightColor = 'rgba(245, 206, 77, 0.12)' // stronger golden glow on dark card
+  }
+
+  return (
+    <div
+      ref={cardRef}
+      onMouseMove={handleMouseMove}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => {
+        setIsHovered(false)
+        setCoords({ x: -1000, y: -1000 })
+      }}
+      className={`l-card rounded-[28px] relative overflow-hidden border border-[var(--border-color)] flex flex-col ${className}`}
+      style={{ ...style }}
+    >
+      {/* Dynamic spotlight glow overlay */}
+      {isHovered && (
+        <div
+          className="pointer-events-none absolute inset-0 transition-opacity duration-300"
+          style={{
+            background: `radial-gradient(350px circle at ${coords.x}px ${coords.y}px, ${spotlightColor}, transparent 80%)`,
+            zIndex: 1
+          }}
+        />
+      )}
+      {backgroundImage && (
+        <div className="absolute inset-0" style={{ opacity: 0.06 }}>
+          <img src={backgroundImage} className="w-full h-full object-cover" alt="" aria-hidden="true" />
+        </div>
+      )}
+      <div className="relative z-10 flex flex-col h-full w-full">
+        {children}
+      </div>
+    </div>
+  )
+}
 
 export const LandingPage = () => {
   const navigate = useNavigate()
@@ -189,7 +258,7 @@ export const LandingPage = () => {
         {/* Parallax background */}
         <div
           ref={heroBgRef}
-          className="absolute left-0 right-0 pointer-events-none will-change-transform"
+          className="absolute left-0 right-0 pointer-events-none will-change-transform z-0"
           style={{ top: '-20%', bottom: '-20%' }}
         >
           <img
@@ -200,15 +269,18 @@ export const LandingPage = () => {
           />
         </div>
 
+        {/* Dynamic Interactive Particle Field */}
+        <InteractiveCanvas />
+
         {/* Overlay */}
         <div
-          className="absolute inset-0 pointer-events-none"
+          className="absolute inset-0 pointer-events-none z-10"
           style={{ background: 'linear-gradient(180deg, rgba(6,14,26,0.55) 0%, rgba(6,14,26,0.42) 45%, rgba(6,14,26,0.80) 100%)' }}
         />
 
         {/* Centered content */}
         <div
-          className="relative z-10 flex flex-col items-center text-center"
+          className="relative z-20 flex flex-col items-center text-center"
           style={{ padding: '5rem 1.5rem', maxWidth: '800px', width: '100%' }}
         >
           <p className="l-h1 text-[0.7rem] font-bold tracking-[0.24em] uppercase mb-6" style={{ color: 'rgba(255,255,255,0.52)' }}>
@@ -257,7 +329,7 @@ export const LandingPage = () => {
 
         {/* Bottom fade to page background */}
         <div
-          className="absolute bottom-0 left-0 right-0 pointer-events-none"
+          className="absolute bottom-0 left-0 right-0 pointer-events-none z-10"
           style={{ height: '140px', background: 'linear-gradient(to bottom, transparent, var(--bg-main))' }}
         />
       </section>
@@ -294,46 +366,35 @@ export const LandingPage = () => {
           {/* Bento row 1 */}
           <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1.65fr_1fr]">
             {/* Emotional Support */}
-            <div
-              data-reveal
-              className="l-card glass-panel rounded-[28px] relative overflow-hidden border border-[var(--border-color)] flex flex-col"
+            <BentoCard
+              className="glass-panel"
               style={{ minHeight: '420px', padding: '3rem' }}
+              backgroundImage="https://picsum.photos/seed/peaceful-reading-light/1200/600"
             >
-              <div className="absolute inset-0" style={{ opacity: 0.06 }}>
-                <img
-                  src="https://picsum.photos/seed/peaceful-reading-light/1200/600"
-                  className="w-full h-full object-cover"
-                  alt=""
-                  aria-hidden="true"
-                />
+              <MessageSquare size={26} color="var(--text-main)" style={{ marginBottom: '2.25rem' }} />
+              <h3
+                className="font-serif mb-4"
+                style={{ fontStyle: 'italic', fontSize: '2.5rem', color: 'var(--text-main)', lineHeight: 1.08 }}
+              >
+                Emotional Support
+              </h3>
+              <p style={{ color: 'var(--text-secondary)', maxWidth: '380px', lineHeight: 1.7, fontSize: '1rem' }}>
+                Share the weight of your day. Aria listens with empathy and responds with comfort rooted in Scripture.
+              </p>
+              <div
+                className="flex items-center gap-4 mt-auto pt-8 rounded-[14px] self-start bg-[var(--bg-card)]"
+                style={{ padding: '1rem 1.5rem', boxShadow: 'var(--shadow-main)', marginTop: '2.5rem' }}
+              >
+                <div className="w-8 h-8 bg-[var(--brand-solid)] rounded-full shrink-0" />
+                <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                  "Let's look at Philippians 4:6 together..."
+                </span>
               </div>
-              <div className="relative z-10 flex flex-col h-full">
-                <MessageSquare size={26} color="var(--text-main)" style={{ marginBottom: '2.25rem' }} />
-                <h3
-                  className="font-serif mb-4"
-                  style={{ fontStyle: 'italic', fontSize: '2.5rem', color: 'var(--text-main)', lineHeight: 1.08 }}
-                >
-                  Emotional Support
-                </h3>
-                <p style={{ color: 'var(--text-secondary)', maxWidth: '380px', lineHeight: 1.7, fontSize: '1rem' }}>
-                  Share the weight of your day. Aria listens with empathy and responds with comfort rooted in Scripture.
-                </p>
-                <div
-                  className="flex items-center gap-4 mt-auto pt-8 rounded-[14px] self-start bg-[var(--bg-card)]"
-                  style={{ padding: '1rem 1.5rem', boxShadow: 'var(--shadow-main)', marginTop: '2.5rem' }}
-                >
-                  <div className="w-8 h-8 bg-[var(--brand-solid)] rounded-full shrink-0" />
-                  <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
-                    "Let's look at Philippians 4:6 together..."
-                  </span>
-                </div>
-              </div>
-            </div>
+            </BentoCard>
 
             {/* Voice Guidance */}
-            <div
-              data-reveal
-              className="l-card rounded-[28px] flex flex-col items-center justify-center text-center relative overflow-hidden border border-[var(--border-color)]"
+            <BentoCard
+              className="items-center justify-center text-center"
               style={{ background: 'var(--brand-accent)', minHeight: '420px', padding: '3rem 2.5rem' }}
             >
               <div
@@ -355,15 +416,13 @@ export const LandingPage = () => {
               >
                 Call Aria
               </button>
-            </div>
+            </BentoCard>
           </div>
 
           {/* Bento row 2 */}
           <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
             {/* Bible Study */}
-            <div
-              data-reveal
-              className="l-card rounded-[28px] flex flex-col"
+            <BentoCard
               style={{ background: '#0B192C', minHeight: '380px', padding: '3rem' }}
             >
               <BookOpen size={30} color="var(--brand-accent)" style={{ marginBottom: '2.25rem' }} />
@@ -379,12 +438,11 @@ export const LandingPage = () => {
               >
                 Open a Lesson <ArrowRight size={15} />
               </button>
-            </div>
+            </BentoCard>
 
             {/* Daily Devotions */}
-            <div
-              data-reveal
-              className="l-card rounded-[28px] flex overflow-hidden border border-[var(--border-color)]"
+            <BentoCard
+              className="flex-row"
               style={{ background: 'var(--bg-card)', minHeight: '380px' }}
             >
               <div className="flex flex-col justify-center" style={{ padding: '3rem', flex: 1 }}>
@@ -406,8 +464,29 @@ export const LandingPage = () => {
                   alt="Forest path at dawn"
                 />
               </div>
-            </div>
+            </BentoCard>
           </div>
+        </div>
+      </section>
+
+      {/* ─── INTERACTIVE MEDITATION CENTERPIECE ─── */}
+      <section
+        className="relative z-10"
+        style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 1.5rem 8rem' }}
+      >
+        <div className="text-center mb-12" data-reveal>
+          <h2
+            className="font-serif"
+            style={{ fontSize: 'clamp(2.25rem, 4vw, 3.5rem)', color: 'var(--text-main)', marginBottom: '1rem' }}
+          >
+            Find Still Waters.
+          </h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '1.05rem', maxWidth: '520px', margin: '0 auto', lineHeight: 1.65 }}>
+            Experience box breathing synchronized with Scripture reflections to quiet your mind and center your focus.
+          </p>
+        </div>
+        <div data-reveal>
+          <BreathingSpace />
         </div>
       </section>
 
