@@ -115,14 +115,27 @@ class Database:
     @contextmanager
     def get_connection(self):
         conn = self._pool.getconn()
+        close_conn = False
         try:
             yield conn
             conn.commit()
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            logger.warning(f"Database connection error: {e}. Discarding connection from pool.")
+            close_conn = True
+            raise
         except Exception:
-            conn.rollback()
+            try:
+                if conn and not conn.closed:
+                    conn.rollback()
+            except Exception as rollback_err:
+                logger.warning(f"Failed to rollback connection: {rollback_err}")
+                close_conn = True
             raise
         finally:
-            self._pool.putconn(conn)
+            try:
+                self._pool.putconn(conn, close=close_conn)
+            except Exception as put_err:
+                logger.error(f"Error returning connection to pool: {put_err}")
 
     def _ensure_tables(self):
         try:

@@ -189,11 +189,29 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
     
     def __init__(self):
         if self._client is None:
-            self._client = OpenAI(
-                base_url="https://integrate.api.nvidia.com/v1",
-                api_key=settings.nvidia_api_key
-            )
-            logger.info("OpenAI client initialized for Nvidia NIM")
+            if settings.nvidia_api_key and settings.nvidia_api_key != "your_nvidia_api_key_here":
+                self._client = OpenAI(
+                    base_url="https://integrate.api.nvidia.com/v1",
+                    api_key=settings.nvidia_api_key
+                )
+                self.model_name = DEFAULT_MODEL
+                logger.info(f"OpenAI client initialized for Nvidia NIM (model: {self.model_name})")
+            elif settings.openai_api_key and settings.openai_api_key != "your_openai_api_key_here":
+                self._client = OpenAI(
+                    api_key=settings.openai_api_key
+                )
+                self.model_name = "gpt-4o-mini"
+                # Update AI_CONFIGS to use standard OpenAI model
+                for mode in self.AI_CONFIGS:
+                    self.AI_CONFIGS[mode]['model'] = "gpt-4o-mini"
+                logger.info("OpenAI client initialized for standard OpenAI (model: gpt-4o-mini)")
+            else:
+                self._client = OpenAI(
+                    base_url="https://integrate.api.nvidia.com/v1",
+                    api_key=""
+                )
+                self.model_name = DEFAULT_MODEL
+                logger.warning("No API key configured for standard OpenAI or Nvidia NIM")
     
     def _build_system_prompt(self, mode: str, custom_instructions: Optional[str] = None) -> str:
         """Assemble the full system prompt: mode prompt + translations block + user context."""
@@ -371,7 +389,7 @@ Choose from these themes or similar encouraging verses: peace, comfort, hope, st
                 messages = [{'role': 'user', 'content': prompt}]
                 
                 response = self._client.chat.completions.create(
-                    model=DEFAULT_MODEL,
+                    model=self.model_name,
                     messages=[
                         {'role': 'system', 'content': 'You are a compassionate spiritual companion. Always respond with valid JSON only.'},
                         *messages
@@ -437,7 +455,7 @@ Create a rich Daily Manna devotional in JSON with exactly these four fields:
 Respond with ONLY valid JSON, no markdown fences, no extra keys."""
 
             response = self._client.chat.completions.create(
-                model=DEFAULT_MODEL,
+                model=self.model_name,
                 messages=[
                     {'role': 'system', 'content': 'You are a compassionate spiritual companion. Return only valid JSON.'},
                     {'role': 'user', 'content': prompt},

@@ -1279,9 +1279,117 @@ class TTSRequest(BaseModel):
     response_format: Optional[str] = "mp3"
 
 
+def _split_text_into_chunks(text: str, max_chunk_len: int = 450) -> List[str]:
+    """Splits a long text into chunks of at most max_chunk_len characters, trying to split on sentence boundaries."""
+    if len(text) <= max_chunk_len:
+        return [text]
+    
+    import re
+    # Split on sentence boundaries: period, exclamation, question mark followed by space
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    chunks = []
+    current_chunk = []
+    current_len = 0
+    
+    for sentence in sentences:
+        if len(sentence) > max_chunk_len:
+            # If a single sentence is longer than max_chunk_len, we split it by words/spaces
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+                current_chunk = []
+                current_len = 0
+            
+            words = sentence.split(' ')
+            for word in words:
+                # If a single word is longer than max_chunk_len, we split by characters (rare)
+                if len(word) > max_chunk_len:
+                    if current_chunk:
+                        chunks.append(" ".join(current_chunk))
+                        current_chunk = []
+                        current_len = 0
+                    
+                    # Split word into chunks of max_chunk_len
+                    for i in range(0, len(word), max_chunk_len):
+                        chunks.append(word[i:i+max_chunk_len])
+                elif current_len + len(word) + 1 > max_chunk_len:
+                    chunks.append(" ".join(current_chunk))
+                    current_chunk = [word]
+                    current_len = len(word)
+                else:
+                    current_chunk.append(word)
+                    current_len += len(word) + 1
+        elif current_len + len(sentence) + 1 > max_chunk_len:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = [sentence]
+            current_len = len(sentence)
+        else:
+            current_chunk.append(sentence)
+            current_len += len(sentence) + 1
+            
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+        
+    return [c.strip() for c in chunks if c.strip()]
+
+
 async def _generate_tts_bytes(text: str, voice: str, response_format: str) -> bytes:
-    """Generate TTS bytes using GCP (primary), YarnGPT, or OpenAI (fallbacks)"""
-    # 1. Try Google Cloud Text-to-Speech
+    """Generate TTS bytes using Pocket-TTS (primary), GCP, YarnGPT, or OpenAI (fallbacks)"""
+    # 1. Try Pocket-TTS (Primary)
+    pocket_voice = POCKET_TTS_VOICE_MAP.get(voice, "cosette")
+    logger.info(f"Generating TTS using Pocket-TTS (voice={voice} -> {pocket_voice})")
+    try:
+        import httpx
+        # Split text if it's longer than 450 characters
+        chunks = _split_text_into_chunks(text, max_chunk_len=450)
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            all_pcm = []
+            for chunk_idx, chunk in enumerate(chunks):
+                logger.info(f"Generating Pocket-TTS chunk {chunk_idx + 1}/{len(chunks)}: length={len(chunk)}")
+                payload = {
+                    "text": chunk,
+                    "voice": pocket_voice
+                }
+                
+                chunk_wav = None
+                # Try POST first
+                response = await client.post(
+                    "https://teganmosi-realtime.hf.space/tts",
+                    json=payload
+                )
+                if response.status_code == 200:
+                    chunk_wav = response.content
+                else:
+                    logger.warning(f"Pocket-TTS POST failed for chunk {chunk_idx + 1} with status {response.status_code}; trying GET fallback...")
+                    # GET fallback
+                    response_get = await client.get(
+                        "https://teganmosi-realtime.hf.space/tts",
+                        params={"text": chunk, "voice": pocket_voice}
+                    )
+                    if response_get.status_code == 200:
+                        chunk_wav = response_get.content
+                    else:
+                        logger.error(f"Pocket-TTS GET also failed for chunk {chunk_idx + 1} with status {response_get.status_code}")
+                
+                if chunk_wav is None:
+                    raise RuntimeError(f"Failed to generate Pocket-TTS audio for chunk {chunk_idx + 1}")
+                
+                # Extract raw PCM bytes from WAV
+                chunk_pcm = _wav_to_pcm16(chunk_wav)
+                if not chunk_pcm:
+                    raise RuntimeError(f"Failed to extract PCM bytes from WAV for chunk {chunk_idx + 1}")
+                
+                all_pcm.append(chunk_pcm)
+            
+            # Combine all PCM and wrap in WAV
+            combined_pcm = b"".join(all_pcm)
+            combined_wav = _pcm16_to_wav(combined_pcm, sample_rate=24000)
+            return combined_wav
+            
+    except Exception:
+        logger.exception("Pocket-TTS generation failed; trying fallbacks...")
+
+    # 2. Try Google Cloud Text-to-Speech
     if _is_gcp_tts_configured():
         logger.info(f"Generating TTS using Google Cloud (voice={voice})")
         gcp_bytes = _generate_gcp_tts(text, voice, response_format)
@@ -1289,7 +1397,7 @@ async def _generate_tts_bytes(text: str, voice: str, response_format: str) -> by
             return gcp_bytes
         logger.warning("Google Cloud TTS generation failed; attempting fallback...")
 
-    # 2. Try YarnGPT
+    # 3. Try YarnGPT
     if settings.yarngpt_api_key and settings.yarngpt_api_key != "your_yarngpt_api_key_here":
         logger.info(f"Generating TTS using YarnGPT (voice={voice})")
         try:
@@ -1316,7 +1424,7 @@ async def _generate_tts_bytes(text: str, voice: str, response_format: str) -> by
         except Exception:
             logger.exception("YarnGPT TTS generation failed; attempting fallback...")
 
-    # 3. Try OpenAI
+    # 4. Try OpenAI
     if settings.openai_api_key and settings.openai_api_key != "your_openai_api_key_here":
         logger.info(f"Generating TTS using OpenAI (voice={voice})")
         try:
@@ -1362,6 +1470,8 @@ async def text_to_speech(request: TTSRequest):
             "flac": "audio/flac"
         }
         media_type = content_types.get(request.response_format.lower(), "audio/mpeg")
+        if content.startswith(b"RIFF"):
+            media_type = "audio/wav"
         
         return StreamingResponse(
             io.BytesIO(content),
@@ -1408,6 +1518,8 @@ async def text_to_speech_get(
             "flac": "audio/flac"
         }
         media_type = content_types.get(response_format.lower(), "audio/mpeg")
+        if content.startswith(b"RIFF"):
+            media_type = "audio/wav"
         
         headers = {
             "Accept-Ranges": "bytes",
@@ -1509,16 +1621,56 @@ def _wav_to_pcm16(wav_bytes: bytes) -> bytes:
         return b""
 
 
+POCKET_TTS_VOICE_MAP = {
+    "Osagie": "marius",
+    "Jude": "javert",
+    "Femi": "jean",
+    "Adaora": "alba",
+    "Umar": "charles",
+    "Wura": "anna",
+    "Idera": "cosette",
+    "nova": "cosette",
+    "alloy": "cosette",
+    "ash": "javert",
+    "ballad": "jean",
+    "coral": "alba",
+    "echo": "charles",
+    "sage": "cosette",
+    "stella": "anna",
+    "verse": "cosette",
+}
+
+
+def _resample_24k_to_16k_float32(pcm_bytes: bytes) -> bytes:
+    """Resample 24kHz 16-bit mono PCM to 16kHz Float32 PCM using linear interpolation."""
+    import numpy as np
+    pcm_data = np.frombuffer(pcm_bytes, dtype=np.int16)
+    if len(pcm_data) == 0:
+        return b""
+    # Convert to float32 normalized to [-1.0, 1.0]
+    float32_data = pcm_data.astype(np.float32) / 32768.0
+
+    # Resample 24000 to 16000 (ratio 2/3)
+    duration = len(float32_data) / 24000
+    num_target_samples = int(duration * 16000)
+    if num_target_samples == 0:
+        return b""
+
+    x_orig = np.arange(len(float32_data))
+    x_target = np.linspace(0, len(float32_data) - 1, num_target_samples)
+    resampled = np.interp(x_target, x_orig, float32_data).astype(np.float32)
+    return resampled.tobytes()
+
+
+# ==================== Voice Call WebSocket ====================
+
+
 @app.websocket("/ws/voice-call/{call_id}")
 async def websocket_voice_call(websocket: WebSocket, call_id: str):
-    """Voice call via Whisper STT → NVIDIA NIM → OpenAI TTS pipeline.
-
-    Replaces the OpenAI Realtime API (requires Tier 2) with a Tier-1-compatible
-    turn-based approach: accumulate PCM audio, detect end-of-turn by silence,
-    transcribe with Whisper, generate with NVIDIA NIM, speak with OpenAI TTS.
-    """
+    """Voice call websocket endpoint. Bridges frontend to the S2S Hugging Face space."""
     import base64
-    from openai import AsyncOpenAI
+    import websockets
+    import json
 
     try:
         user = get_current_user_websocket(websocket)
@@ -1527,231 +1679,215 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
         await websocket.close(code=4001, reason="Authentication failed")
         return
 
-    ai_config = ai_service.AI_CONFIGS.get("voiceCall", ai_service.AI_CONFIGS["general"])
-    custom_instructions = _get_user_custom_instructions(user) if user else None
-    voice_preference = user.get("aria_voice", "sage") if user else "sage"
-    tts_voice = _TTS_VOICE_MAP.get(voice_preference, "nova")
-    instructions = ai_config["system_prompt"]
-    if custom_instructions:
-        instructions = f"{instructions}\n\nUSER CUSTOMIZATION:\n{custom_instructions}"
+    voice_preference = user.get("aria_voice", "Adaora") if user else "Adaora"
 
+    # Build Aria's spiritual companion persona
+    ARIA_SPIRITUAL_SYSTEM_PROMPT = (
+        "You are Aria, a warm and deeply faithful spiritual companion. "
+        "You speak with the gentleness of a trusted pastor and the intimacy of a close friend who prays. "
+        "Your role is to listen attentively, encourage faith, and walk beside the user in their spiritual journey. "
+        "\n\n"
+        "GUIDELINES:\n"
+        "- Speak naturally and conversationally — you are in a voice call, so keep sentences short and flowing.\n"
+        "- Ground every response in Scripture. Quote a relevant Bible verse when it truly helps.\n"
+        "- Always validate the user's feelings before offering spiritual insight or comfort.\n"
+        "- Offer to pray with the user when they are struggling, grieving, or asking for strength.\n"
+        "- Never lecture. Ask questions to understand where the user is in their walk with God.\n"
+        "- Be culturally sensitive and inclusive across all Christian denominations.\n"
+        "- Keep responses brief in voice — 2 to 4 sentences unless the user asks for more depth.\n"
+        "- If you do not know something, admit it humbly and point to Scripture or prayer.\n"
+        "\n"
+        "You open every new conversation with a warm greeting and a gentle check-in, "
+        "such as: 'Hi, I'm Aria. How are you doing today? I'm here for you.'"
+    )
+
+    # Always use alba — warm, clear, feminine voice perfect for a spiritual companion
+    pocket_voice = "alba"
+    logger.info(f"Voice call {call_id}: voice={pocket_voice} (user preference: {voice_preference})")
+
+    s2s_url = "wss://teganmosi-realtime.hf.space/s2s"
+
+    async def connect_and_configure_s2s():
+        """Connect to S2S with exponential backoff retry (handles 1012 cold-start)."""
+        max_attempts = 5
+        for attempt in range(1, max_attempts + 1):
+            try:
+                logger.info(f"S2S connect attempt {attempt}/{max_attempts} for call {call_id}...")
+                ws = await websockets.connect(
+                    s2s_url, 
+                    open_timeout=15,
+                    ping_interval=30,
+                    ping_timeout=60
+                )
+                config_payload = {
+                    "type": "config",
+                    "voice": pocket_voice,
+                    "system_prompt": ARIA_SPIRITUAL_SYSTEM_PROMPT,
+                }
+                await ws.send(json.dumps(config_payload))
+                conf_response = await ws.recv()
+                logger.info(f"S2S configured (attempt {attempt}): {conf_response}")
+                return ws
+            except Exception as e:
+                logger.warning(f"S2S connect attempt {attempt} failed: {e}")
+                if attempt < max_attempts:
+                    wait = 2 ** (attempt - 1)   # 1s, 2s, 4s, 8s
+                    logger.info(f"Retrying in {wait}s...")
+                    await asyncio.sleep(wait)
+                else:
+                    raise
+
+    # Initial connection — close frontend if all retries fail
+    try:
+        s2s_ws = await connect_and_configure_s2s()
+    except Exception:
+        logger.exception("All S2S connection attempts failed")
+        await websocket.close(code=4002, reason="S2S connection failed")
+        return
+
+    # Connect frontend
     await voice_call_manager.connect(websocket, call_id)
     await voice_call_manager.send_message(
         call_id, {"type": "conversation_started", "message": "Connected to Aria."}
     )
 
-    oai = AsyncOpenAI(api_key=settings.openai_api_key)
+    # Shared mutable reference so forward_frontend_to_s2s sees reconnected ws
+    s2s_ref = {"ws": s2s_ws}
+    reconnecting = asyncio.Event()
 
-    # VAD constants — audio arrives at ~24 kHz, 4096 samples/chunk ≈ 0.17 s/chunk
-    BASE_THRESHOLD = 300        # absolute RMS floor; adaptive threshold stays above this
-    NOISE_MULTIPLIER = 3.5      # speech must be this many × above ambient noise floor
-    SILENCE_FRAMES_END = 7      # ~1.2 s silence triggers end-of-turn (feels natural)
-    MIN_SPEECH_FRAMES = 3       # ignore bursts shorter than ~0.5 s
-    PREROLL_FRAMES = 3          # prepend ~0.5 s before speech onset to avoid clipping first word
-    NOISE_WINDOW = 40           # rolling window of silent frames used to track noise floor
-
-    from collections import deque as _deque
-    audio_buffer: list[bytes] = []
-    preroll_buffer: _deque[bytes] = _deque(maxlen=PREROLL_FRAMES)
-    silence_frames = 0
-    speech_frames = 0
-    is_speaking = False
-    noise_samples: list[float] = []   # recent silent-frame RMS values
-    noise_floor = 0.0                 # rolling mean of ambient noise
-    conversation_history: list[Dict[str, str]] = []
-
-    # Completed turns wait here; the worker drains them one at a time so
-    # the user can keep speaking while Aria is still processing/talking.
-    turn_queue: asyncio.Queue[bytes] = asyncio.Queue()
-
-    async def process_turn(pcm_bytes: bytes) -> None:
-        """Run the STT → LLM → TTS pipeline for one completed user turn."""
+    async def forward_frontend_to_s2s():
         try:
-            import io
-            wav_bytes = _pcm16_to_wav(pcm_bytes)
-            result = await oai.audio.transcriptions.create(
-                model="whisper-1",
-                file=("speech.wav", io.BytesIO(wav_bytes), "audio/wav"),
-                language="en",
-            )
-            user_text = result.text.strip()
-            if not user_text:
-                return
-            logger.info(f"[VoiceCall] User said: {user_text}")
-            await voice_call_manager.send_message(
-                call_id, {"type": "transcript", "text": user_text, "role": "user"}
-            )
+            while True:
+                data = await websocket.receive_json()
+                msg_type = data.get("type")
+                if msg_type == "ping":
+                    await voice_call_manager.send_message(call_id, {"type": "pong"})
+                elif msg_type == "close":
+                    break
+                elif msg_type == "audio_input":
+                    if reconnecting.is_set():
+                        continue   # Drop audio while reconnecting
+                    audio_b64 = data.get("audio", "")
+                    if not audio_b64:
+                        continue
+                    # Frontend sends Float32 16kHz PCM directly — pass straight through
+                    float32_bytes = base64.b64decode(audio_b64)
+                    if float32_bytes:
+                        try:
+                            await s2s_ref["ws"].send(float32_bytes)
+                        except Exception:
+                            pass  # Mid-reconnect drop — forward task will recover
+        except Exception as e:
+            if not isinstance(e, (WebSocketDisconnect, RuntimeError)):
+                logger.exception("Error in forward_frontend_to_s2s")
 
-            conversation_history.append({"role": "user", "content": user_text})
-            ai_text = await asyncio.to_thread(
-                ai_service.generate_response,
-                conversation_history,
-                "voiceCall",
-                custom_instructions,
-            )
-            conversation_history.append({"role": "assistant", "content": ai_text})
-            await voice_call_manager.send_message(
-                call_id, {"type": "transcript", "text": ai_text, "role": "assistant"}
-            )
+    async def forward_s2s_to_frontend():
+        aria_speaking_active = False
+        max_reconnects = 4
 
-            await voice_call_manager.send_message(call_id, {"type": "aria_speaking", "speaking": True})
-            pcm_out = b""
-            
-            # 1. Try Google Cloud TTS (WAV format)
-            if _is_gcp_tts_configured():
-                logger.info(f"Generating WebSocket voice using Google Cloud (voice={tts_voice})")
-                gcp_bytes = _generate_gcp_tts(ai_text, tts_voice, "wav")
-                if gcp_bytes:
-                    pcm_out = _wav_to_pcm16(gcp_bytes)
-            
-            # 2. Try YarnGPT
-            if not pcm_out and settings.yarngpt_api_key and settings.yarngpt_api_key != "your_yarngpt_api_key_here":
-                try:
-                    import httpx
-                    async with httpx.AsyncClient(timeout=30.0) as client:
-                        headers = {
-                            "Authorization": f"Bearer {settings.yarngpt_api_key}",
-                            "Content-Type": "application/json"
-                        }
-                        payload = {
-                            "text": ai_text,
-                            "voice": tts_voice,
-                            "response_format": "wav"
-                        }
-                        response = await client.post(
-                            "https://yarngpt.ai/api/v1/tts",
-                            headers=headers,
-                            json=payload
-                        )
-                        if response.status_code == 200:
-                            pcm_out = _wav_to_pcm16(response.content)
-                        else:
-                            logger.error(f"YarnGPT WebSocket TTS API returned error {response.status_code}: {response.text}")
-                except Exception:
-                    logger.exception("Error generating WebSocket voice with YarnGPT")
-            
-            # 3. Fallback to OpenAI if both GCP and YarnGPT fail or are unconfigured
-            if not pcm_out:
-                logger.info("Falling back to OpenAI for WebSocket Voice Call TTS")
-                try:
-                    openai_voice_map = {
-                        "Osagie": "alloy", "Jude": "echo", "Femi": "onyx",
-                        "Adaora": "nova", "Umar": "echo", "Wura": "shimmer", "Idera": "nova"
-                    }
-                    oai_voice = openai_voice_map.get(tts_voice, "nova")
-                    tts_response = await oai.audio.speech.create(
-                        model="tts-1",
-                        voice=oai_voice,
-                        input=ai_text,
-                        response_format="pcm",
-                    )
-                    pcm_out = tts_response.content
-                except Exception:
-                    logger.exception("Failed to fallback to OpenAI for Voice Call TTS")
+        for reconnect_count in range(max_reconnects + 1):
+            try:
+                while True:
+                    res = await s2s_ref["ws"].recv()
+                    if isinstance(res, str):
+                        data = json.loads(res)
+                        msg_type = data.get("type")
+                        if msg_type == "status":
+                            msg = data.get("message", "")
+                            if msg == "Listening...":
+                                await voice_call_manager.send_message(call_id, {"type": "user_speaking", "speaking": True})
+                            elif msg == "Transcribing...":
+                                await voice_call_manager.send_message(call_id, {"type": "user_speaking", "speaking": False})
+                        elif msg_type == "transcription":
+                            await voice_call_manager.send_message(call_id, {
+                                "type": "transcript",
+                                "text": data.get("text", ""),
+                                "role": "user"
+                            })
+                        elif msg_type == "llm_text":
+                            await voice_call_manager.send_message(call_id, {
+                                "type": "transcript",
+                                "text": data.get("text", ""),
+                                "role": "assistant"
+                            })
+                        elif msg_type == "done":
+                            await voice_call_manager.send_message(call_id, {"type": "aria_speaking", "speaking": False})
+                            aria_speaking_active = False
+                    elif isinstance(res, bytes):
+                        # pocket-tts returns 24kHz 16-bit PCM bytes
+                        base64_audio = base64.b64encode(res).decode()
+                        if not aria_speaking_active:
+                            await voice_call_manager.send_message(call_id, {"type": "aria_speaking", "speaking": True})
+                            aria_speaking_active = True
+                        await voice_call_manager.send_message(call_id, {
+                            "type": "audio_output",
+                            "audio": base64_audio
+                        })
 
-            if pcm_out:
-                chunk_size = 8192
-                for i in range(0, len(pcm_out), chunk_size):
+            except websockets.exceptions.ConnectionClosed as e:
+                aria_speaking_active = False
+                if reconnect_count >= max_reconnects:
+                    logger.error(f"S2S connection lost permanently after {max_reconnects} reconnects: {e}")
                     await voice_call_manager.send_message(call_id, {
-                        "type": "audio_output",
-                        "audio": base64.b64encode(pcm_out[i:i + chunk_size]).decode(),
+                        "type": "error",
+                        "message": "Connection to Aria lost. Please try again."
                     })
-        except Exception:
-            logger.exception("[VoiceCall] process_turn error")
-        finally:
-            await voice_call_manager.send_message(call_id, {"type": "aria_speaking", "speaking": False})
+                    return
 
-    async def turn_worker() -> None:
-        """Drain turn_queue sequentially so turns never overlap."""
-        while True:
-            pcm = await turn_queue.get()
-            if pcm is None:          # sentinel — shut down
-                break
-            await process_turn(pcm)
-            turn_queue.task_done()
+                logger.warning(f"S2S closed ({e.code}), reconnecting... (attempt {reconnect_count + 1}/{max_reconnects})")
+                reconnecting.set()
+                await voice_call_manager.send_message(call_id, {
+                    "type": "status",
+                    "message": "Reconnecting to Aria, please hold..."
+                })
 
-    worker_task = asyncio.create_task(turn_worker())
+                try:
+                    old_ws = s2s_ref["ws"]
+                    try:
+                        await old_ws.close()
+                    except Exception:
+                        pass
+                    s2s_ref["ws"] = await connect_and_configure_s2s()
+                    reconnecting.clear()
+                    await voice_call_manager.send_message(call_id, {
+                        "type": "status",
+                        "message": "Reconnected. Aria is listening."
+                    })
+                    logger.info(f"S2S reconnected for call {call_id}")
+                except Exception:
+                    logger.exception("S2S reconnection failed")
+                    await voice_call_manager.send_message(call_id, {
+                        "type": "error",
+                        "message": "Could not reconnect to Aria. Please try again."
+                    })
+                    return
 
+            except Exception:
+                logger.exception("Unexpected error in forward_s2s_to_frontend")
+                return
+
+    # Run tasks concurrently
+    tasks = [
+        asyncio.create_task(forward_frontend_to_s2s()),
+        asyncio.create_task(forward_s2s_to_frontend())
+    ]
     try:
-        while True:
-            data = await websocket.receive_json()
-            msg_type = data.get("type")
-
-            if msg_type == "ping":
-                await voice_call_manager.send_message(call_id, {"type": "pong"})
-
-            elif msg_type == "close":
-                break
-
-            elif msg_type == "audio_input":
-                audio_b64 = data.get("audio", "")
-                if not audio_b64:
-                    continue
-
-                pcm_chunk = base64.b64decode(audio_b64)
-                energy = _pcm16_rms(pcm_chunk)
-
-                # Adaptive threshold: rises with ambient noise so a loud room
-                # doesn't cause constant false-positive speech detection.
-                adaptive_threshold = max(BASE_THRESHOLD, noise_floor * NOISE_MULTIPLIER)
-
-                if energy > adaptive_threshold:
-                    if not is_speaking:
-                        is_speaking = True
-                        # Prepend pre-roll so the first syllable isn't clipped
-                        audio_buffer = list(preroll_buffer)
-                        await voice_call_manager.send_message(
-                            call_id, {"type": "user_speaking", "speaking": True}
-                        )
-                    silence_frames = 0
-                    speech_frames += 1
-                    audio_buffer.append(pcm_chunk)
-
-                else:
-                    if not is_speaking:
-                        # Track ambient noise floor while the user isn't speaking
-                        preroll_buffer.append(pcm_chunk)
-                        noise_samples.append(energy)
-                        if len(noise_samples) > NOISE_WINDOW:
-                            noise_samples.pop(0)
-                        noise_floor = sum(noise_samples) / len(noise_samples)
-                    else:
-                        silence_frames += 1
-                        audio_buffer.append(pcm_chunk)
-
-                        if silence_frames >= SILENCE_FRAMES_END and speech_frames >= MIN_SPEECH_FRAMES:
-                            is_speaking = False
-                            await voice_call_manager.send_message(
-                                call_id, {"type": "user_speaking", "speaking": False}
-                            )
-                            full_audio = b"".join(audio_buffer)
-                            audio_buffer = []
-                            silence_frames = 0
-                            speech_frames = 0
-                            await turn_queue.put(full_audio)
-
-    except Exception as e:
-        if not isinstance(e, (WebSocketDisconnect, RuntimeError)):
-            logger.exception("Voice call error")
-            await voice_call_manager.send_message(
-                call_id, {"type": "error", "message": "Connection error."}
-            )
+        await asyncio.gather(*tasks, return_exceptions=True)
     finally:
-        await turn_queue.put(None)   # stop the worker
-        worker_task.cancel()
+        for t in tasks:
+            if not t.done():
+                t.cancel()
         voice_call_manager.disconnect(call_id)
+        try:
+            await s2s_ref["ws"].close()
+        except Exception:
+            pass
         try:
             from starlette.websockets import WebSocketState
             if websocket.client_state == WebSocketState.CONNECTED:
                 await websocket.close()
         except Exception:
             pass
-        logger.info(f"Voice call {call_id} ended")
-
-
-# ==================== WebSocket for Real-time Chat ====================
-
-
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}

@@ -90,13 +90,13 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
 
             // 2. Initialize Audio
             const AudioCtx = globalThis.AudioContext || globalThis.webkitAudioContext
-            audioContextRef.current = new AudioCtx({ sampleRate: 24000 })
+            // Capture at 16kHz — this is exactly what Pocket-S2S expects (Float32 16kHz mono)
+            audioContextRef.current = new AudioCtx({ sampleRate: 16000 })
             streamRef.current = await navigator.mediaDevices.getUserMedia({
                 audio: {
-                    echoCancellation: true,   // stops Aria's voice feeding back into the mic
-                    noiseSuppression: true,   // OS-level background noise filtering
-                    autoGainControl: true,    // keeps your voice at a consistent level
-                    sampleRate: { ideal: 24000 },
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
                     channelCount: 1,
                 },
             })
@@ -155,18 +155,15 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
         const context = audioContextRef.current
         const source = context.createMediaStreamSource(streamRef.current)
 
+        // 4096 samples at 16kHz = ~256ms chunks — good balance of latency vs overhead
         processorRef.current = context.createScriptProcessor(4096, 1, 1)
 
         processorRef.current.onaudioprocess = (e) => {
             if (wsRef.current?.readyState === WebSocket.OPEN && !isMutedRef.current) {
-                const inputData = e.inputBuffer.getChannelData(0)
-                const pcm16 = new Int16Array(inputData.length)
-                for (let i = 0; i < inputData.length; i++) {
-                    const s = Math.max(-1, Math.min(1, inputData[i]))
-                    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
-                }
-                // Chunked btoa avoids call-stack overflow on large typed arrays
-                const bytes = new Uint8Array(pcm16.buffer)
+                // Send Float32 PCM at 16kHz — exactly what Pocket-S2S expects
+                // No conversion needed: Web Audio API gives us Float32 natively
+                const float32 = e.inputBuffer.getChannelData(0)
+                const bytes = new Uint8Array(float32.buffer)
                 let binary = ''
                 const CHUNK = 0x8000
                 for (let i = 0; i < bytes.length; i += CHUNK) {
@@ -177,8 +174,6 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
         }
 
         source.connect(processorRef.current)
-        // Route through a silent gain node — processor must be in the graph to
-        // fire, but we must NOT pipe mic audio back to the speakers (causes echo).
         const silentSink = context.createGain()
         silentSink.gain.value = 0
         processorRef.current.connect(silentSink)
@@ -207,6 +202,7 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
         const chunk = audioQueueRef.current.shift()
         const context = audioContextRef.current
 
+        // Playback buffer at 24kHz — matching Pocket-S2S output sample rate
         const buffer = context.createBuffer(1, chunk.length, 24000)
         buffer.getChannelData(0).set(chunk)
 
@@ -225,6 +221,7 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
             bytes[i] = binary.charCodeAt(i)
         }
 
+        // S2S output is Int16 PCM at 24kHz — convert to Float32 for Web Audio playback
         const pcm16 = new Int16Array(bytes.buffer)
         const float32 = new Float32Array(pcm16.length)
         for (let i = 0; i < pcm16.length; i++) {
@@ -257,6 +254,10 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
                 break
             case 'aria_speaking':
                 setIsAriaSpeaking(data.speaking)
+                break
+            case 'status':
+                // Reconnection notices from the backend (e.g. 'Reconnecting to Aria...')
+                setTranscript(data.message || '')
                 break
             case 'error':
                 setError(data.message)

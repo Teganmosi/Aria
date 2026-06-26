@@ -9,6 +9,8 @@ import {
 import { notesService, ttsService } from '../services/api'
 import { useHomeData } from '../hooks/use-home-data'
 import { useAuthStore } from '../store/auth-store'
+import { BurningFlame } from '../components/ui/BurningFlame'
+import { StreakCelebration } from '../components/ui/StreakCelebration'
 
 import './Home.css'
 
@@ -31,8 +33,8 @@ const FaithStreak = ({ days, streak }) => {
   return (
     <div className="bg-[var(--bg-card)] rounded-3xl p-6 shadow-[var(--shadow-main)] min-h-[180px] border border-[var(--border-color)]">
       <div className="flex items-center gap-3 mb-5">
-        <div className="w-10 h-10 bg-[var(--bg-alt)] rounded-xl flex items-center justify-center">
-          <Flame size={20} color="var(--brand-accent)" />
+        <div className="w-10 h-10 bg-[var(--bg-alt)] rounded-xl flex items-center justify-center overflow-visible">
+          <BurningFlame size="sm" intensity={1} />
         </div>
         <div>
           <p style={{ margin: 0, fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.1em' }}>FAITH STREAK</p>
@@ -129,6 +131,23 @@ export const Home = () => {
   const { data: homeData } = useHomeData()
   const stats = homeData?.stats ?? { streak_days: 7, streak_history: [true, true, true, true, true, true, false] }
   const activities = homeData?.activity ?? []
+
+  const [showCelebration, setShowCelebration] = useState(false)
+
+  useEffect(() => {
+    if (homeData?.stats) {
+      const todayIdx = new Date().getDay()
+      const todayCompleted = homeData.stats.streak_history?.[todayIdx] === true
+      if (todayCompleted) {
+        const todayStr = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD local format
+        const celebratedDate = localStorage.getItem('aria_streak_celebrated_date')
+        if (celebratedDate !== todayStr) {
+          setShowCelebration(true)
+          localStorage.setItem('aria_streak_celebrated_date', todayStr)
+        }
+      }
+    }
+  }, [homeData])
   const verseObj = homeData?.verse_of_day ?? {
     verse: 'The LORD is my shepherd; I shall not want.',
     reference: 'Psalm 23:1',
@@ -226,6 +245,11 @@ export const Home = () => {
 
   return (
     <div className="home-container">
+      <StreakCelebration
+        isOpen={showCelebration}
+        onClose={() => setShowCelebration(false)}
+        streakCount={stats.streak_days}
+      />
       {/* Header */}
       <div className="home-header">
         <div>
