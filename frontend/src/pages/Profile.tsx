@@ -1,13 +1,9 @@
-import React from 'react'
-import { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
   User,
-  Settings,
   LogOut,
   ShieldCheck,
-  Bell,
   Moon,
-  Sun,
   BookOpen,
   Clock,
   Sparkles,
@@ -16,29 +12,35 @@ import {
 import { toast } from 'sonner'
 import { useAuth } from '../hooks/useAuth'
 import { profileService } from '../services/api'
-import { AnimatedBackground } from '../components/ui/SharedComponents'
-import { ThemeToggle } from '../components/ui/SharedComponents'
+import { AnimatedBackground, ThemeToggle } from '../components/ui/SharedComponents'
 
-const SettingsCard = ({ icon, title, subtitle, action, destructive = false }: { icon: React.ReactNode; title: string; subtitle: string; action: () => void; destructive?: boolean }) => (
-  <div
-    onClick={action}
-    className="glass-panel p-6 rounded-[20px] flex items-center gap-6 cursor-pointer transition-all duration-300 ease-in-out border border-[var(--border-color)] mb-4"
-    style={{ background: destructive ? 'rgba(239, 68, 68, 0.05)' : 'var(--bg-card)' }}
-  >
-    <div className="w-12 h-12 rounded-xl flex items-center justify-center"
+const SettingsCard = ({ icon, title, subtitle, action, destructive = false }: { icon: React.ReactNode; title: string; subtitle: string; action: () => void; destructive?: boolean }) => {
+  return (
+    <button
+      onClick={action}
+      type="button"
+      className="glass-panel p-6 rounded-[20px] flex items-center gap-6 cursor-pointer transition-all duration-300 ease-in-out border border-[var(--border-color)] mb-4 w-full text-left"
       style={{
-        background: destructive ? 'rgba(239, 68, 68, 0.1)' : 'var(--input-bg)',
-        color: destructive ? '#ef4444' : 'var(--brand-solid)'
-      }}>
-      {icon}
-    </div>
-    <div className="flex-1">
-      <h4 style={{ color: destructive ? '#ef4444' : 'var(--text-main)', margin: 0, fontSize: '1rem', fontWeight: 600 }}>{title}</h4>
-      <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.8rem' }}>{subtitle}</p>
-    </div>
-    <ChevronRight size={18} color="var(--text-muted)" />
-  </div>
-)
+        background: destructive ? 'rgba(239, 68, 68, 0.05)' : 'var(--bg-card)',
+        outline: 'none',
+        fontFamily: 'inherit'
+      }}
+    >
+      <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+        style={{
+          background: destructive ? 'rgba(239, 68, 68, 0.1)' : 'var(--input-bg)',
+          color: destructive ? '#ef4444' : 'var(--brand-solid)'
+        }}>
+        {icon}
+      </div>
+      <div className="flex-1">
+        <h4 style={{ color: destructive ? '#ef4444' : 'var(--text-main)', margin: 0, fontSize: '1rem', fontWeight: 600 }}>{title}</h4>
+        <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.8rem' }}>{subtitle}</p>
+      </div>
+      <ChevronRight size={18} color="var(--text-muted)" className="flex-shrink-0" />
+    </button>
+  )
+}
 
 export const Profile = () => {
   const { user, logout, refreshUser } = useAuth()
@@ -72,9 +74,9 @@ export const Profile = () => {
     }
   }
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     try {
-      await logout()
+      logout()
     } catch {
       toast.error('Failed to log out')
     }
@@ -87,6 +89,13 @@ export const Profile = () => {
     })
     : 'N/A'
 
+  let avatarContent: React.ReactNode = <User size={48} />
+  if (user?.avatar_url) {
+    avatarContent = <img src={user.avatar_url} className="w-full h-full object-cover" alt="Avatar" />
+  } else if (displayName) {
+    avatarContent = displayName.charAt(0).toUpperCase()
+  }
+
   return (
     <div className="min-h-full relative flex flex-col overflow-y-auto pb-16">
       <AnimatedBackground />
@@ -95,11 +104,7 @@ export const Profile = () => {
       <header className="pt-16 px-12 pb-8 text-center z-10">
         <div className="relative w-[120px] h-[120px] mx-auto mb-8">
           <div className="w-full h-full rounded-full bg-[var(--gradient-card)] border-4 border-[var(--brand-accent)] flex items-center justify-center text-[3rem] text-[var(--brand-solid)] shadow-[var(--shadow-main)] overflow-hidden">
-            {user?.avatar_url ? (
-              <img src={user.avatar_url} className="w-full h-full object-cover" alt="Avatar" />
-            ) : (
-              displayName ? displayName.charAt(0).toUpperCase() : <User size={48} />
-            )}
+            {avatarContent}
           </div>
           <div className="absolute bottom-[5px] right-[5px] bg-[var(--brand-accent)] w-7 h-7 rounded-full flex items-center justify-center border-2 border-[var(--bg-main)]">
             <Sparkles size={14} color="var(--brand-solid)" />
@@ -201,6 +206,7 @@ export const Profile = () => {
             <div className="mb-6">
               <label htmlFor="displayNameInput" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>DISPLAY NAME</label>
               <input
+                id="displayNameInput"
                 type="text"
                 value={displayName}
                 onChange={e => setDisplayName(e.target.value)}
@@ -210,8 +216,9 @@ export const Profile = () => {
             </div>
 
             <div className="mb-8">
-              <label style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '0.75rem' }}>PROFILE IMAGE URL</label>
+              <label htmlFor="avatarUrlInput" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.1em', marginBottom: '0.75rem' }}>PROFILE IMAGE URL</label>
               <input
+                id="avatarUrlInput"
                 type="text"
                 value={avatarUrl}
                 onChange={e => setAvatarUrl(e.target.value)}

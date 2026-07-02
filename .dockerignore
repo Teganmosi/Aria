@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Python virtual environment
+venv/
+.venv/
+env/
+ENV/
+
+# Python cache & build files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# Local databases and backups
+*.db
+*.sqlite
+test_aria.db
+
+# Environment variables & secrets
+.env
+.env.*
+secrets.json
+
+# IDE config files
+.vscode/
+.idea/
+
+# Docker files
+Dockerfile
+.dockerignore
+
+# Frontend build & dependencies
+frontend/node_modules/
+frontend/dist/
+frontend/.svelte-kit/

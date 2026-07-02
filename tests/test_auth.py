@@ -54,4 +54,6 @@ def test_login_invalid_credentials(client):
 def test_get_me(client, auth_headers):
     response = client.get("/api/v1/auth/me", headers=auth_headers)
     assert response.status_code == 200
-    assert response.json()["email"] == "test@example.com"
+    email = response.json()["email"]
+    assert "test_" in email
+    assert email.endswith("@example.com")

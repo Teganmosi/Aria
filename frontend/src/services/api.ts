@@ -86,16 +86,16 @@ export const bibleService = {
   ) => {
     let verseList: number[] = []
     if (Array.isArray(verses)) {
-      verseList = verses.map((v) => parseInt(String(v))).filter((v) => !isNaN(v))
+      verseList = verses.map((v) => Number.parseInt(String(v), 10)).filter((v) => !Number.isNaN(v))
     } else if (typeof verses === 'string' && verses.trim()) {
       verseList = verses
         .split('-')
-        .map((v) => parseInt(v.trim()))
-        .filter((v) => !isNaN(v))
+        .map((v) => Number.parseInt(v.trim(), 10))
+        .filter((v) => !Number.isNaN(v))
     }
     const { data } = await axiosPrivate.post('/bible-study/sessions', {
       book: book.trim(),
-      chapter: parseInt(String(chapter)),
+      chapter: Number.parseInt(String(chapter), 10),
       verses: verseList,
       selected_text: selectedText,
     })
@@ -167,7 +167,7 @@ export const devotionService = {
   saveSettings: async (preferredTime: string, durationMinutes: number | string) => {
     const { data } = await axiosPrivate.put('/devotion/settings', {
       preferred_time: preferredTime,
-      duration_minutes: parseInt(String(durationMinutes)),
+      duration_minutes: Number.parseInt(String(durationMinutes), 10),
     })
     return data
   },
@@ -250,10 +250,10 @@ export const aiChatService = {
       if (response.status === 401) {
         localStorage.removeItem('authToken')
         if (
-          !window.location.pathname.includes('/login') &&
-          !window.location.pathname.includes('/register')
+          !globalThis.location.pathname.includes('/login') &&
+          !globalThis.location.pathname.includes('/register')
         ) {
-          window.location.href = '/login'
+          globalThis.location.href = '/login'
         }
       }
       const error = await response.json().catch(() => ({ error: 'Unknown error' }))
@@ -278,7 +278,7 @@ export const voiceCallService = {
     let wsHost = import.meta.env.VITE_WS_URL || 'localhost:8002'
     wsHost = wsHost.replace(/^(wss?):\/\//, '')
     const isLocalhost = wsHost.startsWith('localhost') || wsHost.startsWith('127.0.0.1')
-    const wsProtocol = (!isLocalhost || window.location.protocol === 'https:') ? 'wss:' : 'ws:'
+    const wsProtocol = (!isLocalhost || globalThis.location.protocol === 'https:') ? 'wss:' : 'ws:'
     const token = localStorage.getItem('authToken')
     return `${wsProtocol}//${wsHost}/ws/voice-call/${callId}?token=${token}`
   },

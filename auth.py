@@ -46,6 +46,8 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta]
 
 def create_refresh_token(user_id: str, email: str) -> tuple[str, datetime]:
     """Create an opaque refresh token, persist it, and return (token, expires_at)."""
+    if not email:
+        logger.warning("create_refresh_token called without a valid email reference.")
     token = str(uuid.uuid4())
     expires_at = datetime.now(timezone.utc) + timedelta(days=7)
     db.store_refresh_token(token, user_id, expires_at.strftime("%Y-%m-%d %H:%M:%S"))

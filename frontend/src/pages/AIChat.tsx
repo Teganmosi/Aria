@@ -9,6 +9,20 @@ import { useAuth } from '../hooks/useAuth'
 import { AnimatedBackground } from '../components/ui/SharedComponents'
 import { VoiceCall } from '../components/VoiceCall'
 
+const markdownComponents = {
+  ol: ({ children }) => <ol className="list-decimal pl-5 space-y-2">{children}</ol>,
+  ul: ({ children }) => <ul className="list-disc pl-5 space-y-2">{children}</ul>,
+  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-4 border-[var(--brand-accent)] pl-4 my-4 italic text-[var(--text-secondary)] bg-white/5 p-4 rounded-r-xl">
+      {children}
+    </blockquote>
+  ),
+};
+
 export const AIChat = () => {
   const { user } = useAuth()
   const [chatInput, setChatInput] = useState('')
@@ -274,21 +288,7 @@ export const AIChat = () => {
                       : 'font-serif bg-[var(--bg-card)] text-[var(--text-main)] shadow-[var(--shadow-main)] border border-[var(--border-color)]'
                   }`}>
                     {msg.role === 'user' ? msg.content : (
-                      <ReactMarkdown
-                        components={{
-                          ol: ({ children }) => <ol className="list-decimal pl-5 space-y-2">{children}</ol>,
-                          ul: ({ children }) => <ul className="list-disc pl-5 space-y-2">{children}</ul>,
-                          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-                          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                          em: ({ children }) => <em className="italic">{children}</em>,
-                          p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
-                          blockquote: ({ children }) => (
-                            <blockquote className="border-l-4 border-[var(--brand-accent)] pl-4 my-4 italic text-[var(--text-secondary)] bg-white/5 p-4 rounded-r-xl">
-                              {children}
-                            </blockquote>
-                          ),
-                        }}
-                      >
+                      <ReactMarkdown components={markdownComponents}>
                         {msg.content}
                       </ReactMarkdown>
                     )}

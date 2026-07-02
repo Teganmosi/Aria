@@ -36,8 +36,8 @@ try:
 
     SyncClient._listen_to_auth_events = safe_listen_to_auth_events
     logger.info("Successfully patched Supabase SyncClient._listen_to_auth_events for safety")
-except Exception as e:
-    logger.error(f"Failed to patch Supabase SyncClient: {e}")
+except Exception:
+    logger.exception("Failed to patch Supabase SyncClient")
 
 
 class Database:
@@ -57,21 +57,22 @@ class Database:
                                 "aria_custom_prompt", "aria_personal_context", "aria_voice",
                                 "created_at", "updated_at"}),
         "bible_study_sessions": frozenset({"id", "user_id", "book", "chapter", "verses",
-                                            "selected_text", "created_at", "updated_at"}),
+                                            "selected_text", "is_realtime", "ai_explanation",
+                                            "ai_context", "conversation_summary", "created_at", "updated_at"}),
         "bible_study_messages": frozenset({"id", "session_id", "role", "content", "created_at"}),
-        "emotional_support_sessions": frozenset({"id", "user_id", "mood", "provided_scriptures",
-                                                   "created_at", "updated_at"}),
+        "emotional_support_sessions": frozenset({"id", "user_id", "mood", "situation_description",
+                                                   "is_realtime", "ai_response", "provided_scriptures",
+                                                   "prayer_suggestion", "created_at", "updated_at"}),
         "emotional_support_messages": frozenset({"id", "session_id", "role", "content", "created_at"}),
-        "devotion_settings": frozenset({"id", "user_id", "topics", "preferred_time", "frequency",
-                                         "created_at", "updated_at"}),
-        "devotions": frozenset({"id", "user_id", "title", "day_plan_summary", "scripture_reading",
-                                 "reflection", "prayer", "status", "scheduled_date",
-                                 "created_at", "updated_at"}),
+        "devotion_settings": frozenset({"id", "user_id", "topics", "preferred_time", "timezone",
+                                         "duration_minutes", "auto_prayer", "created_at", "updated_at"}),
+        "devotions": frozenset({"id", "user_id", "scheduled_for", "day_plan_summary", "scripture_reading",
+                                 "reflection_prompt", "user_reflection", "status", "completed_at",
+                                 "ai_prayer", "created_at"}),
         "devotion_messages": frozenset({"id", "devotion_id", "role", "content", "created_at"}),
         "notes": frozenset({"id", "user_id", "title", "content", "source_type", "source_reference",
                              "tags", "is_locked", "password_hash", "created_at", "updated_at"}),
-        "prayers": frozenset({"id", "user_id", "title", "content", "is_answered", "created_at",
-                               "updated_at"}),
+        "prayers": frozenset({"id", "user_id", "title", "content", "isanswered", "created_at"}),
         "ai_chat_sessions": frozenset({"id", "user_id", "title", "created_at", "updated_at"}),
         "ai_chat_messages": frozenset({"id", "session_id", "role", "content", "created_at"}),
     }
@@ -94,8 +95,8 @@ class Database:
             try:
                 self.__class__._client = create_client(settings.supabase_url, settings.supabase_key)
                 logger.info("Supabase client initialized with anon key")
-            except Exception as e:
-                logger.error(f"⚠️ Failed to initialize Supabase client (possibly invalid key): {e}")
+            except Exception:
+                logger.exception("⚠️ Failed to initialize Supabase client (possibly invalid key)")
 
         if not self.__class__._pool:
             try:
@@ -106,8 +107,8 @@ class Database:
                 )
                 # Ensure tables exist in the database (whether local or remote Supabase)
                 self._ensure_tables()
-            except Exception as e:
-                logger.error(f"⚠️ Failed to initialize database connection pool on startup: {e}")
+            except Exception:
+                logger.exception("⚠️ Failed to initialize database connection pool on startup")
                 logger.warning("Database connection will be retried lazily during request handling.")
 
     @property
@@ -128,7 +129,7 @@ class Database:
                     dsn=settings.database_url,
                 )
             except Exception as e:
-                logger.error(f"Lazy pool initialization failed: {e}")
+                logger.exception("Lazy pool initialization failed")
                 raise RuntimeError(f"Database connection pool not initialized: {e}")
 
         if not self.__class__._tables_ensured:
@@ -154,8 +155,8 @@ class Database:
         finally:
             try:
                 self._pool.putconn(conn, close=close_conn)
-            except Exception as put_err:
-                logger.error(f"Error returning connection to pool: {put_err}")
+            except Exception:
+                logger.exception("Error returning connection to pool")
 
     def _ensure_tables(self):
         if self.__class__._tables_ensured or self.__class__._ensuring_tables:
@@ -474,9 +475,8 @@ class Database:
                 d['verses'] = [int(v.strip()) for v in val.split(',') if v.strip()]
             except (ValueError, TypeError):
                 d['verses'] = []
-        elif not isinstance(val, list):
-            if val is not None:
-                d['verses'] = []
+        elif not isinstance(val, list) and val is not None:
+            d['verses'] = []
 
     def to_dict(self, row) -> Optional[Dict]:
         if row is None:
@@ -615,7 +615,9 @@ class Database:
             if 'id' not in data:
                 data['id'] = str(uuid.uuid4())
             if isinstance(data.get('verses'), list):
-                data['verses'] = ','.join(map(str, data['verses']))
+                is_postgres = "postgres" in settings.database_url
+                if not is_postgres:
+                    data['verses'] = ','.join(map(str, data['verses']))
             self._validate_columns("bible_study_sessions", data.keys())
             cols = ', '.join(data.keys())
             placeholders = ', '.join(['%s'] * len(data))

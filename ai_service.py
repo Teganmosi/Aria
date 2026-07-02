@@ -307,6 +307,97 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
             parts.append(f"\n{custom_instructions}")
         return "\n".join(parts)
 
+    def _execute_memory_search_tool(self, user_id: str, arguments_str: str) -> str:
+        """Executes the past conversations and journals search tool."""
+        try:
+            import json
+            args = json.loads(arguments_str)
+            query = args.get("query", "")
+            
+            from database import db
+            search_results = db.search_user_memory(user_id, query)
+            
+            formatted_results = []
+            for idx, r in enumerate(search_results):
+                formatted_results.append(
+                    f"[{idx+1}] Source: {r['source']}\nDate: {r['created_at']}\nTitle: {r['title']}\nContent: {r['content']}\n"
+                )
+            
+            return "\n".join(formatted_results) if formatted_results else "No relevant past notes or conversations found."
+        except Exception as e:
+            logger.exception("Error executing memory search tool")
+            return f"Error searching past conversations: {e}"
+
+    def _execute_fetch_scripture_tool(self, arguments_str: str) -> str:
+        """Executes the fetch scripture tool."""
+        try:
+            import json
+            args = json.loads(arguments_str)
+            book = args.get("book", "")
+            chapter = int(args.get("chapter", 1))
+            verses = args.get("verses", [])
+            version = args.get("version", "NKJV").upper()
+            
+            from database import db
+            chapter_verses = _run_async_in_thread(db.fetch_bible_chapter_from_api(book, chapter, version))
+            
+            matching_verses = []
+            for v in chapter_verses:
+                if v.get("verse") in verses:
+                    matching_verses.append(v)
+                    
+            if matching_verses:
+                matching_verses.sort(key=lambda x: x.get("verse", 0))
+                formatted_text = " ".join([f"{v.get('verse')} {v.get('text')}" for v in matching_verses])
+                return f"{book} {chapter}:{','.join(map(str, verses))} ({version}) - {formatted_text}"
+            else:
+                return f"Scripture not found for {book} {chapter}:{','.join(map(str, verses))} ({version}). Please check reference."
+        except Exception as e:
+            logger.exception("Error executing fetch scripture tool")
+            return f"Error fetching scripture: {e}"
+
+    def _execute_tool(self, tool_name: str, arguments_str: str, user_id: Optional[str] = None) -> str:
+        """Dispatches and executes the requested tool."""
+        if tool_name == "search_past_conversations_and_journals" and user_id:
+            return self._execute_memory_search_tool(user_id, arguments_str)
+        elif tool_name == "fetch_scripture":
+            return self._execute_fetch_scripture_tool(arguments_str)
+        return f"Unknown tool: {tool_name}"
+
+    def _update_reconstructed_tool_call(self, tool_calls_dict: Dict[int, Dict[str, Any]], tc: Any):
+        idx = tc.index
+        if idx not in tool_calls_dict:
+            tool_calls_dict[idx] = {"id": "", "name": "", "arguments": ""}
+            
+        entry = tool_calls_dict[idx]
+        if tc.id:
+            entry["id"] = tc.id
+            
+        if tc.function:
+            if tc.function.name:
+                entry["name"] += tc.function.name
+            if tc.function.arguments:
+                entry["arguments"] += tc.function.arguments
+
+    def _reconstruct_tool_calls(self, tool_call_chunks: List[Any]) -> List[Dict[str, Any]]:
+        """Reconstructs full tool call objects from stream chunks."""
+        tool_calls_dict = {}
+        for tc_list in tool_call_chunks:
+            for tc in tc_list:
+                self._update_reconstructed_tool_call(tool_calls_dict, tc)
+                            
+        tc_objects = []
+        for idx, tc in sorted(tool_calls_dict.items()):
+            tc_objects.append({
+                "id": tc["id"],
+                "type": "function",
+                "function": {
+                    "name": tc["name"],
+                    "arguments": tc["arguments"]
+                }
+            })
+        return tc_objects
+
     def generate_response(
         self,
         messages: List[Dict[str, str]],
@@ -348,57 +439,17 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
                 local_messages.append(message)
 
                 for tool_call in tool_calls:
-                    if tool_call.function.name == "search_past_conversations_and_journals":
-                        import json
-                        args = json.loads(tool_call.function.arguments)
-                        query = args.get("query", "")
-                        
-                        from database import db
-                        search_results = db.search_user_memory(user_id, query)
-                        
-                        formatted_results = []
-                        for idx, r in enumerate(search_results):
-                            formatted_results.append(
-                                f"[{idx+1}] Source: {r['source']}\nDate: {r['created_at']}\nTitle: {r['title']}\nContent: {r['content']}\n"
-                            )
-                        
-                        result_str = "\n".join(formatted_results) if formatted_results else "No relevant past notes or conversations found."
-                        
-                        local_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_call.function.name,
-                            "content": result_str
-                        })
-                    elif tool_call.function.name == "fetch_scripture":
-                        import json
-                        args = json.loads(tool_call.function.arguments)
-                        book = args.get("book", "")
-                        chapter = int(args.get("chapter", 1))
-                        verses = args.get("verses", [])
-                        version = args.get("version", "NKJV").upper()
-                        
-                        from database import db
-                        chapter_verses = _run_async_in_thread(db.fetch_bible_chapter_from_api(book, chapter, version))
-                        
-                        matching_verses = []
-                        for v in chapter_verses:
-                            if v.get("verse") in verses:
-                                matching_verses.append(v)
-                                
-                        if matching_verses:
-                            matching_verses.sort(key=lambda x: x.get("verse", 0))
-                            formatted_text = " ".join([f"{v.get('verse')} {v.get('text')}" for v in matching_verses])
-                            result_str = f"{book} {chapter}:{','.join(map(str, verses))} ({version}) - {formatted_text}"
-                        else:
-                            result_str = f"Scripture not found for {book} {chapter}:{','.join(map(str, verses))} ({version}). Please check reference."
-                            
-                        local_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_call.function.name,
-                            "content": result_str
-                        })
+                    result_str = self._execute_tool(
+                        tool_call.function.name,
+                        tool_call.function.arguments,
+                        user_id
+                    )
+                    local_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_call.function.name,
+                        "content": result_str
+                    })
 
                 response = self._client.chat.completions.create(
                     model=config['model'],
@@ -415,6 +466,50 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
         except Exception:
             logger.exception("Error generating AI response")
             return "I apologize, but I encountered an error. Please try again."
+
+    def _execute_stream_tool_calls(
+        self,
+        config: Dict[str, Any],
+        system_prompt: str,
+        sanitized_messages: List[Dict[str, str]],
+        tool_call_chunks: List[Any],
+        user_id: str
+    ) -> Generator[str, None, None]:
+        tc_objects = self._reconstruct_tool_calls(tool_call_chunks)
+        
+        local_messages = [
+            {'role': 'system', 'content': system_prompt},
+            *sanitized_messages
+        ]
+        
+        local_messages.append({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": tc_objects
+        })
+        
+        for tc in tc_objects:
+            tool_name = tc["function"]["name"]
+            arguments_str = tc["function"]["arguments"]
+            result_str = self._execute_tool(tool_name, arguments_str, user_id)
+            
+            local_messages.append({
+                "role": "tool",
+                "tool_call_id": tc["id"],
+                "name": tool_name,
+                "content": result_str
+            })
+        
+        second_stream = self._client.chat.completions.create(
+            model=config['model'],
+            messages=local_messages,
+            temperature=config['temperature'],
+            max_tokens=config['max_tokens'],
+            stream=True
+        )
+        for chunk in second_stream:
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield chunk.choices[0].delta.content
 
     def generate_response_stream(
         self,
@@ -458,110 +553,9 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
                     yield chunk.choices[0].delta.content
 
             if is_tool_call and user_id:
-                tool_calls_dict = {}
-                for tc_list in tool_call_chunks:
-                    for tc in tc_list:
-                        idx = tc.index
-                        if idx not in tool_calls_dict:
-                            tool_calls_dict[idx] = {
-                                "id": tc.id or "",
-                                "name": tc.function.name if tc.function and tc.function.name else "",
-                                "arguments": tc.function.arguments if tc.function and tc.function.arguments else ""
-                            }
-                        else:
-                            if tc.id:
-                                tool_calls_dict[idx]["id"] = tc.id
-                            if tc.function:
-                                if tc.function.name:
-                                    tool_calls_dict[idx]["name"] += tc.function.name
-                                if tc.function.arguments:
-                                    tool_calls_dict[idx]["arguments"] += tc.function.arguments
-                
-                local_messages = [
-                    {'role': 'system', 'content': system_prompt},
-                    *sanitized_messages
-                ]
-                
-                tc_objects = []
-                for idx, tc in tool_calls_dict.items():
-                    tc_objects.append({
-                        "id": tc["id"],
-                        "type": "function",
-                        "function": {
-                            "name": tc["name"],
-                            "arguments": tc["arguments"]
-                        }
-                    })
-                
-                local_messages.append({
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": tc_objects
-                })
-                
-                for idx, tc in tool_calls_dict.items():
-                    if tc["name"] == "search_past_conversations_and_journals":
-                        import json
-                        args = json.loads(tc["arguments"])
-                        query = args.get("query", "")
-                        
-                        from database import db
-                        search_results = db.search_user_memory(user_id, query)
-                        
-                        formatted_results = []
-                        for i, r in enumerate(search_results):
-                            formatted_results.append(
-                                f"[{i+1}] Source: {r['source']}\nDate: {r['created_at']}\nTitle: {r['title']}\nContent: {r['content']}\n"
-                            )
-                        
-                        result_str = "\n".join(formatted_results) if formatted_results else "No relevant past notes or conversations found."
-                        
-                        local_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc["id"],
-                            "name": tc["name"],
-                            "content": result_str
-                        })
-                    elif tc["name"] == "fetch_scripture":
-                        import json
-                        args = json.loads(tc["arguments"])
-                        book = args.get("book", "")
-                        chapter = int(args.get("chapter", 1))
-                        verses = args.get("verses", [])
-                        version = args.get("version", "NKJV").upper()
-                        
-                        from database import db
-                        chapter_verses = _run_async_in_thread(db.fetch_bible_chapter_from_api(book, chapter, version))
-                        
-                        matching_verses = []
-                        for v in chapter_verses:
-                            if v.get("verse") in verses:
-                                matching_verses.append(v)
-                                
-                        if matching_verses:
-                            matching_verses.sort(key=lambda x: x.get("verse", 0))
-                            formatted_text = " ".join([f"{v.get('verse')} {v.get('text')}" for v in matching_verses])
-                            result_str = f"{book} {chapter}:{','.join(map(str, verses))} ({version}) - {formatted_text}"
-                        else:
-                            result_str = f"Scripture not found for {book} {chapter}:{','.join(map(str, verses))} ({version}). Please check reference."
-                            
-                        local_messages.append({
-                            "role": "tool",
-                            "tool_call_id": tc["id"],
-                            "name": tc["name"],
-                            "content": result_str
-                        })
-                
-                second_stream = self._client.chat.completions.create(
-                    model=config['model'],
-                    messages=local_messages,
-                    temperature=config['temperature'],
-                    max_tokens=config['max_tokens'],
-                    stream=True
+                yield from self._execute_stream_tool_calls(
+                    config, system_prompt, sanitized_messages, tool_call_chunks, user_id
                 )
-                for chunk in second_stream:
-                    if chunk.choices and chunk.choices[0].delta.content:
-                        yield chunk.choices[0].delta.content
         except Exception:
             logger.exception("Error generating AI response stream")
             yield "I apologize, but I encountered an error. Please try again."

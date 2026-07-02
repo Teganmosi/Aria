@@ -95,6 +95,18 @@ FAILED_TO_CREATE_MESSAGE = "Failed to create message"
 DEVOTION_NOT_FOUND = "Devotion not found"
 
 
+AUDIO_MPEG = "audio/mpeg"
+AUDIO_WAV = "audio/wav"
+
+background_tasks = set()
+
+def run_background_task(coro):
+    task = asyncio.create_task(coro)
+    background_tasks.add(task)
+    task.add_done_callback(background_tasks.discard)
+    return task
+
+
 BIBLE_BOOK_MAPPING = {
     "genesis": "genesis", "exodus": "exodus", "leviticus": "leviticus",
     "numbers": "numbers", "deuteronomy": "deuteronomy", "joshua": "joshua",
@@ -227,30 +239,40 @@ def _get_user_custom_instructions(user_profile: Dict[str, Any]) -> Optional[str]
     return "\n\n".join(parts)
 
 
+def _extract_bible_study_messages(session_id: str) -> List[Dict[str, Any]]:
+    messages = db.get_bible_study_messages(session_id)
+    session = db.get_bible_study_session(session_id)
+    full_messages = []
+    if session and session.get("selected_text"):
+        full_messages.append({"role": "user", "content": f"Selected Scripture: {session.get('book')} {session.get('chapter')}:{session.get('verses')}\nText: {session.get('selected_text')}"})
+    if session and session.get("ai_explanation"):
+        full_messages.append({"role": "assistant", "content": session.get("ai_explanation")})
+    for m in messages:
+        full_messages.append({"role": m.get("role"), "content": m.get("content")})
+    return full_messages
+
+
+def _extract_emotional_support_messages(session_id: str) -> List[Dict[str, Any]]:
+    messages = db.get_emotional_support_messages(session_id)
+    session = db.get_emotional_support_session(session_id)
+    full_messages = []
+    if session and session.get("mood"):
+        full_messages.append({"role": "user", "content": f"I am feeling: {session.get('mood')}. Situation: {session.get('situation_description')}"})
+    if session and session.get("ai_response"):
+        full_messages.append({"role": "assistant", "content": session.get("ai_response")})
+    for m in messages:
+        full_messages.append({"role": m.get("role"), "content": m.get("content")})
+    return full_messages
+
+
 async def synthesize_session_journey(user_id: str, session_id: str, session_type: str):
     """Asynchronous background task to synthesize the user's spiritual journey after a session update."""
     try:
         # Load messages
         if session_type == "bibleStudy":
-            messages = db.get_bible_study_messages(session_id)
-            session = db.get_bible_study_session(session_id)
-            full_messages = []
-            if session and session.get("selected_text"):
-                full_messages.append({"role": "user", "content": f"Selected Scripture: {session.get('book')} {session.get('chapter')}:{session.get('verses')}\nText: {session.get('selected_text')}"})
-            if session and session.get("ai_explanation"):
-                full_messages.append({"role": "assistant", "content": session.get("ai_explanation")})
-            for m in messages:
-                full_messages.append({"role": m.get("role"), "content": m.get("content")})
+            full_messages = _extract_bible_study_messages(session_id)
         elif session_type == "emotionalSupport":
-            messages = db.get_emotional_support_messages(session_id)
-            session = db.get_emotional_support_session(session_id)
-            full_messages = []
-            if session and session.get("mood"):
-                full_messages.append({"role": "user", "content": f"I am feeling: {session.get('mood')}. Situation: {session.get('situation_description')}"})
-            if session and session.get("ai_response"):
-                full_messages.append({"role": "assistant", "content": session.get("ai_response")})
-            for m in messages:
-                full_messages.append({"role": m.get("role"), "content": m.get("content")})
+            full_messages = _extract_emotional_support_messages(session_id)
         else:
             return
 
@@ -671,7 +693,7 @@ async def create_bible_study_session(
         await asyncio.to_thread(db.update_bible_study_session, session["id"], {"ai_explanation": explanation})
         session["ai_explanation"] = explanation
         # Trigger background synthesis
-        asyncio.create_task(synthesize_session_journey(current_user["id"], session["id"], "bibleStudy"))
+        run_background_task(synthesize_session_journey(current_user["id"], session["id"], "bibleStudy"))
     except Exception:
         logger.exception("Error generating AI explanation")
 
@@ -781,7 +803,7 @@ async def create_emotional_support_session(
         await asyncio.to_thread(db.update_emotional_support_session, session["id"], {"ai_response": response})
         session["ai_response"] = response
         # Trigger background synthesis
-        asyncio.create_task(synthesize_session_journey(current_user["id"], session["id"], "emotionalSupport"))
+        run_background_task(synthesize_session_journey(current_user["id"], session["id"], "emotionalSupport"))
     except Exception:
         logger.exception("Error generating AI response")
 
@@ -1336,8 +1358,8 @@ elif settings.gcp_service_account_json:
                 json.dump(creds_data, f)
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = gcp_creds_path
             logger.info("🔑 Google Cloud Service Account credentials written dynamically from environment string.")
-    except Exception as e:
-        logger.error(f"❌ Failed to set up dynamic GCP credentials from GCP_SERVICE_ACCOUNT_JSON: {e}")
+    except Exception:
+        logger.exception("❌ Failed to set up dynamic GCP credentials from GCP_SERVICE_ACCOUNT_JSON")
 
 _GCP_VOICE_MAP = {
     "Idera": {"language_code": "en-GB", "name": "en-GB-Neural2-A"},
@@ -1408,6 +1430,32 @@ class TTSRequest(BaseModel):
     response_format: Optional[str] = "mp3"
 
 
+def _split_long_sentence(sentence: str, max_chunk_len: int) -> List[str]:
+    """Splits a single long sentence into smaller pieces."""
+    chunks = []
+    current_chunk = []
+    current_len = 0
+    words = sentence.split(' ')
+    for word in words:
+        if len(word) > max_chunk_len:
+            if current_chunk:
+                chunks.append(" ".join(current_chunk))
+                current_chunk = []
+                current_len = 0
+            for i in range(0, len(word), max_chunk_len):
+                chunks.append(word[i:i+max_chunk_len])
+        elif current_len + len(word) + 1 > max_chunk_len:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = [word]
+            current_len = len(word)
+        else:
+            current_chunk.append(word)
+            current_len += len(word) + 1
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+    return chunks
+
+
 def _split_text_into_chunks(text: str, max_chunk_len: int = 450) -> List[str]:
     """Splits a long text into chunks of at most max_chunk_len characters, trying to split on sentence boundaries."""
     if len(text) <= max_chunk_len:
@@ -1427,26 +1475,7 @@ def _split_text_into_chunks(text: str, max_chunk_len: int = 450) -> List[str]:
                 chunks.append(" ".join(current_chunk))
                 current_chunk = []
                 current_len = 0
-            
-            words = sentence.split(' ')
-            for word in words:
-                # If a single word is longer than max_chunk_len, we split by characters (rare)
-                if len(word) > max_chunk_len:
-                    if current_chunk:
-                        chunks.append(" ".join(current_chunk))
-                        current_chunk = []
-                        current_len = 0
-                    
-                    # Split word into chunks of max_chunk_len
-                    for i in range(0, len(word), max_chunk_len):
-                        chunks.append(word[i:i+max_chunk_len])
-                elif current_len + len(word) + 1 > max_chunk_len:
-                    chunks.append(" ".join(current_chunk))
-                    current_chunk = [word]
-                    current_len = len(word)
-                else:
-                    current_chunk.append(word)
-                    current_len += len(word) + 1
+            chunks.extend(_split_long_sentence(sentence, max_chunk_len))
         elif current_len + len(sentence) + 1 > max_chunk_len:
             chunks.append(" ".join(current_chunk))
             current_chunk = [sentence]
@@ -1461,40 +1490,24 @@ def _split_text_into_chunks(text: str, max_chunk_len: int = 450) -> List[str]:
     return [c.strip() for c in chunks if c.strip()]
 
 
-async def _generate_tts_bytes(text: str, voice: str, response_format: str) -> bytes:
-    """Generate TTS bytes using Pocket-TTS (primary), GCP, YarnGPT, or OpenAI (fallbacks)"""
-    # 1. Try Pocket-TTS (Primary)
+async def _generate_pocket_tts(text: str, voice: str) -> Optional[bytes]:
     pocket_voice = POCKET_TTS_VOICE_MAP.get(voice, "cosette")
     logger.info(f"Generating TTS using Pocket-TTS (voice={voice} -> {pocket_voice})")
     try:
         import httpx
-        # Split text if it's longer than 450 characters
         chunks = _split_text_into_chunks(text, max_chunk_len=450)
-        
         async with httpx.AsyncClient(timeout=30.0) as client:
             all_pcm = []
             for chunk_idx, chunk in enumerate(chunks):
                 logger.info(f"Generating Pocket-TTS chunk {chunk_idx + 1}/{len(chunks)}: length={len(chunk)}")
-                payload = {
-                    "text": chunk,
-                    "voice": pocket_voice
-                }
-                
+                payload = {"text": chunk, "voice": pocket_voice}
                 chunk_wav = None
-                # Try POST first
-                response = await client.post(
-                    "https://teganmosi-realtime.hf.space/tts",
-                    json=payload
-                )
+                response = await client.post("https://teganmosi-realtime.hf.space/tts", json=payload)
                 if response.status_code == 200:
                     chunk_wav = response.content
                 else:
                     logger.warning(f"Pocket-TTS POST failed for chunk {chunk_idx + 1} with status {response.status_code}; trying GET fallback...")
-                    # GET fallback
-                    response_get = await client.get(
-                        "https://teganmosi-realtime.hf.space/tts",
-                        params={"text": chunk, "voice": pocket_voice}
-                    )
+                    response_get = await client.get("https://teganmosi-realtime.hf.space/tts", params={"text": chunk, "voice": pocket_voice})
                     if response_get.status_code == 200:
                         chunk_wav = response_get.content
                     else:
@@ -1503,30 +1516,19 @@ async def _generate_tts_bytes(text: str, voice: str, response_format: str) -> by
                 if chunk_wav is None:
                     raise RuntimeError(f"Failed to generate Pocket-TTS audio for chunk {chunk_idx + 1}")
                 
-                # Extract raw PCM bytes from WAV
                 chunk_pcm = _wav_to_pcm16(chunk_wav)
                 if not chunk_pcm:
                     raise RuntimeError(f"Failed to extract PCM bytes from WAV for chunk {chunk_idx + 1}")
-                
                 all_pcm.append(chunk_pcm)
             
-            # Combine all PCM and wrap in WAV
             combined_pcm = b"".join(all_pcm)
-            combined_wav = _pcm16_to_wav(combined_pcm, sample_rate=24000)
-            return combined_wav
-            
+            return _pcm16_to_wav(combined_pcm, sample_rate=24000)
     except Exception:
-        logger.exception("Pocket-TTS generation failed; trying fallbacks...")
+        logger.exception("Pocket-TTS generation failed")
+        return None
 
-    # 2. Try Google Cloud Text-to-Speech
-    if _is_gcp_tts_configured():
-        logger.info(f"Generating TTS using Google Cloud (voice={voice})")
-        gcp_bytes = _generate_gcp_tts(text, voice, response_format)
-        if gcp_bytes:
-            return gcp_bytes
-        logger.warning("Google Cloud TTS generation failed; attempting fallback...")
 
-    # 3. Try YarnGPT
+async def _generate_yarngpt_tts(text: str, voice: str, response_format: str) -> Optional[bytes]:
     if settings.yarngpt_api_key and settings.yarngpt_api_key != "your_yarngpt_api_key_here":
         logger.info(f"Generating TTS using YarnGPT (voice={voice})")
         try:
@@ -1541,19 +1543,17 @@ async def _generate_tts_bytes(text: str, voice: str, response_format: str) -> by
                     "voice": voice,
                     "response_format": response_format
                 }
-                response = await client.post(
-                    "https://yarngpt.ai/api/v1/tts",
-                    headers=headers,
-                    json=payload
-                )
+                response = await client.post("https://yarngpt.ai/api/v1/tts", headers=headers, json=payload)
                 if response.status_code == 200:
                     return response.content
                 else:
                     logger.error(f"YarnGPT TTS API returned error {response.status_code}: {response.text}")
         except Exception:
-            logger.exception("YarnGPT TTS generation failed; attempting fallback...")
+            logger.exception("YarnGPT TTS generation failed")
+    return None
 
-    # 4. Try OpenAI
+
+async def _generate_openai_tts(text: str, voice: str, response_format: str) -> Optional[bytes]:
     if settings.openai_api_key and settings.openai_api_key != "your_openai_api_key_here":
         logger.info(f"Generating TTS using OpenAI (voice={voice})")
         try:
@@ -1576,6 +1576,33 @@ async def _generate_tts_bytes(text: str, voice: str, response_format: str) -> by
             return tts_response.content
         except Exception:
             logger.exception("OpenAI TTS generation failed")
+    return None
+
+
+async def _generate_tts_bytes(text: str, voice: str, response_format: str) -> bytes:
+    """Generate TTS bytes using Pocket-TTS (primary), GCP, YarnGPT, or OpenAI (fallbacks)"""
+    # 1. Try Pocket-TTS (Primary)
+    pocket_bytes = await _generate_pocket_tts(text, voice)
+    if pocket_bytes:
+        return pocket_bytes
+
+    # 2. Try Google Cloud Text-to-Speech
+    if _is_gcp_tts_configured():
+        logger.info(f"Generating TTS using Google Cloud (voice={voice})")
+        gcp_bytes = _generate_gcp_tts(text, voice, response_format)
+        if gcp_bytes:
+            return gcp_bytes
+        logger.warning("Google Cloud TTS generation failed; attempting fallback...")
+
+    # 3. Try YarnGPT
+    yarngpt_bytes = await _generate_yarngpt_tts(text, voice, response_format)
+    if yarngpt_bytes:
+        return yarngpt_bytes
+
+    # 4. Try OpenAI
+    openai_bytes = await _generate_openai_tts(text, voice, response_format)
+    if openai_bytes:
+        return openai_bytes
 
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1593,14 +1620,14 @@ async def text_to_speech(request: TTSRequest):
         import io
         
         content_types = {
-            "mp3": "audio/mpeg",
-            "wav": "audio/wav",
+            "mp3": AUDIO_MPEG,
+            "wav": AUDIO_WAV,
             "opus": "audio/opus",
             "flac": "audio/flac"
         }
-        media_type = content_types.get(request.response_format.lower(), "audio/mpeg")
+        media_type = content_types.get(request.response_format.lower(), AUDIO_MPEG)
         if content.startswith(b"RIFF"):
-            media_type = "audio/wav"
+            media_type = AUDIO_WAV
         
         return StreamingResponse(
             io.BytesIO(content),
@@ -1641,14 +1668,14 @@ async def text_to_speech_get(
         import io
         
         content_types = {
-            "mp3": "audio/mpeg",
-            "wav": "audio/wav",
+            "mp3": AUDIO_MPEG,
+            "wav": AUDIO_WAV,
             "opus": "audio/opus",
             "flac": "audio/flac"
         }
-        media_type = content_types.get(response_format.lower(), "audio/mpeg")
+        media_type = content_types.get(response_format.lower(), AUDIO_MPEG)
         if content.startswith(b"RIFF"):
-            media_type = "audio/wav"
+            media_type = AUDIO_WAV
         
         headers = {
             "Accept-Ranges": "bytes",
@@ -1828,14 +1855,223 @@ async def synthesize_voice_journey(user_id: str, messages: List[Dict[str, str]])
 
 
 @app.websocket("/ws/voice-call/{call_id}")
-async def websocket_voice_call(websocket: WebSocket, call_id: str):
-    """Voice call websocket endpoint. Bridges frontend to the S2S Hugging Face space."""
-    import base64
+async def _connect_and_configure_s2s(call_id: str, pocket_voice: str, system_prompt: str):
+    """Connect to S2S with exponential backoff retry (handles 1012 cold-start)."""
     import websockets
     import json
+    
+    max_attempts = 5
+    s2s_url = "wss://teganmosi-realtime.hf.space/s2s"
+    for attempt in range(1, max_attempts + 1):
+        try:
+            logger.info(f"S2S connect attempt {attempt}/{max_attempts} for call {call_id}...")
+            ws = await websockets.connect(
+                s2s_url, 
+                open_timeout=15,
+                ping_interval=30,
+                ping_timeout=60
+            )
+            config_payload = {
+                "type": "config",
+                "voice": pocket_voice,
+                "system_prompt": system_prompt,
+            }
+            await ws.send(json.dumps(config_payload))
+            config_response = await ws.recv()
+            logger.info(f"S2S configured (attempt {attempt}): {config_response}")
+            return ws
+        except Exception as e:
+            logger.warning(f"S2S connect attempt {attempt} failed: {e}")
+            if attempt < max_attempts:
+                wait = 2 ** (attempt - 1)   # 1s, 2s, 4s, 8s
+                logger.info(f"Retrying in {wait}s...")
+                await asyncio.sleep(wait)
+            else:
+                raise
+
+
+async def _process_frontend_message(data: Dict[str, Any], call_id: str, s2s_ref: Dict[str, Any], reconnecting: asyncio.Event) -> bool:
+    import base64
+    msg_type = data.get("type")
+    if msg_type == "ping":
+        await voice_call_manager.send_message(call_id, {"type": "pong"})
+    elif msg_type == "close":
+        return False
+    elif msg_type == "audio_input" and not reconnecting.is_set():
+        audio_b64 = data.get("audio", "")
+        if audio_b64:
+            float32_bytes = base64.b64decode(audio_b64)
+            if float32_bytes:
+                try:
+                    await s2s_ref["ws"].send(float32_bytes)
+                except Exception:
+                    pass
+    return True
+
+
+async def _forward_frontend_to_s2s(websocket: WebSocket, call_id: str, s2s_ref: Dict[str, Any], reconnecting: asyncio.Event):
+    try:
+        while True:
+            data = await websocket.receive_json()
+            should_continue = await _process_frontend_message(data, call_id, s2s_ref, reconnecting)
+            if not should_continue:
+                break
+    except Exception as e:
+        if not isinstance(e, (WebSocketDisconnect, RuntimeError)):
+            logger.exception("Error in forward_frontend_to_s2s")
+
+
+async def _handle_s2s_status(data: Dict[str, Any], call_id: str):
+    msg = data.get("message", "")
+    if msg == "Listening...":
+        await voice_call_manager.send_message(call_id, {"type": "user_speaking", "speaking": True})
+    elif msg == "Transcribing...":
+        await voice_call_manager.send_message(call_id, {"type": "user_speaking", "speaking": False})
+
+
+async def _handle_s2s_transcription(data: Dict[str, Any], call_messages: List[Dict[str, str]], call_id: str):
+    text = data.get("text", "")
+    if text:
+        call_messages.append({"role": "user", "content": text})
+        await voice_call_manager.send_message(call_id, {
+            "type": "transcript",
+            "text": text,
+            "role": "user"
+        })
+
+
+async def _handle_s2s_llm_text(data: Dict[str, Any], call_messages: List[Dict[str, str]], call_id: str):
+    text = data.get("text", "")
+    if text:
+        if call_messages and call_messages[-1]["role"] == "assistant":
+            call_messages[-1]["content"] += " " + text
+        else:
+            call_messages.append({"role": "assistant", "content": text})
+        await voice_call_manager.send_message(call_id, {
+            "type": "transcript",
+            "text": text,
+            "role": "assistant"
+        })
+
+
+async def _handle_s2s_string_message(data: Dict[str, Any], call_messages: List[Dict[str, str]], call_id: str) -> Optional[bool]:
+    msg_type = data.get("type")
+    if msg_type == "status":
+        await _handle_s2s_status(data, call_id)
+    elif msg_type == "transcription":
+        await _handle_s2s_transcription(data, call_messages, call_id)
+    elif msg_type == "llm_text":
+        await _handle_s2s_llm_text(data, call_messages, call_id)
+    elif msg_type == "done":
+        await voice_call_manager.send_message(call_id, {"type": "aria_speaking", "speaking": False})
+        return False
+    return None
+
+
+
+async def _handle_s2s_message(res, call_messages: List[Dict[str, str]], call_id: str, aria_speaking_active: bool) -> bool:
+    import base64
+    import json
+    
+    if isinstance(res, str):
+        data = json.loads(res)
+        result = await _handle_s2s_string_message(data, call_messages, call_id)
+        if result is False:
+            return False
+            
+    elif isinstance(res, bytes):
+        base64_audio = base64.b64encode(res).decode()
+        if not aria_speaking_active:
+            await voice_call_manager.send_message(call_id, {"type": "aria_speaking", "speaking": True})
+            aria_speaking_active = True
+        await voice_call_manager.send_message(call_id, {
+            "type": "audio_output",
+            "audio": base64_audio
+        })
+        
+    return aria_speaking_active
+
+
+async def _reconnect_s2s(
+    call_id: str,
+    s2s_ref: Dict[str, Any],
+    reconnecting: asyncio.Event,
+    pocket_voice: str,
+    system_prompt: str
+) -> bool:
+    logger.warning("S2S closed, reconnecting...")
+    reconnecting.set()
+    await voice_call_manager.send_message(call_id, {
+        "type": "status",
+        "message": "Reconnecting to Aria, please hold..."
+    })
 
     try:
-        user = get_current_user_websocket(websocket)
+        old_ws = s2s_ref["ws"]
+        try:
+            await old_ws.close()
+        except Exception:
+            pass
+        s2s_ref["ws"] = await _connect_and_configure_s2s(call_id, pocket_voice, system_prompt)
+        reconnecting.clear()
+        await voice_call_manager.send_message(call_id, {
+            "type": "status",
+            "message": "Reconnected. Aria is listening."
+        })
+        logger.info(f"S2S reconnected for call {call_id}")
+        return True
+    except Exception:
+        logger.exception("S2S reconnection failed")
+        await voice_call_manager.send_message(call_id, {
+            "type": "error",
+            "message": "Could not reconnect to Aria. Please try again."
+        })
+        return False
+
+
+async def _forward_s2s_to_frontend(
+    call_id: str,
+    s2s_ref: Dict[str, Any],
+    reconnecting: asyncio.Event,
+    call_messages: List[Dict[str, str]],
+    pocket_voice: str,
+    system_prompt: str
+):
+    import websockets
+    
+    aria_speaking_active = False
+    max_reconnects = 4
+
+    for reconnect_count in range(max_reconnects + 1):
+        try:
+            while True:
+                res = await s2s_ref["ws"].recv()
+                aria_speaking_active = await _handle_s2s_message(res, call_messages, call_id, aria_speaking_active)
+
+        except websockets.exceptions.ConnectionClosed:
+            aria_speaking_active = False
+            if reconnect_count >= max_reconnects:
+                logger.exception(f"S2S connection lost permanently after {max_reconnects} reconnects")
+                await voice_call_manager.send_message(call_id, {
+                    "type": "error",
+                    "message": "Connection to Aria lost. Please try again."
+                })
+                return
+
+            success = await _reconnect_s2s(call_id, s2s_ref, reconnecting, pocket_voice, system_prompt)
+            if not success:
+                return
+
+        except Exception:
+            logger.exception("Unexpected error in forward_s2s_to_frontend")
+            return
+
+
+@app.websocket("/ws/voice-call/{call_id}")
+async def websocket_voice_call(websocket: WebSocket, call_id: str):
+    """Voice call websocket endpoint. Bridges frontend to the S2S Hugging Face space."""
+    try:
+        user = await get_current_user_websocket(websocket)
     except Exception:
         logger.exception("WebSocket authentication failed")
         await websocket.close(code=4001, reason="Authentication failed")
@@ -1876,41 +2112,9 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
     pocket_voice = "alba"
     logger.info(f"Voice call {call_id}: voice={pocket_voice} (user preference: {voice_preference})")
 
-    s2s_url = "wss://teganmosi-realtime.hf.space/s2s"
-
-    async def connect_and_configure_s2s():
-        """Connect to S2S with exponential backoff retry (handles 1012 cold-start)."""
-        max_attempts = 5
-        for attempt in range(1, max_attempts + 1):
-            try:
-                logger.info(f"S2S connect attempt {attempt}/{max_attempts} for call {call_id}...")
-                ws = await websockets.connect(
-                    s2s_url, 
-                    open_timeout=15,
-                    ping_interval=30,
-                    ping_timeout=60
-                )
-                config_payload = {
-                    "type": "config",
-                    "voice": pocket_voice,
-                    "system_prompt": ARIA_SPIRITUAL_SYSTEM_PROMPT,
-                }
-                await ws.send(json.dumps(config_payload))
-                config_response = await ws.recv()
-                logger.info(f"S2S configured (attempt {attempt}): {config_response}")
-                return ws
-            except Exception as e:
-                logger.warning(f"S2S connect attempt {attempt} failed: {e}")
-                if attempt < max_attempts:
-                    wait = 2 ** (attempt - 1)   # 1s, 2s, 4s, 8s
-                    logger.info(f"Retrying in {wait}s...")
-                    await asyncio.sleep(wait)
-                else:
-                    raise
-
     # Initial connection — close frontend if all retries fail
     try:
-        s2s_ws = await connect_and_configure_s2s()
+        s2s_ws = await _connect_and_configure_s2s(call_id, pocket_voice, ARIA_SPIRITUAL_SYSTEM_PROMPT)
     except Exception:
         logger.exception("All S2S connection attempts failed")
         await websocket.close(code=4002, reason="S2S connection failed")
@@ -1927,130 +2131,12 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
     reconnecting = asyncio.Event()
     call_messages = []
 
-    async def forward_frontend_to_s2s():
-        try:
-            while True:
-                data = await websocket.receive_json()
-                msg_type = data.get("type")
-                if msg_type == "ping":
-                    await voice_call_manager.send_message(call_id, {"type": "pong"})
-                elif msg_type == "close":
-                    break
-                elif msg_type == "audio_input":
-                    if reconnecting.is_set():
-                        continue   # Drop audio while reconnecting
-                    audio_b64 = data.get("audio", "")
-                    if not audio_b64:
-                        continue
-                    # Frontend sends Float32 16kHz PCM directly — pass straight through
-                    float32_bytes = base64.b64decode(audio_b64)
-                    if float32_bytes:
-                        try:
-                            await s2s_ref["ws"].send(float32_bytes)
-                        except Exception:
-                            pass  # Mid-reconnect drop — forward task will recover
-        except Exception as e:
-            if not isinstance(e, (WebSocketDisconnect, RuntimeError)):
-                logger.exception("Error in forward_frontend_to_s2s")
-
-    async def forward_s2s_to_frontend():
-        aria_speaking_active = False
-        max_reconnects = 4
-
-        for reconnect_count in range(max_reconnects + 1):
-            try:
-                while True:
-                    res = await s2s_ref["ws"].recv()
-                    if isinstance(res, str):
-                        data = json.loads(res)
-                        msg_type = data.get("type")
-                        if msg_type == "status":
-                            msg = data.get("message", "")
-                            if msg == "Listening...":
-                                await voice_call_manager.send_message(call_id, {"type": "user_speaking", "speaking": True})
-                            elif msg == "Transcribing...":
-                                await voice_call_manager.send_message(call_id, {"type": "user_speaking", "speaking": False})
-                        elif msg_type == "transcription":
-                            text = data.get("text", "")
-                            if text:
-                                call_messages.append({"role": "user", "content": text})
-                                await voice_call_manager.send_message(call_id, {
-                                    "type": "transcript",
-                                    "text": text,
-                                    "role": "user"
-                                })
-                        elif msg_type == "llm_text":
-                            text = data.get("text", "")
-                            if text:
-                                if call_messages and call_messages[-1]["role"] == "assistant":
-                                    call_messages[-1]["content"] += " " + text
-                                else:
-                                    call_messages.append({"role": "assistant", "content": text})
-                                await voice_call_manager.send_message(call_id, {
-                                    "type": "transcript",
-                                    "text": text,
-                                    "role": "assistant"
-                                })
-                        elif msg_type == "done":
-                            await voice_call_manager.send_message(call_id, {"type": "aria_speaking", "speaking": False})
-                            aria_speaking_active = False
-                    elif isinstance(res, bytes):
-                        # pocket-tts returns 24kHz 16-bit PCM bytes
-                        base64_audio = base64.b64encode(res).decode()
-                        if not aria_speaking_active:
-                            await voice_call_manager.send_message(call_id, {"type": "aria_speaking", "speaking": True})
-                            aria_speaking_active = True
-                        await voice_call_manager.send_message(call_id, {
-                            "type": "audio_output",
-                            "audio": base64_audio
-                        })
-
-            except websockets.exceptions.ConnectionClosed as e:
-                aria_speaking_active = False
-                if reconnect_count >= max_reconnects:
-                    logger.error(f"S2S connection lost permanently after {max_reconnects} reconnects: {e}")
-                    await voice_call_manager.send_message(call_id, {
-                        "type": "error",
-                        "message": "Connection to Aria lost. Please try again."
-                    })
-                    return
-
-                logger.warning(f"S2S closed ({e.code}), reconnecting... (attempt {reconnect_count + 1}/{max_reconnects})")
-                reconnecting.set()
-                await voice_call_manager.send_message(call_id, {
-                    "type": "status",
-                    "message": "Reconnecting to Aria, please hold..."
-                })
-
-                try:
-                    old_ws = s2s_ref["ws"]
-                    try:
-                        await old_ws.close()
-                    except Exception:
-                        pass
-                    s2s_ref["ws"] = await connect_and_configure_s2s()
-                    reconnecting.clear()
-                    await voice_call_manager.send_message(call_id, {
-                        "type": "status",
-                        "message": "Reconnected. Aria is listening."
-                    })
-                    logger.info(f"S2S reconnected for call {call_id}")
-                except Exception:
-                    logger.exception("S2S reconnection failed")
-                    await voice_call_manager.send_message(call_id, {
-                        "type": "error",
-                        "message": "Could not reconnect to Aria. Please try again."
-                    })
-                    return
-
-            except Exception:
-                logger.exception("Unexpected error in forward_s2s_to_frontend")
-                return
-
     # Run tasks concurrently
     tasks = [
-        asyncio.create_task(forward_frontend_to_s2s()),
-        asyncio.create_task(forward_s2s_to_frontend())
+        asyncio.create_task(_forward_frontend_to_s2s(websocket, call_id, s2s_ref, reconnecting)),
+        asyncio.create_task(_forward_s2s_to_frontend(
+            call_id, s2s_ref, reconnecting, call_messages, pocket_voice, ARIA_SPIRITUAL_SYSTEM_PROMPT
+        ))
     ]
     try:
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -2072,7 +2158,7 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
             
         # Trigger background synthesis
         if call_messages and user_id:
-            asyncio.create_task(synthesize_voice_journey(user_id, call_messages))
+            run_background_task(synthesize_voice_journey(user_id, call_messages))
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
@@ -2125,7 +2211,7 @@ async def process_bible_study_ai(session_id: str):
                 {"type": "message", "role": "assistant", "content": response},
             )
             # Trigger background synthesis
-            asyncio.create_task(synthesize_session_journey(session["user_id"], session_id, "bibleStudy"))
+            run_background_task(synthesize_session_journey(session["user_id"], session_id, "bibleStudy"))
     except Exception:
         logger.exception("Error in Bible study AI")
         await manager.send_message(
@@ -2137,7 +2223,7 @@ async def process_bible_study_ai(session_id: str):
 async def websocket_bible_study(websocket: WebSocket, session_id: str):
     """WebSocket endpoint for real-time Bible study chat with authentication"""
     try:
-        user = get_current_user_websocket(websocket)
+        user = await get_current_user_websocket(websocket)
         session = db.get_bible_study_session(session_id)
         if not session or session.get("user_id") != user.get("id"):
             await websocket.close(
@@ -2192,7 +2278,7 @@ async def process_emotional_support_ai(session_id: str):
         )
         # Trigger background synthesis
         if session:
-            asyncio.create_task(synthesize_session_journey(session["user_id"], session_id, "emotionalSupport"))
+            run_background_task(synthesize_session_journey(session["user_id"], session_id, "emotionalSupport"))
     except Exception:
         logger.exception("Error in emotional support AI")
         await manager.send_message(
@@ -2333,12 +2419,49 @@ async def chat_with_aria(
 
         return AIResponse(content=response_content, mode=request.mode or "general")
 
-    except Exception as e:
+    except Exception:
         logger.exception("Chat error")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=FAILED_TO_GENERATE_RESPONSE)
 
 
 from fastapi.responses import StreamingResponse
+
+async def _get_or_create_chat_session(user_id: str, session_id: Optional[str], messages: List[Dict[str, str]]) -> str:
+    if session_id:
+        return session_id
+    title = messages[-1].get("content", "")[:30] if messages else "New Conversation"
+    session = await asyncio.to_thread(db.create_chat_session, user_id, title)
+    if not session:
+        raise HTTPException(status_code=500, detail=FAILED_TO_CREATE_SESSION)
+    
+    # Save the welcome message if the frontend sent it as the first message
+    if len(messages) > 1 and messages[0].get("role") == "assistant":
+        await asyncio.to_thread(
+            db.create_chat_message,
+            {"session_id": session["id"], "role": "assistant", "content": messages[0].get("content", "")}
+        )
+    return session["id"]
+
+
+async def _generate_chat_stream(session_id: str, full_context: List[Dict[str, str]], mode: str, custom_instructions: Optional[str], user_id: str):
+    chunks = await asyncio.to_thread(
+        lambda: list(ai_service.generate_response_stream(
+            messages=full_context,
+            mode=mode,
+            custom_instructions=custom_instructions,
+            user_id=user_id,
+        ))
+    )
+    full_content = ""
+    for chunk in chunks:
+        full_content += chunk
+        yield chunk
+    if full_content:
+        await asyncio.to_thread(
+            db.create_chat_message,
+            {"session_id": session_id, "role": "assistant", "content": full_content}
+        )
+
 
 @app.post("/api/v1/ai/chat/stream")
 async def chat_with_aria_stream(
@@ -2349,20 +2472,7 @@ async def chat_with_aria_stream(
     """Stream chat with Aria and save to history"""
     try:
         user_id = current_user["id"]
-
-        if not session_id:
-            title = request.messages[-1].get("content", "")[:30] if request.messages else "New Conversation"
-            session = await asyncio.to_thread(db.create_chat_session, user_id, title)
-            if not session:
-                raise HTTPException(status_code=500, detail=FAILED_TO_CREATE_SESSION)
-            session_id = session["id"]
-
-            # Save the welcome message if the frontend sent it as the first message
-            if len(request.messages) > 1 and request.messages[0].get("role") == "assistant":
-                await asyncio.to_thread(
-                    db.create_chat_message,
-                    {"session_id": session_id, "role": "assistant", "content": request.messages[0].get("content", "")}
-                )
+        session_id = await _get_or_create_chat_session(user_id, session_id, request.messages)
 
         user_message = request.messages[-1].get("content", "") if request.messages else ""
         if user_message:
@@ -2375,28 +2485,12 @@ async def chat_with_aria_stream(
         custom_instructions = _get_user_custom_instructions(profile) if profile else None
         full_context = [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in request.messages]
 
-        async def generate():
-            chunks = await asyncio.to_thread(
-                lambda: list(ai_service.generate_response_stream(
-                    messages=full_context,
-                    mode=request.mode or "general",
-                    custom_instructions=custom_instructions,
-                    user_id=user_id,
-                ))
-            )
-            full_content = ""
-            for chunk in chunks:
-                full_content += chunk
-                yield chunk
-            if full_content:
-                await asyncio.to_thread(
-                    db.create_chat_message,
-                    {"session_id": session_id, "role": "assistant", "content": full_content}
-                )
+        return StreamingResponse(
+            _generate_chat_stream(session_id, full_context, request.mode or "general", custom_instructions, user_id),
+            media_type="text/plain"
+        )
 
-        return StreamingResponse(generate(), media_type="text/plain")
-
-    except Exception as e:
+    except Exception:
         logger.exception("Chat stream error")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=FAILED_TO_GENERATE_RESPONSE)
 
@@ -2413,6 +2507,41 @@ def invalidate_home_cache(user_id: str):
 
 
 # ==================== Serve Frontend ====================
+
+
+async def _get_or_generate_personalized_verse(user_id: str, activity: List[Dict[str, Any]]) -> Dict[str, Any]:
+    try:
+        today = datetime.now().strftime("%Y-%m-%d")
+        # Try database cache first
+        verse = await asyncio.to_thread(db.get_cached_verse, user_id, today)
+
+        # If no cached verse, generate new one
+        if not verse:
+            # Get user's recent topics from activity
+            recent_moods = []
+            if activity:
+                for a in activity[:3]:
+                    if a.get("type") == "support":
+                        recent_moods.append(a.get("title", ""))
+
+            # Generate personalized verse with insight (runs AI, offloaded to thread)
+            verse = await asyncio.to_thread(ai_service.get_personalized_verse, recent_moods)
+
+            # Generate Daily Manna based on the verse (runs AI, offloaded to thread)
+            verse["daily_manna"] = await asyncio.to_thread(ai_service.get_daily_manna, verse)
+
+            # Save to database cache
+            await asyncio.to_thread(db.save_cached_verse, user_id, today, verse)
+        return verse
+    except Exception:
+        logger.exception("Error getting personalized verse")
+        # Fallback verse
+        return {
+            "verse": "For I know the plans I have for you, declares the LORD, plans to prosper you and not to harm you, plans to give you hope and a future.",
+            "reference": "Jeremiah 29:11",
+            "insight": "Even in uncertain times, God's promise of a hopeful future stands as an anchor for your soul.",
+            "daily_manna": "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead.",
+        }
 
 
 @app.get("/api/v1/home/data")
@@ -2462,37 +2591,7 @@ async def get_home_data(current_user: Dict[str, Any] = Depends(get_current_user)
     recent_prayers = prayers[:3] if prayers else []
 
     # Get personalized verse - Cache in DB to ensure it only changes once per day
-    try:
-        today = datetime.now().strftime("%Y-%m-%d")
-        # Try database cache first
-        verse = await asyncio.to_thread(db.get_cached_verse, user_id, today)
-
-        # If no cached verse, generate new one
-        if not verse:
-            # Get user's recent topics from activity
-            recent_moods = []
-            if activity:
-                for a in activity[:3]:
-                    if a.get("type") == "support":
-                        recent_moods.append(a.get("title", ""))
-
-            # Generate personalized verse with insight (runs AI, offloaded to thread)
-            verse = await asyncio.to_thread(ai_service.get_personalized_verse, recent_moods)
-
-            # Generate Daily Manna based on the verse (runs AI, offloaded to thread)
-            verse["daily_manna"] = await asyncio.to_thread(ai_service.get_daily_manna, verse)
-
-            # Save to database cache
-            await asyncio.to_thread(db.save_cached_verse, user_id, today, verse)
-    except Exception:
-        logger.exception("Error getting personalized verse")
-        # Fallback verse
-        verse = {
-            "verse": "For I know the plans I have for you, declares the LORD, plans to prosper you and not to harm you, plans to give you hope and a future.",
-            "reference": "Jeremiah 29:11",
-            "insight": "Even in uncertain times, God's promise of a hopeful future stands as an anchor for your soul.",
-            "daily_manna": "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead.",
-        }
+    verse = await _get_or_generate_personalized_verse(user_id, activity)
 
     response_data = {
         "user": {"name": user_name},
@@ -2643,7 +2742,85 @@ async def serve_frontend_app(path: str):
 @app.on_event("startup")
 async def startup_event():
     # Start the proactive devotions background task
-    asyncio.create_task(proactive_devotions_scheduler())
+    run_background_task(proactive_devotions_scheduler())
+
+
+def _should_trigger_devotion(profile: Dict[str, Any], local_time: datetime) -> bool:
+    user_id = profile.get("id")
+    # Fetch user's devotion settings
+    settings_data = db.get_devotion_settings(user_id)
+    if not settings_data:
+        pref_time_str = "06:00"
+    else:
+        pref_time_str = settings_data.get("preferred_time") or "06:00"
+    
+    # Parse preferred time
+    try:
+        pref_hour, pref_minute = map(int, pref_time_str.split(":"))
+    except Exception:
+        pref_hour, pref_minute = 6, 0
+    
+    # Check if local time is past preferred time
+    return local_time.hour > pref_hour or (local_time.hour == pref_hour and local_time.minute >= pref_minute)
+
+
+def _get_user_timezone(profile: Dict[str, Any]) -> str:
+    user_id = profile.get("id")
+    settings_data = db.get_devotion_settings(user_id)
+    if not settings_data:
+        return "UTC"
+    return settings_data.get("timezone") or "UTC"
+
+
+def _generate_and_save_proactive_devotion(profile: Dict[str, Any], user_id: str, local_date_str: str):
+    # 1. Fetch unanswered prayers
+    with db.get_connection() as conn:
+        cur = db._cursor(conn)
+        cur.execute(
+            "SELECT title, content FROM prayers WHERE user_id = %s AND isanswered = FALSE ORDER BY created_at DESC LIMIT 5",
+            (user_id,)
+        )
+        prayers = cur.fetchall()
+        unanswered_prayers = [f"{p['title'] or ''}: {p['content']}".strip() for p in prayers]
+
+    # 2. Fetch last 3 emotional support moods/descriptions
+    with db.get_connection() as conn:
+        cur = db._cursor(conn)
+        cur.execute(
+            "SELECT mood, situation_description FROM emotional_support_sessions WHERE user_id = %s ORDER BY created_at DESC LIMIT 3",
+            (user_id,)
+        )
+        support_sessions = cur.fetchall()
+        recent_moods = [f"{s['mood'] or ''} ({s['situation_description'] or ''})".strip() for s in support_sessions]
+
+    # 3. Generate proactive devotion
+    logger.info(f"Generating proactive devotion for user {user_id} for date {local_date_str}...")
+    first_name = profile.get("full_name", "Believer").split(" ")[0]
+    devotion = ai_service.generate_proactive_devotion(unanswered_prayers, recent_moods, first_name)
+    
+    # 4. Save to database cache
+    db.save_cached_verse(user_id, local_date_str, devotion)
+    logger.info(f"Proactive devotion saved for user {user_id} for date {local_date_str}")
+    
+    # 5. Push notification simulation payload
+    struggle = "your spiritual walk"
+    if recent_moods:
+        struggle = support_sessions[0]["mood"]
+    elif unanswered_prayers:
+        struggle = prayers[0]["title"] or "your needs"
+    
+    headline = f"Your morning bread is ready, {first_name}. I was praying about your concern regarding {struggle}..."
+    logger.info(f"🔔 PUSH NOTIFICATION SIMULATION PAYLOAD: {headline}")
+
+
+def _get_user_local_time(profile: Dict[str, Any]) -> datetime:
+    from zoneinfo import ZoneInfo
+    tz_str = _get_user_timezone(profile)
+    try:
+        tz = ZoneInfo(tz_str)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    return datetime.now(tz)
 
 
 async def proactive_devotions_scheduler():
@@ -2659,75 +2836,15 @@ async def proactive_devotions_scheduler():
                 if not user_id:
                     continue
                 
-                # Fetch user's devotion settings
-                settings_data = db.get_devotion_settings(user_id)
-                if not settings_data:
-                    # Default: UTC, 6:00 AM
-                    tz_str = "UTC"
-                    pref_time_str = "06:00"
-                else:
-                    tz_str = settings_data.get("timezone") or "UTC"
-                    pref_time_str = settings_data.get("preferred_time") or "06:00"
-                
-                # Get current time in user's timezone
-                from zoneinfo import ZoneInfo
-                try:
-                    tz = ZoneInfo(tz_str)
-                except Exception:
-                    tz = ZoneInfo("UTC")
-                
-                local_time = datetime.now(tz)
-                
-                # Parse preferred time
-                try:
-                    pref_hour, pref_minute = map(int, pref_time_str.split(":"))
-                except Exception:
-                    pref_hour, pref_minute = 6, 0
+                local_time = _get_user_local_time(profile)
                 
                 # Check if local time is past preferred time
-                if local_time.hour > pref_hour or (local_time.hour == pref_hour and local_time.minute >= pref_minute):
+                if _should_trigger_devotion(profile, local_time):
                     # Check if devotion is already cached for today's local date
                     local_date_str = local_time.strftime("%Y-%m-%d")
                     cached_verse = db.get_cached_verse(user_id, local_date_str)
                     if not cached_verse:
-                        # 1. Fetch unanswered prayers
-                        with db.get_connection() as conn:
-                            cur = db._cursor(conn)
-                            cur.execute(
-                                "SELECT title, content FROM prayers WHERE user_id = %s AND isanswered = FALSE ORDER BY created_at DESC LIMIT 5",
-                                (user_id,)
-                            )
-                            prayers = cur.fetchall()
-                            unanswered_prayers = [f"{p['title'] or ''}: {p['content']}".strip() for p in prayers]
-
-                        # 2. Fetch last 3 emotional support moods/descriptions
-                        with db.get_connection() as conn:
-                            cur = db._cursor(conn)
-                            cur.execute(
-                                "SELECT mood, situation_description FROM emotional_support_sessions WHERE user_id = %s ORDER BY created_at DESC LIMIT 3",
-                                (user_id,)
-                            )
-                            support_sessions = cur.fetchall()
-                            recent_moods = [f"{s['mood'] or ''} ({s['situation_description'] or ''})".strip() for s in support_sessions]
-
-                        # 3. Generate proactive devotion
-                        logger.info(f"Generating proactive devotion for user {user_id} for date {local_date_str}...")
-                        first_name = profile.get("full_name", "Believer").split(" ")[0]
-                        devotion = ai_service.generate_proactive_devotion(unanswered_prayers, recent_moods, first_name)
-                        
-                        # 4. Save to database cache
-                        db.save_cached_verse(user_id, local_date_str, devotion)
-                        logger.info(f"Proactive devotion saved for user {user_id} for date {local_date_str}")
-                        
-                        # 5. Push notification simulation payload
-                        struggle = "your spiritual walk"
-                        if recent_moods:
-                            struggle = support_sessions[0]["mood"]
-                        elif unanswered_prayers:
-                            struggle = prayers[0]["title"] or "your needs"
-                        
-                        headline = f"Your morning bread is ready, {first_name}. I was praying about your concern regarding {struggle}..."
-                        logger.info(f"🔔 PUSH NOTIFICATION SIMULATION PAYLOAD: {headline}")
+                        await asyncio.to_thread(_generate_and_save_proactive_devotion, profile, user_id, local_date_str)
         except Exception:
             logger.exception("Error in proactive devotions scheduler loop")
             
