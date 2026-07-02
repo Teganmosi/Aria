@@ -30,6 +30,22 @@ export const AIChat = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  useEffect(() => {
+    if (!currentSessionId && messages.length === 0) {
+      const fetchGreeting = async () => {
+        try {
+          const res = await aiChatService.getWelcomeGreeting()
+          if (res?.greeting) {
+            setMessages([{ id: 'welcome', role: 'assistant', content: res.greeting }])
+          }
+        } catch (err) {
+          console.error("Error fetching welcome greeting:", err)
+        }
+      }
+      fetchGreeting()
+    }
+  }, [currentSessionId, messages.length])
+
   const loadSession = async (session) => {
     try {
       setIsLoading(true)
@@ -266,6 +282,11 @@ export const AIChat = () => {
                           strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
                           em: ({ children }) => <em className="italic">{children}</em>,
                           p: ({ children }) => <p className="mb-3 last:mb-0">{children}</p>,
+                          blockquote: ({ children }) => (
+                            <blockquote className="border-l-4 border-[var(--brand-accent)] pl-4 my-4 italic text-[var(--text-secondary)] bg-white/5 p-4 rounded-r-xl">
+                              {children}
+                            </blockquote>
+                          ),
                         }}
                       >
                         {msg.content}

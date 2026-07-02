@@ -43,6 +43,8 @@ except Exception as e:
 class Database:
     _instance: Optional["Database"] = None
     _pool: Optional[ThreadedConnectionPool] = None
+    _tables_ensured: bool = False
+    _ensuring_tables: bool = False
 
     def __new__(cls):
         if cls._instance is None:
@@ -58,7 +60,7 @@ class Database:
                                             "selected_text", "created_at", "updated_at"}),
         "bible_study_messages": frozenset({"id", "session_id", "role", "content", "created_at"}),
         "emotional_support_sessions": frozenset({"id", "user_id", "mood", "provided_scriptures",
-                                                  "created_at", "updated_at"}),
+                                                   "created_at", "updated_at"}),
         "emotional_support_messages": frozenset({"id", "session_id", "role", "content", "created_at"}),
         "devotion_settings": frozenset({"id", "user_id", "topics", "preferred_time", "frequency",
                                          "created_at", "updated_at"}),
@@ -96,14 +98,17 @@ class Database:
                 logger.error(f"⚠️ Failed to initialize Supabase client (possibly invalid key): {e}")
 
         if not self.__class__._pool:
-            self.__class__._pool = ThreadedConnectionPool(
-                minconn=1,
-                maxconn=10,
-                dsn=settings.database_url,
-            )
-
-        # Ensure tables exist in the database (whether local or remote Supabase)
-        self._ensure_tables()
+            try:
+                self.__class__._pool = ThreadedConnectionPool(
+                    minconn=settings.db_pool_min,
+                    maxconn=settings.db_pool_max,
+                    dsn=settings.database_url,
+                )
+                # Ensure tables exist in the database (whether local or remote Supabase)
+                self._ensure_tables()
+            except Exception as e:
+                logger.error(f"⚠️ Failed to initialize database connection pool on startup: {e}")
+                logger.warning("Database connection will be retried lazily during request handling.")
 
     @property
     def client(self) -> Client:
@@ -114,6 +119,21 @@ class Database:
 
     @contextmanager
     def get_connection(self):
+        if not self.__class__._pool:
+            logger.info("Attempting lazy database pool initialization...")
+            try:
+                self.__class__._pool = ThreadedConnectionPool(
+                    minconn=settings.db_pool_min,
+                    maxconn=settings.db_pool_max,
+                    dsn=settings.database_url,
+                )
+            except Exception as e:
+                logger.error(f"Lazy pool initialization failed: {e}")
+                raise RuntimeError(f"Database connection pool not initialized: {e}")
+
+        if not self.__class__._tables_ensured:
+            self._ensure_tables()
+
         conn = self._pool.getconn()
         close_conn = False
         try:
@@ -138,6 +158,10 @@ class Database:
                 logger.error(f"Error returning connection to pool: {put_err}")
 
     def _ensure_tables(self):
+        if self.__class__._tables_ensured or self.__class__._ensuring_tables:
+            return
+        
+        self.__class__._ensuring_tables = True
         try:
             # Dynamically check existing id column types to prevent foreign key datatype mismatches (UUID vs TEXT)
             id_type = None
@@ -418,8 +442,18 @@ class Database:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_emotional_support_sessions_user_id ON emotional_support_sessions (user_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_devotions_user_id ON devotions (user_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_devotion_messages_devotion_id ON devotion_messages (devotion_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_user_id ON notes (user_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_prayers_user_id ON prayers (user_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_journal_entries_user_id ON journal_entries (user_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_cached_verses_user_id_date ON cached_verses (user_id, cached_date)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens (user_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_ai_chat_sessions_user_id ON ai_chat_sessions (user_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_ai_chat_messages_session_id ON ai_chat_messages (session_id)")
+                self.__class__._tables_ensured = True
         except Exception:
             logger.exception("Error ensuring tables")
+        finally:
+            self.__class__._ensuring_tables = False
 
     def _cursor(self, conn):
         return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -1077,7 +1111,7 @@ class Database:
     # ==================== Dashboard Stats ====================
 
     def get_user_stats(self, user_id: str) -> Dict[str, Any]:
-        stats = {"streak_days": 1, "time_today_minutes": 15, "total_reflections": 0, "streak_history": [False] * 7}
+        stats = {"streak_days": 0, "time_today_minutes": 15, "total_reflections": 0, "streak_history": [False] * 7}
         try:
             with self.get_connection() as conn:
                 cur = self._cursor(conn)
@@ -1085,6 +1119,7 @@ class Database:
                 cur.execute("SELECT COUNT(*) AS count FROM notes WHERE user_id = %s", (user_id,))
                 stats["total_reflections"] = cur.fetchone()["count"]
 
+                # 1. Calculate Sunday of current week for weekly history [S, M, T, W, T, F, S]
                 today = datetime.now()
                 days_since_sunday = (today.weekday() + 1) % 7
                 sunday = today - timedelta(days=days_since_sunday)
@@ -1103,15 +1138,42 @@ class Database:
                         (user_id, day_str, user_id, day_str, user_id, day_str, user_id, day_str),
                     )
                     history.append(bool(cur.fetchone()['has_activity']))
-
                 stats["streak_history"] = history
-                today_idx = (today.weekday() + 1) % 7
+
+                # 2. Calculate true cumulative streak (going backwards indefinitely)
                 streak = 0
-                for i in range(today_idx, -1, -1):
-                    if history[i]:
+                check_date = today
+                while True:
+                    check_date_str = check_date.strftime("%Y-%m-%d")
+                    cur.execute(
+                        """SELECT (
+                            EXISTS(SELECT 1 FROM devotions WHERE user_id = %s AND created_at::date = %s) OR
+                            EXISTS(SELECT 1 FROM bible_study_sessions WHERE user_id = %s AND created_at::date = %s) OR
+                            EXISTS(SELECT 1 FROM emotional_support_sessions WHERE user_id = %s AND created_at::date = %s) OR
+                            EXISTS(SELECT 1 FROM notes WHERE user_id = %s AND created_at::date = %s)
+                        ) AS has_activity""",
+                        (user_id, check_date_str, user_id, check_date_str, user_id, check_date_str, user_id, check_date_str),
+                    )
+                    if cur.fetchone()['has_activity']:
                         streak += 1
+                        check_date -= timedelta(days=1)
                     else:
+                        # If today has no activity, check yesterday to see if the streak is still active
+                        if check_date.date() == today.date():
+                            check_date -= timedelta(days=1)
+                            cur.execute(
+                                """SELECT (
+                                    EXISTS(SELECT 1 FROM devotions WHERE user_id = %s AND created_at::date = %s) OR
+                                    EXISTS(SELECT 1 FROM bible_study_sessions WHERE user_id = %s AND created_at::date = %s) OR
+                                    EXISTS(SELECT 1 FROM emotional_support_sessions WHERE user_id = %s AND created_at::date = %s) OR
+                                    EXISTS(SELECT 1 FROM notes WHERE user_id = %s AND created_at::date = %s)
+                                ) AS has_activity""",
+                                (user_id, check_date.strftime("%Y-%m-%d"), user_id, check_date.strftime("%Y-%m-%d"), user_id, check_date.strftime("%Y-%m-%d"), user_id, check_date.strftime("%Y-%m-%d")),
+                            )
+                            if cur.fetchone()['has_activity']:
+                                continue
                         break
+                        
                 stats["streak_days"] = streak
 
             return stats
@@ -1242,5 +1304,108 @@ class Database:
             logger.exception("Error updating chat session title")
             return False
 
+    def search_user_memory(self, user_id: str, query: str) -> List[Dict[str, Any]]:
+        results = []
+        try:
+            with self.get_connection() as conn:
+                cur = self._cursor(conn)
+                
+                # 1. Search notes
+                cur.execute(
+                    "SELECT id, title, content, source_type, created_at FROM notes WHERE user_id = %s AND (title ILIKE %s OR content ILIKE %s) ORDER BY created_at DESC LIMIT 10",
+                    (user_id, f"%{query}%", f"%{query}%")
+                )
+                for r in cur.fetchall():
+                    results.append({
+                        "id": r["id"],
+                        "source": f"Note / Journal (type: {r['source_type']})",
+                        "title": r["title"] or "Untitled",
+                        "content": r["content"],
+                        "created_at": r["created_at"]
+                    })
+
+                # 2. Search journal_entries
+                cur.execute(
+                    "SELECT id, title, content, mood, created_at FROM journal_entries WHERE user_id = %s AND (title ILIKE %s OR content ILIKE %s OR mood ILIKE %s) ORDER BY created_at DESC LIMIT 10",
+                    (user_id, f"%{query}%", f"%{query}%", f"%{query}%")
+                )
+                for r in cur.fetchall():
+                    results.append({
+                        "id": r["id"],
+                        "source": f"Journal Entry (mood: {r['mood']})",
+                        "title": r["title"] or "Untitled",
+                        "content": r["content"],
+                        "created_at": r["created_at"]
+                    })
+
+                # 3. Search ai_chat_messages
+                cur.execute(
+                    """SELECT m.id, m.content, s.title as session_title, m.created_at 
+                       FROM ai_chat_messages m 
+                       JOIN ai_chat_sessions s ON m.session_id = s.id 
+                       WHERE s.user_id = %s AND m.content ILIKE %s 
+                       ORDER BY m.created_at DESC LIMIT 10""",
+                    (user_id, f"%{query}%")
+                )
+                for r in cur.fetchall():
+                    results.append({
+                        "id": r["id"],
+                        "source": "AI Chat Message",
+                        "title": r["session_title"] or "AI Chat Session",
+                        "content": r["content"],
+                        "created_at": r["created_at"]
+                    })
+
+                # 4. Search bible_study_messages
+                cur.execute(
+                    """SELECT m.id, m.content, s.book, s.chapter, s.verses, m.created_at 
+                       FROM bible_study_messages m 
+                       JOIN bible_study_sessions s ON m.session_id = s.id 
+                       WHERE s.user_id = %s AND m.content ILIKE %s 
+                       ORDER BY m.created_at DESC LIMIT 10""",
+                    (user_id, f"%{query}%")
+                )
+                for r in cur.fetchall():
+                    results.append({
+                        "id": r["id"],
+                        "source": "Bible Study Message",
+                        "title": f"Study of {r['book']} {r['chapter']}:{r['verses']}",
+                        "content": r["content"],
+                        "created_at": r["created_at"]
+                    })
+
+                # 5. Search emotional_support_messages
+                cur.execute(
+                    """SELECT m.id, m.content, s.mood, m.created_at 
+                       FROM emotional_support_messages m 
+                       JOIN emotional_support_sessions s ON m.session_id = s.id 
+                       WHERE s.user_id = %s AND m.content ILIKE %s 
+                       ORDER BY m.created_at DESC LIMIT 10""",
+                    (user_id, f"%{query}%")
+                )
+                for r in cur.fetchall():
+                    results.append({
+                        "id": r["id"],
+                        "source": f"Emotional Support Message ({r['mood']})",
+                        "title": "Emotional Support Session",
+                        "content": r["content"],
+                        "created_at": r["created_at"]
+                    })
+
+        except Exception:
+            logger.exception("Error searching user memory")
+
+    def get_all_profiles(self) -> List[Dict[str, Any]]:
+        """Get all profiles from the database"""
+        try:
+            with self.get_connection() as conn:
+                cur = self._cursor(conn)
+                cur.execute("SELECT * FROM profiles")
+                return [self.to_dict(r) for r in cur.fetchall()]
+        except Exception:
+            logger.exception("Error getting all profiles")
+            return []
+
 
 db = Database()
+

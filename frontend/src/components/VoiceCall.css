@@ -346,3 +346,115 @@
     from { height: 8px; }
     to { height: 40px; }
 }
+
+
+/* Multi-layered Pulsing Orb */
+.pulsing-orb {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(245, 206, 77, 0.8) 0%, rgba(99, 102, 241, 0.4) 60%, rgba(168, 85, 247, 0.2) 100%);
+    box-shadow: 0 0 60px rgba(245, 206, 77, 0.4), inset 0 0 30px rgba(255, 255, 255, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: visible;
+    transition: all 0.5s ease;
+}
+
+.orb-layer {
+    position: absolute;
+    border-radius: 50%;
+    inset: 0;
+    mix-blend-mode: screen;
+}
+
+.layer-1 {
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.6) 0%, transparent 70%);
+    animation: orb-spin-slow 15s infinite linear;
+}
+
+.layer-2 {
+    background: radial-gradient(circle, rgba(168, 85, 247, 0.5) 0%, transparent 70%);
+    animation: orb-spin-fast 8s infinite linear reverse;
+    transform: scale(0.95);
+}
+
+.layer-3 {
+    background: radial-gradient(circle, rgba(245, 206, 77, 0.4) 0%, transparent 60%);
+    animation: orb-pulse-micro 2s infinite alternate ease-in-out;
+}
+
+/* Speaking State Adjustments */
+.pulsing-orb.user-speaking {
+    transform: scale(1.15);
+    background: radial-gradient(circle, rgba(99, 102, 241, 0.9) 0%, rgba(168, 85, 247, 0.5) 60%, rgba(245, 206, 77, 0.2) 100%);
+    box-shadow: 0 0 80px rgba(99, 102, 241, 0.6), inset 0 0 40px rgba(255, 255, 255, 0.4);
+    animation: user-speaking-pulse 1.2s infinite alternate ease-in-out;
+}
+
+.pulsing-orb.aria-speaking {
+    transform: scale(1.25);
+    background: radial-gradient(circle, rgba(245, 206, 77, 1) 0%, rgba(249, 115, 22, 0.6) 50%, rgba(99, 102, 241, 0.3) 100%);
+    box-shadow: 0 0 100px rgba(245, 206, 77, 0.8), inset 0 0 50px rgba(255, 255, 255, 0.5);
+    animation: aria-speaking-pulse 0.6s infinite alternate ease-in-out;
+}
+
+.avatar-container.speaking .ring-1 {
+    border-color: rgba(245, 206, 77, 0.6);
+    box-shadow: 0 0 20px rgba(245, 206, 77, 0.3);
+    animation: ring-pulse-1 1.5s infinite ease-out;
+}
+
+.avatar-container.speaking .ring-2 {
+    border-color: rgba(245, 206, 77, 0.4);
+    box-shadow: 0 0 30px rgba(245, 206, 77, 0.2);
+    animation: ring-pulse-2 2s infinite ease-out;
+}
+
+.avatar-container.speaking .ring-3 {
+    border-color: rgba(245, 206, 77, 0.2);
+    box-shadow: 0 0 40px rgba(245, 206, 77, 0.1);
+    animation: ring-pulse-3 2.5s infinite ease-out;
+}
+
+@keyframes orb-spin-slow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes orb-spin-fast {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(-360deg); }
+}
+
+@keyframes orb-pulse-micro {
+    0% { transform: scale(0.9); opacity: 0.7; }
+    100% { transform: scale(1.1); opacity: 1; }
+}
+
+@keyframes user-speaking-pulse {
+    0% { transform: scale(1.05); box-shadow: 0 0 50px rgba(99, 102, 241, 0.5); }
+    100% { transform: scale(1.2); box-shadow: 0 0 90px rgba(99, 102, 241, 0.8); }
+}
+
+@keyframes aria-speaking-pulse {
+    0% { transform: scale(1.1); box-shadow: 0 0 60px rgba(245, 206, 77, 0.6); }
+    100% { transform: scale(1.3); box-shadow: 0 0 110px rgba(245, 206, 77, 0.9); }
+}
+
+@keyframes ring-pulse-1 {
+    0% { transform: scale(1); opacity: 0.8; }
+    100% { transform: scale(1.6); opacity: 0; }
+}
+
+@keyframes ring-pulse-2 {
+    0% { transform: scale(1); opacity: 0.6; }
+    100% { transform: scale(2); opacity: 0; }
+}
+
+@keyframes ring-pulse-3 {
+    0% { transform: scale(1); opacity: 0.4; }
+    100% { transform: scale(2.4); opacity: 0; }
+}

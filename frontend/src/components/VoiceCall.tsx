@@ -286,11 +286,11 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
                 <div className="ring ring-3"></div>
                 
                 <div className="avatar-image-wrapper">
-                    <img
-                        src="/aria_avatar.png"
-                        alt="Aria"
-                        className={`avatar-image ${status !== 'active' ? 'inactive' : ''}`}
-                    />
+                    <div className={`pulsing-orb ${isAriaSpeaking ? 'aria-speaking' : ''} ${isUserSpeaking ? 'user-speaking' : ''}`}>
+                        <div className="orb-layer layer-1"></div>
+                        <div className="orb-layer layer-2"></div>
+                        <div className="orb-layer layer-3"></div>
+                    </div>
                 </div>
             </div>
 

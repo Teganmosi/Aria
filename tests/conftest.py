@@ -55,12 +55,26 @@ def mock_ai():
         mock.generate_response.return_value = "Mocked AI Response"
         mock.explain_bible_verse.return_value = "Mocked Bible Explanation"
         mock.provide_emotional_support.return_value = "Mocked Emotional Support"
+        mock.get_personalized_verse.return_value = {
+            "verse": "Mocked Verse",
+            "reference": "Mocked 1:1",
+            "insight": "Mocked Insight"
+        }
+        mock.get_daily_manna.return_value = "Mocked Daily Manna"
+        mock.generate_proactive_devotion.return_value = {
+            "verse": "Mocked Proactive Verse",
+            "reference": "Mocked 1:2",
+            "insight": "Mocked Proactive Insight",
+            "daily_manna": "Mocked Proactive Daily Manna"
+        }
+        mock.synthesize_journey.return_value = "Mocked Journey Synthesis"
         yield mock
 
 @pytest.fixture
 def auth_headers(client):
     """Fixture to provide a logged-in user's headers"""
-    email = "test@example.com"
+    import uuid
+    email = f"test_{uuid.uuid4().hex[:8]}@example.com"
     password = "password123"
     # Try to register, if it fails (user exists), it's fine for tests
     client.post("/api/v1/auth/register", json={

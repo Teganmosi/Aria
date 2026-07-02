@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     
     # Database
     database_url: str = "postgresql://postgres:password@localhost:5433/aria"
+    db_pool_min: int = 10
+    db_pool_max: int = 100
 
     # Redis Configuration
     redis_url: str = "redis://localhost:6379"
@@ -28,7 +30,7 @@ class Settings(BaseSettings):
     app_name: str = "Aria - Your Spiritual Companion"
     app_version: str = "1.0.0"
     debug: bool = False
-    secret_key: str
+    secret_key: str = "your_secret_key_here"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     

@@ -250,7 +250,16 @@ export const Profile = () => {
             </div>
 
             <div className="mb-8">
-              <label htmlFor="personalContextInput" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>YOUR PERSONAL CONTEXT</label>
+              <div className="flex justify-between items-center mb-2">
+                <label htmlFor="personalContextInput" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', margin: 0 }}>YOUR PERSONAL CONTEXT</label>
+                <button
+                  type="button"
+                  onClick={() => { if(confirm("Clear all of Aria's remembered context?")) setAriaPersonalContext(''); }}
+                  style={{ background: 'transparent', border: 'none', color: '#ef4444', fontSize: '0.65rem', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  CLEAR MEMORY
+                </button>
+              </div>
               <textarea
                 id="personalContextInput"
                 placeholder="Share things you want Aria to know about you, your journey, or your current life situation."

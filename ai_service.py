@@ -10,13 +10,96 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL = 'nvidia/nemotron-mini-4b-instruct'
 
 
+def _run_async_in_thread(coro):
+    import asyncio
+    import threading
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        result = [None]
+        exception = [None]
+        
+        def run_in_thread():
+            try:
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                result[0] = new_loop.run_until_complete(coro)
+                new_loop.close()
+            except Exception as e:
+                exception[0] = e
+
+        t = threading.Thread(target=run_in_thread)
+        t.start()
+        t.join()
+        
+        if exception[0]:
+            raise exception[0]
+        return result[0]
+    else:
+        return asyncio.run(coro)
+
+
 class AIService:
     _instance: Optional['AIService'] = None
     _client: Optional[OpenAI] = None
+
+    _MEMORY_SEARCH_TOOL = {
+        "type": "function",
+        "function": {
+            "name": "search_past_conversations_and_journals",
+            "description": "Searches the user's past notes, journal entries, Bible study logs, and support sessions to retrieve memories, struggles, and scriptures.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search term or query to find in past notes or messages."
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    }
+
+    _BIBLE_FETCH_TOOL = {
+        "type": "function",
+        "function": {
+            "name": "fetch_scripture",
+            "description": "Retrieves the exact, verified wording of specific Bible verses from the database or external API. Use this whenever you want to quote or reference a scripture.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "book": {
+                        "type": "string",
+                        "description": "The name of the Bible book (e.g. 'John', 'Romans', 'Genesis')."
+                    },
+                    "chapter": {
+                        "type": "integer",
+                        "description": "The chapter number."
+                    },
+                    "verses": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "description": "List of verse numbers to retrieve (e.g. [16] or [1, 2, 3])."
+                    },
+                    "version": {
+                        "type": "string",
+                        "description": "The Bible version/translation (approved list: NKJV, KJV, AMP, MSG, TPT). Defaults to NKJV."
+                    }
+                },
+                "required": ["book", "chapter", "verses"]
+            }
+        }
+    }
     
     # Shared translation block injected into every mode prompt
     _TRANSLATIONS_BLOCK = """
-## APPROVED BIBLE TRANSLATIONS
+## APPROVED BIBLE TRANSLATIONS & SCRIPTURE RELIABILITY
 You ONLY quote scripture from these five translations. Never use any other translation.
 
 | Abbreviation | Full Name | When to use |
@@ -32,7 +115,10 @@ You ONLY quote scripture from these five translations. Never use any other trans
 - If the user specifies a translation preference, honour it for the rest of that conversation.
 - When one verse lands differently across translations, quote it in 2 translations to show the depth — e.g. NKJV for the declaration, AMP for the expanded meaning.
 - Never mix translations mid-sentence.
-- If you are not certain of the exact wording in a specific translation, quote the verse accurately and note: "— paraphrased from [Translation]" rather than fabricating.
+
+## SCRIPTURE RELIABILITY RULE (CRITICAL)
+Whenever you quote or reference a scripture, you MUST call the `fetch_scripture(book, chapter, verses, version)` tool to retrieve the exact wording from the database or external API.
+Do NOT guess, fabricate, or generate Bible verses from your own memory. Always call the tool first, and then quote the exact returned text.
 """
 
     AI_CONFIGS = {
@@ -225,15 +311,18 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
         self,
         messages: List[Dict[str, str]],
         mode: str,
-        custom_instructions: Optional[str] = None
+        custom_instructions: Optional[str] = None,
+        user_id: Optional[str] = None
     ) -> str:
-        """Generate AI response for the given mode"""
+        """Generate AI response for the given mode, supporting memory search and Bible tools."""
         if mode not in self.AI_CONFIGS:
             raise ValueError(f"Invalid mode: {mode}")
 
         config = self.AI_CONFIGS[mode]
         system_prompt = self._build_system_prompt(mode, custom_instructions)
         sanitized_messages = [{'role': m.get('role', 'user'), 'content': m.get('content', '')} for m in messages]
+
+        tools = [self._MEMORY_SEARCH_TOOL, self._BIBLE_FETCH_TOOL]
 
         try:
             response = self._client.chat.completions.create(
@@ -243,8 +332,80 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
                     *sanitized_messages
                 ],
                 temperature=config['temperature'],
-                max_tokens=config['max_tokens']
+                max_tokens=config['max_tokens'],
+                tools=tools if user_id else None,
+                tool_choice="auto" if user_id else None
             )
+
+            message = response.choices[0].message
+            tool_calls = getattr(message, "tool_calls", None)
+
+            if tool_calls and user_id:
+                local_messages = [
+                    {'role': 'system', 'content': system_prompt},
+                    *sanitized_messages
+                ]
+                local_messages.append(message)
+
+                for tool_call in tool_calls:
+                    if tool_call.function.name == "search_past_conversations_and_journals":
+                        import json
+                        args = json.loads(tool_call.function.arguments)
+                        query = args.get("query", "")
+                        
+                        from database import db
+                        search_results = db.search_user_memory(user_id, query)
+                        
+                        formatted_results = []
+                        for idx, r in enumerate(search_results):
+                            formatted_results.append(
+                                f"[{idx+1}] Source: {r['source']}\nDate: {r['created_at']}\nTitle: {r['title']}\nContent: {r['content']}\n"
+                            )
+                        
+                        result_str = "\n".join(formatted_results) if formatted_results else "No relevant past notes or conversations found."
+                        
+                        local_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_call.function.name,
+                            "content": result_str
+                        })
+                    elif tool_call.function.name == "fetch_scripture":
+                        import json
+                        args = json.loads(tool_call.function.arguments)
+                        book = args.get("book", "")
+                        chapter = int(args.get("chapter", 1))
+                        verses = args.get("verses", [])
+                        version = args.get("version", "NKJV").upper()
+                        
+                        from database import db
+                        chapter_verses = _run_async_in_thread(db.fetch_bible_chapter_from_api(book, chapter, version))
+                        
+                        matching_verses = []
+                        for v in chapter_verses:
+                            if v.get("verse") in verses:
+                                matching_verses.append(v)
+                                
+                        if matching_verses:
+                            matching_verses.sort(key=lambda x: x.get("verse", 0))
+                            formatted_text = " ".join([f"{v.get('verse')} {v.get('text')}" for v in matching_verses])
+                            result_str = f"{book} {chapter}:{','.join(map(str, verses))} ({version}) - {formatted_text}"
+                        else:
+                            result_str = f"Scripture not found for {book} {chapter}:{','.join(map(str, verses))} ({version}). Please check reference."
+                            
+                        local_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_call.function.name,
+                            "content": result_str
+                        })
+
+                response = self._client.chat.completions.create(
+                    model=config['model'],
+                    messages=local_messages,
+                    temperature=config['temperature'],
+                    max_tokens=config['max_tokens']
+                )
 
             content = response.choices[0].message.content
             if not content:
@@ -259,15 +420,18 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
         self,
         messages: List[Dict[str, str]],
         mode: str,
-        custom_instructions: Optional[str] = None
+        custom_instructions: Optional[str] = None,
+        user_id: Optional[str] = None
     ) -> Generator[str, None, None]:
-        """Generate AI response as a stream"""
+        """Generate AI response as a stream, supporting memory search and Bible tools."""
         if mode not in self.AI_CONFIGS:
             raise ValueError(f"Invalid mode: {mode}")
 
         config = self.AI_CONFIGS[mode]
         system_prompt = self._build_system_prompt(mode, custom_instructions)
         sanitized_messages = [{'role': m.get('role', 'user'), 'content': m.get('content', '')} for m in messages]
+
+        tools = [self._MEMORY_SEARCH_TOOL, self._BIBLE_FETCH_TOOL]
 
         try:
             stream = self._client.chat.completions.create(
@@ -278,12 +442,126 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
                 ],
                 temperature=config['temperature'],
                 max_tokens=config['max_tokens'],
+                tools=tools if user_id else None,
+                tool_choice="auto" if user_id else None,
                 stream=True
             )
 
+            tool_call_chunks = []
+            is_tool_call = False
+            
             for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
+                if chunk.choices and chunk.choices[0].delta.tool_calls:
+                    is_tool_call = True
+                    tool_call_chunks.append(chunk.choices[0].delta.tool_calls)
+                elif chunk.choices and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
+
+            if is_tool_call and user_id:
+                tool_calls_dict = {}
+                for tc_list in tool_call_chunks:
+                    for tc in tc_list:
+                        idx = tc.index
+                        if idx not in tool_calls_dict:
+                            tool_calls_dict[idx] = {
+                                "id": tc.id or "",
+                                "name": tc.function.name if tc.function and tc.function.name else "",
+                                "arguments": tc.function.arguments if tc.function and tc.function.arguments else ""
+                            }
+                        else:
+                            if tc.id:
+                                tool_calls_dict[idx]["id"] = tc.id
+                            if tc.function:
+                                if tc.function.name:
+                                    tool_calls_dict[idx]["name"] += tc.function.name
+                                if tc.function.arguments:
+                                    tool_calls_dict[idx]["arguments"] += tc.function.arguments
+                
+                local_messages = [
+                    {'role': 'system', 'content': system_prompt},
+                    *sanitized_messages
+                ]
+                
+                tc_objects = []
+                for idx, tc in tool_calls_dict.items():
+                    tc_objects.append({
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {
+                            "name": tc["name"],
+                            "arguments": tc["arguments"]
+                        }
+                    })
+                
+                local_messages.append({
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": tc_objects
+                })
+                
+                for idx, tc in tool_calls_dict.items():
+                    if tc["name"] == "search_past_conversations_and_journals":
+                        import json
+                        args = json.loads(tc["arguments"])
+                        query = args.get("query", "")
+                        
+                        from database import db
+                        search_results = db.search_user_memory(user_id, query)
+                        
+                        formatted_results = []
+                        for i, r in enumerate(search_results):
+                            formatted_results.append(
+                                f"[{i+1}] Source: {r['source']}\nDate: {r['created_at']}\nTitle: {r['title']}\nContent: {r['content']}\n"
+                            )
+                        
+                        result_str = "\n".join(formatted_results) if formatted_results else "No relevant past notes or conversations found."
+                        
+                        local_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "name": tc["name"],
+                            "content": result_str
+                        })
+                    elif tc["name"] == "fetch_scripture":
+                        import json
+                        args = json.loads(tc["arguments"])
+                        book = args.get("book", "")
+                        chapter = int(args.get("chapter", 1))
+                        verses = args.get("verses", [])
+                        version = args.get("version", "NKJV").upper()
+                        
+                        from database import db
+                        chapter_verses = _run_async_in_thread(db.fetch_bible_chapter_from_api(book, chapter, version))
+                        
+                        matching_verses = []
+                        for v in chapter_verses:
+                            if v.get("verse") in verses:
+                                matching_verses.append(v)
+                                
+                        if matching_verses:
+                            matching_verses.sort(key=lambda x: x.get("verse", 0))
+                            formatted_text = " ".join([f"{v.get('verse')} {v.get('text')}" for v in matching_verses])
+                            result_str = f"{book} {chapter}:{','.join(map(str, verses))} ({version}) - {formatted_text}"
+                        else:
+                            result_str = f"Scripture not found for {book} {chapter}:{','.join(map(str, verses))} ({version}). Please check reference."
+                            
+                        local_messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "name": tc["name"],
+                            "content": result_str
+                        })
+                
+                second_stream = self._client.chat.completions.create(
+                    model=config['model'],
+                    messages=local_messages,
+                    temperature=config['temperature'],
+                    max_tokens=config['max_tokens'],
+                    stream=True
+                )
+                for chunk in second_stream:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
         except Exception:
             logger.exception("Error generating AI response stream")
             yield "I apologize, but I encountered an error. Please try again."
@@ -474,5 +752,111 @@ Respond with ONLY valid JSON, no markdown fences, no extra keys."""
 
         return fallback
 
+    def synthesize_journey(self, messages: List[Dict[str, str]], session_type: str) -> str:
+        """Synthesize a summary of a Bible study or emotional support session."""
+        if not messages:
+            return ""
+        
+        # Compile session history
+        history_text = "\n".join([f"{m.get('role', 'user')}: {m.get('content', '')}" for m in messages])
+        
+        prompt = f"""You are a spiritual administrative assistant. Summarize the following {session_type} session between the user and Aria (the AI spiritual companion).
+Extract:
+1. Core topics or struggles discussed (spiritual or emotional).
+2. Key scriptures referenced.
+3. Specific prayer points or areas of support needed.
+
+Keep the summary concise, encouraging, and structured (2-3 bullet points). Focus on the USER's profile, struggles, and needs so Aria can remember them.
+
+Session dialogue:
+{history_text}
+
+Summary:"""
+
+        try:
+            # Call using the small model
+            response = self._client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant that summarizes conversations to build a spiritual journey profile."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=300
+            )
+            if response.choices and response.choices[0].message.content:
+                return response.choices[0].message.content.strip()
+            return ""
+        except Exception:
+            logger.exception("Error in journey synthesis")
+            return ""
+
+    def generate_proactive_devotion(
+        self,
+        unanswered_prayers: List[str],
+        recent_moods: List[str],
+        first_name: str
+    ) -> Dict[str, Any]:
+        """Generate a proactive daily devotion customized to unanswered prayers and recent struggles/moods."""
+        prayers_context = "; ".join(unanswered_prayers) if unanswered_prayers else "None"
+        moods_context = "; ".join(recent_moods) if recent_moods else "None"
+        
+        prompt = f"""You are Aria, a Christ-centred spiritual companion. 
+The user, {first_name}, has the following active/unanswered prayers:
+"{prayers_context}"
+
+And has recently shared these emotional concerns or moods:
+"{moods_context}"
+
+Please generate a highly personalized Morning Daily Devotion for {first_name}. 
+It must address their current emotional struggles and unanswered prayers with deep empathy, pointing them to Christ.
+
+Respond with ONLY a JSON object containing:
+- "verse": A Bible verse (exactly quoted) that directly addresses their current struggle.
+- "reference": The book, chapter, and verse reference.
+- "insight": A short "Aria Insight" (1-2 sentences) on how this verse speaks to their current concerns.
+- "daily_manna": A structured object containing:
+  - "title": Evocative title (4-6 words)
+  - "reflection": 3 sentences unpacking the verse for their situation
+  - "prayer": 2-3 sentences of first-person prayer drawn from their struggle and this verse
+  - "application": one concrete action or intention they can live out today
+
+Ensure the response is valid JSON, no markdown formatting fences, and no extra keys."""
+
+        try:
+            response = self._client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {'role': 'system', 'content': 'You are a compassionate spiritual companion. Always respond with valid JSON only.'},
+                    {'role': 'user', 'content': prompt}
+                ],
+                temperature=0.7,
+                max_tokens=600
+            )
+            content = response.choices[0].message.content
+            if content:
+                import json
+                import re
+                json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                if json_match:
+                    devotion_data = json.loads(json_match.group())
+                    return devotion_data
+        except Exception:
+            logger.exception("Error generating proactive devotion")
+            
+        return {
+            "verse": "Cast all your anxiety on him because he cares for you.",
+            "reference": "1 Peter 5:7",
+            "insight": "The Lord cares deeply for every weight you carry. You do not have to carry it alone today.",
+            "daily_manna": {
+                "title": "Casting Your Care",
+                "reflection": "Anxiety tries to convince us that we are the sole protectors of our lives. God invites us to surrender that control to Him. In every moment, His love is steadfast.",
+                "prayer": "Father, I lay down the worries about my day and my unresolved prayers at Your feet. I trust Your care. Amen.",
+                "application": "Whenever anxiety rises today, whisper: 'I cast this care on You, Lord.'"
+            }
+        }
+
+
 # Singleton instance
 ai_service = AIService()
+

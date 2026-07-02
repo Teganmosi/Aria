@@ -1,5 +1,6 @@
 import logging
 import uuid
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
@@ -57,7 +58,7 @@ def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
     except JWTError:
         return None
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
     """Get the current authenticated user from JWT token"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -70,19 +71,19 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         raise credentials_exception
 
     jti: Optional[str] = payload.get("jti")
-    if jti and db.is_token_revoked(jti):
+    if jti and await asyncio.to_thread(db.is_token_revoked, jti):
         raise credentials_exception
 
     user_id: str = payload.get("sub")
     if not user_id:
         raise credentials_exception
 
-    profile = db.get_profile(user_id)
+    profile = await asyncio.to_thread(db.get_profile, user_id)
     if profile is None:
         raise credentials_exception
     return profile
 
-def get_current_user_from_token(token: str) -> Dict[str, Any]:
+async def get_current_user_from_token(token: str) -> Dict[str, Any]:
     """Get the current authenticated user from a raw token string"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -94,14 +95,14 @@ def get_current_user_from_token(token: str) -> Dict[str, Any]:
         raise credentials_exception
 
     jti: Optional[str] = payload.get("jti")
-    if jti and db.is_token_revoked(jti):
+    if jti and await asyncio.to_thread(db.is_token_revoked, jti):
         raise credentials_exception
 
     user_id: str = payload.get("sub")
     if not user_id:
         raise credentials_exception
 
-    profile = db.get_profile(user_id)
+    profile = await asyncio.to_thread(db.get_profile, user_id)
     if profile is None:
         raise credentials_exception
     return profile
@@ -203,7 +204,10 @@ def supabase_auth_login(email: str, password: str) -> Dict[str, Any]:
         return {"success": False, "error": "Invalid email or password"}
     except Exception as e:
         logger.exception("Login error")
-        return {"success": False, "error": str(e)}
+        err_msg = str(e)
+        if "Invalid login credentials" in err_msg:
+            err_msg = "Invalid email or password"
+        return {"success": False, "error": err_msg}
 
 def supabase_auth_logout() -> Dict[str, Any]:
     """Logout from Supabase Auth"""
@@ -225,7 +229,7 @@ def blacklist_token(token: str) -> None:
     expires_at = datetime.fromtimestamp(exp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     db.revoke_token(jti, expires_at)
 
-def get_current_user_websocket(websocket: WebSocket) -> Dict[str, Any]:
+async def get_current_user_websocket(websocket: WebSocket) -> Dict[str, Any]:
     """Get the current authenticated user from WebSocket connection"""
     token = websocket.query_params.get("token")
     if not token: 
@@ -236,7 +240,7 @@ def get_current_user_websocket(websocket: WebSocket) -> Dict[str, Any]:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
     
     user_id = payload.get("sub")
-    profile = db.get_profile(user_id)
+    profile = await asyncio.to_thread(db.get_profile, user_id)
     if not profile: 
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
     

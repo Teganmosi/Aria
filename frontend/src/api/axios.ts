@@ -27,20 +27,79 @@ export const clearTokens = () => {
   localStorage.removeItem('refreshToken')
 }
 
-// ── Request interceptor ──────────────────────────────────────────────────────
+// ── Offline Cache & Sync Interceptors ─────────────────────────────────────────
 
-axiosPrivate.interceptors.request.use((config) => {
-  const token = getAccessToken()
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`
+// 1. Offline Request Interceptor
+axiosPrivate.interceptors.request.use(
+  async (config) => {
+    // Inject auth token
+    const token = getAccessToken()
+    if (token && config.headers) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+
+    // Handle GET request offline cache fallback
+    if (config.method?.toLowerCase() === 'get' && !navigator.onLine) {
+      const cacheKey = `aria_cache:${config.url}`
+      const cached = localStorage.getItem(cacheKey)
+      if (cached) {
+        return {
+          ...config,
+          adapter: async () => ({
+            data: JSON.parse(cached),
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config,
+          })
+        }
+      }
+    }
+
+    // Handle POST request offline queueing
+    if (config.method?.toLowerCase() === 'post' && !navigator.onLine) {
+      const isNote = config.url?.includes('/notes')
+      const isPrayer = config.url?.includes('/prayers')
+      
+      if (isNote || isPrayer) {
+        const queueKey = 'aria_sync_queue'
+        const currentQueue = JSON.parse(localStorage.getItem(queueKey) || '[]')
+        
+        const payload = config.data
+        const tempId = `temp-${Math.random().toString(36).substr(2, 9)}`
+        
+        currentQueue.push({
+          id: tempId,
+          url: config.url,
+          data: payload,
+          timestamp: new Date().toISOString(),
+          type: isNote ? 'note' : 'prayer'
+        })
+        localStorage.setItem(queueKey, JSON.stringify(currentQueue))
+        
+        return {
+          ...config,
+          adapter: async () => ({
+            data: {
+              ...payload,
+              id: tempId,
+              created_at: new Date().toISOString(),
+              is_temp: true
+            },
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config,
+          })
+        }
+      }
+    }
+
+    return config
   }
-  return config
-})
+)
 
-// ── Response interceptor — queue-based refresh ───────────────────────────────
-// isRefreshing prevents multiple simultaneous refresh calls.
-// failedQueue holds requests that arrived while a refresh was in flight.
-// retriedConfigs (WeakSet) prevents the same request being retried twice.
+// ── Response interceptor — queue-based refresh & offline cache fallback ───────
 
 let isRefreshing = false
 let failedQueue: { resolve: (token: string) => void; reject: (err: unknown) => void }[] = []
@@ -58,8 +117,30 @@ const redirectToLogin = () => {
 }
 
 axiosPrivate.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Cache successful GET request responses
+    if (response.config.method?.toLowerCase() === 'get' && response.data) {
+      const cacheKey = `aria_cache:${response.config.url}`
+      localStorage.setItem(cacheKey, JSON.stringify(response.data))
+    }
+    return response
+  },
   async (error: unknown) => {
+    // Fallback to cache on GET request network errors
+    if (axios.isAxiosError(error) && error.config && error.config.method?.toLowerCase() === 'get') {
+      const cacheKey = `aria_cache:${error.config.url}`
+      const cached = localStorage.getItem(cacheKey)
+      if (cached) {
+        return Promise.resolve({
+          data: JSON.parse(cached),
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config: error.config,
+        })
+      }
+    }
+
     if (!axios.isAxiosError(error) || error.response?.status !== 401) {
       const message = axios.isAxiosError(error)
         ? (error.response?.data?.detail ?? error.response?.data?.error ?? error.message)
@@ -70,7 +151,6 @@ axiosPrivate.interceptors.response.use(
     const originalConfig = error.config as AxiosRequestConfig & object
     const refreshToken = getRefreshToken()
 
-    // No refresh token or already retried → force logout
     if (!refreshToken || retriedConfigs.has(originalConfig)) {
       clearTokens()
       redirectToLogin()
@@ -78,7 +158,6 @@ axiosPrivate.interceptors.response.use(
     }
 
     if (isRefreshing) {
-      // Queue this request until the in-flight refresh resolves
       return new Promise((resolve, reject) => {
         failedQueue.push({
           resolve: (token) => {
@@ -114,3 +193,33 @@ axiosPrivate.interceptors.response.use(
     }
   }
 )
+
+// ── Offline Sync Queue Processor ──────────────────────────────────────────────
+
+export const processOfflineSyncQueue = async () => {
+  const queueKey = 'aria_sync_queue'
+  const queue = JSON.parse(localStorage.getItem(queueKey) || '[]')
+  if (queue.length === 0) return
+
+  console.info(`[Offline Sync] Replaying ${queue.length} offline queued actions...`)
+  
+  const remainingQueue = []
+  for (const item of queue) {
+    try {
+      await axiosPrivate.post(item.url, item.data)
+      console.info(`[Offline Sync] Successfully synchronized offline item:`, item)
+    } catch (err) {
+      console.error(`[Offline Sync] Failed to sync item, keeping in queue:`, item, err)
+      remainingQueue.push(item)
+    }
+  }
+
+  localStorage.setItem(queueKey, JSON.stringify(remainingQueue))
+  window.dispatchEvent(new Event('aria-sync-complete'))
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    processOfflineSyncQueue()
+  })
+}

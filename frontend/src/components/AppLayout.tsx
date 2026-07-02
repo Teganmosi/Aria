@@ -13,14 +13,35 @@ import {
 } from 'lucide-react'
 import { ThemeToggle } from '../components/ui/SharedComponents'
 import { useState, useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 export const AppLayout = () => {
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [isOffline, setIsOffline] = useState(!navigator.onLine)
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     setMobileMenuOpen(false)
   }, [location.pathname])
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false)
+    const handleOffline = () => setIsOffline(true)
+    const handleSyncComplete = () => {
+      queryClient.invalidateQueries()
+    }
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    window.addEventListener('aria-sync-complete', handleSyncComplete)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('aria-sync-complete', handleSyncComplete)
+    }
+  }, [queryClient])
 
   const navItems = [
     { path: '/app/home', icon: <House size={20} />, label: 'Home' },
@@ -50,6 +71,34 @@ export const AppLayout = () => {
           <h2 className="font-serif" style={{ fontStyle: 'italic', fontSize: '1.5rem', color: 'var(--text-main)', margin: 0 }}>Aria</h2>
         </div>
         <div className="flex items-center gap-4">
+          {isOffline && (
+            <div 
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.25rem 0.75rem',
+                borderRadius: '50px',
+                background: 'rgba(245, 158, 11, 0.1)',
+                border: '1px solid rgba(245, 158, 11, 0.3)',
+                color: 'rgb(245, 158, 11)',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                letterSpacing: '0.05em',
+              }}
+            >
+              <span 
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  background: 'rgb(245, 158, 11)',
+                  boxShadow: '0 0 8px rgb(245, 158, 11)'
+                }}
+              />
+              OFFLINE
+            </div>
+          )}
           <ThemeToggle />
           <NavLink to="/app/profile">
             <div className="w-8 h-8 rounded-full bg-[var(--bg-alt)] overflow-hidden">

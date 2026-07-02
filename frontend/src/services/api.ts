@@ -214,6 +214,11 @@ export const aiChatService = {
     return data
   },
 
+  getWelcomeGreeting: async () => {
+    const { data } = await axiosPrivate.get('/ai/welcome-greeting')
+    return data
+  },
+
   getMessages: async (sessionId: string) => {
     const { data } = await axiosPrivate.get(`/ai-chat/sessions/${sessionId}/messages`)
     return data

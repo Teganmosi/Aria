@@ -11,7 +11,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
@@ -227,6 +227,66 @@ def _get_user_custom_instructions(user_profile: Dict[str, Any]) -> Optional[str]
     return "\n\n".join(parts)
 
 
+async def synthesize_session_journey(user_id: str, session_id: str, session_type: str):
+    """Asynchronous background task to synthesize the user's spiritual journey after a session update."""
+    try:
+        # Load messages
+        if session_type == "bibleStudy":
+            messages = db.get_bible_study_messages(session_id)
+            session = db.get_bible_study_session(session_id)
+            full_messages = []
+            if session and session.get("selected_text"):
+                full_messages.append({"role": "user", "content": f"Selected Scripture: {session.get('book')} {session.get('chapter')}:{session.get('verses')}\nText: {session.get('selected_text')}"})
+            if session and session.get("ai_explanation"):
+                full_messages.append({"role": "assistant", "content": session.get("ai_explanation")})
+            for m in messages:
+                full_messages.append({"role": m.get("role"), "content": m.get("content")})
+        elif session_type == "emotionalSupport":
+            messages = db.get_emotional_support_messages(session_id)
+            session = db.get_emotional_support_session(session_id)
+            full_messages = []
+            if session and session.get("mood"):
+                full_messages.append({"role": "user", "content": f"I am feeling: {session.get('mood')}. Situation: {session.get('situation_description')}"})
+            if session and session.get("ai_response"):
+                full_messages.append({"role": "assistant", "content": session.get("ai_response")})
+            for m in messages:
+                full_messages.append({"role": m.get("role"), "content": m.get("content")})
+        else:
+            return
+
+        if not full_messages:
+            return
+
+        # Run synthesis using AI
+        synthesis = await asyncio.to_thread(
+            lambda: ai_service.synthesize_journey(full_messages, session_type)
+        )
+        if not synthesis:
+            return
+
+        # Load profile
+        profile = db.get_profile(user_id)
+        if not profile:
+            return
+
+        # Append/Update personal context
+        current_context = profile.get("aria_personal_context") or ""
+        timestamp = datetime.now().strftime("%Y-%m-%d")
+        new_context_entry = f"[{timestamp} {session_type} Session Takeaway]: {synthesis}"
+        
+        # Keep the last 6 entries to manage prompt length
+        old_entries = [entry.strip() for entry in current_context.split("\n\n") if entry.strip()]
+        
+        # Check if the new synthesis is different from the last one to avoid duplication
+        if not old_entries or old_entries[-1] != new_context_entry:
+            old_entries.append(new_context_entry)
+            updated_context = "\n\n".join(old_entries[-6:])
+            db.update_profile(user_id, {"aria_personal_context": updated_context})
+            logger.info(f"Successfully updated personal context for user {user_id}")
+    except Exception:
+        logger.exception("Failed background journey synthesis task")
+
+
 # Initialize Redis client
 redis_client = None
 if settings.redis_enabled:
@@ -275,13 +335,12 @@ app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
 
 
 @app.get("/")
-async def root():
-    """Root endpoint"""
-    return {
-        "message": "Welcome to Aria - Your Spiritual Companion",
-        "version": settings.app_version,
-        "docs": "/docs",
-    }
+async def root(request: Request):
+    """Root endpoint returning welcome message or redirect to app depending on Accept header"""
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        return RedirectResponse(url="/app")
+    return {"message": "Welcome to Aria API"}
 
 
 @app.get("/health")
@@ -297,7 +356,9 @@ async def health_check():
 @limiter.limit("3/minute")
 async def register(request: Request, user_data: UserRegister):
     """Register a new user"""
-    result = supabase_auth_signup(
+    from auth import supabase_auth_signup
+    result = await asyncio.to_thread(
+        supabase_auth_signup,
         email=user_data.email,
         password=user_data.password,
         full_name=user_data.full_name,
@@ -316,11 +377,12 @@ async def register(request: Request, user_data: UserRegister):
 @limiter.limit("5/minute")
 async def login(request: Request, user_data: UserLogin):
     """Login a user"""
-    result = supabase_auth_login(email=user_data.email, password=user_data.password)
+    from auth import supabase_auth_login
+    result = await asyncio.to_thread(supabase_auth_login, email=user_data.email, password=user_data.password)
 
     if not result.get("success"):
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail=result.get("error", "Invalid credentials"),
         )
 
@@ -330,16 +392,17 @@ async def login(request: Request, user_data: UserLogin):
 @app.post("/api/v1/auth/logout", response_model=Dict[str, Any])
 async def logout(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())):
     """Logout a user and invalidate their token"""
+    from auth import blacklist_token, supabase_auth_logout
     # Blacklist the token
     token = credentials.credentials
-    blacklist_token(token)
+    await asyncio.to_thread(blacklist_token, token)
 
     # Try to get user_id from token for Supabase logout
     payload = decode_access_token(token)
     user_id = payload.get("sub") if payload else None
 
     if user_id:
-        supabase_auth_logout()
+        await asyncio.to_thread(supabase_auth_logout)
 
     return {"success": True, "message": "Logged out successfully. Token invalidated."}
 
@@ -352,19 +415,19 @@ async def refresh_token(request: Request):
     if not old_refresh:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="refresh_token required")
 
-    row = db.get_refresh_token(old_refresh)
+    row = await asyncio.to_thread(db.get_refresh_token, old_refresh)
     if not row:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired refresh token")
 
     user_id: str = row["user_id"]
-    profile = db.get_profile(user_id)
+    profile = await asyncio.to_thread(db.get_profile, user_id)
     if not profile:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
     # Rotate: revoke old, issue new pair
-    db.revoke_refresh_token(old_refresh)
+    await asyncio.to_thread(db.revoke_refresh_token, old_refresh)
     new_access = create_access_token(data={"sub": user_id, "email": profile["email"]})
-    new_refresh, _ = create_refresh_token(user_id, profile["email"])
+    new_refresh, _ = await asyncio.to_thread(create_refresh_token, user_id, profile["email"])
 
     return {
         "success": True,
@@ -398,7 +461,7 @@ class OAuthExchangeRequest(BaseModel):
 async def oauth_exchange(request_data: OAuthExchangeRequest):
     """Exchange a Supabase OAuth access token for a backend local JWT token"""
     from auth import supabase_oauth_exchange
-    result = supabase_oauth_exchange(request_data.access_token)
+    result = await asyncio.to_thread(supabase_oauth_exchange, request_data.access_token)
     if not result.get("success"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -414,7 +477,7 @@ async def oauth_exchange(request_data: OAuthExchangeRequest):
 @app.get("/api/v1/profile", response_model=Profile)
 async def get_profile(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get user profile"""
-    profile = db.get_profile(current_user["id"])
+    profile = await asyncio.to_thread(db.get_profile, current_user["id"])
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found"
@@ -428,13 +491,16 @@ async def update_profile(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Update user profile"""
-    profile = db.update_profile(
-        current_user["id"], profile_data.model_dump(exclude_unset=True)
+    profile = await asyncio.to_thread(
+        db.update_profile,
+        current_user["id"],
+        profile_data.model_dump(exclude_unset=True),
     )
     if not profile:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found"
         )
+    invalidate_home_cache(current_user["id"])
     return profile
 
 
@@ -449,18 +515,20 @@ async def create_note(
     """Create a new note"""
     note_dict = note_data.model_dump()
     if note_dict.get("password"):
-        note_dict["password_hash"] = get_password_hash(note_dict.pop("password"))
+        password_hash = await asyncio.to_thread(get_password_hash, note_dict.pop("password"))
+        note_dict["password_hash"] = password_hash
         note_dict["is_locked"] = True
     else:
         # Avoid passing password if it's None or empty string if not intended
         note_dict.pop("password", None)
 
-    note = db.create_note(current_user["id"], note_dict)
+    note = await asyncio.to_thread(db.create_note, current_user["id"], note_dict)
     if not note:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create note",
         )
+    invalidate_home_cache(current_user["id"])
     return note
 
 
@@ -470,7 +538,7 @@ async def get_notes(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get all notes for the user, optionally filtered by source_type"""
-    notes = db.get_notes(current_user["id"], source_type)
+    notes = await asyncio.to_thread(db.get_notes, current_user["id"], source_type)
     # Mask content for locked notes in the list view
     processed_notes = []
     for note in notes:
@@ -487,7 +555,7 @@ async def get_note(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get a specific note"""
-    note = db.get_note(note_id, current_user["id"])
+    note = await asyncio.to_thread(db.get_note, note_id, current_user["id"])
     if not note:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=NOTE_NOT_FOUND
@@ -513,8 +581,9 @@ async def unlock_note(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Password required"
         )
 
-    if db.verify_note_password(note_id, current_user["id"], password):
-        note = db.get_note(note_id, current_user["id"])
+    is_verified = await asyncio.to_thread(db.verify_note_password, note_id, current_user["id"], password)
+    if is_verified:
+        note = await asyncio.to_thread(db.get_note, note_id, current_user["id"])
         return note
     else:
         raise HTTPException(
@@ -534,9 +603,8 @@ async def update_note(
     # Handle password change/lock status
     if "password" in update_dict:
         if update_dict["password"]:
-            update_dict["password_hash"] = get_password_hash(
-                update_dict.pop("password")
-            )
+            password_hash = await asyncio.to_thread(get_password_hash, update_dict.pop("password"))
+            update_dict["password_hash"] = password_hash
             update_dict["is_locked"] = True
         else:
             # If password is set to empty string or null, unlock it?
@@ -545,11 +613,12 @@ async def update_note(
             if update_dict.get("is_locked") is False:
                 update_dict["password_hash"] = None
 
-    note = db.update_note(note_id, current_user["id"], update_dict)
+    note = await asyncio.to_thread(db.update_note, note_id, current_user["id"], update_dict)
     if not note:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=NOTE_NOT_FOUND
         )
+    invalidate_home_cache(current_user["id"])
     return note
 
 
@@ -559,11 +628,12 @@ async def delete_note(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Delete a note"""
-    success = db.delete_note(note_id, current_user["id"])
+    success = await asyncio.to_thread(db.delete_note, note_id, current_user["id"])
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=NOTE_NOT_FOUND
         )
+    invalidate_home_cache(current_user["id"])
     return None
 
 
@@ -579,7 +649,7 @@ async def create_bible_study_session(
     session_dict = session_data.model_dump()
     session_dict["user_id"] = current_user["id"]
 
-    session = db.create_bible_study_session(session_dict)
+    session = await asyncio.to_thread(db.create_bible_study_session, session_dict)
     if not session:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -588,16 +658,20 @@ async def create_bible_study_session(
 
     # Generate AI explanation
     try:
-        explanation = ai_service.explain_bible_verse(
+        custom_instructions = _get_user_custom_instructions(current_user)
+        explanation = await asyncio.to_thread(
+            ai_service.explain_bible_verse,
             book=session_data.book,
             chapter=session_data.chapter,
             verses=session_data.verses,
             selected_text=session_data.selected_text,
-            custom_instructions=_get_user_custom_instructions(current_user),
+            custom_instructions=custom_instructions,
         )
 
-        db.update_bible_study_session(session["id"], {"ai_explanation": explanation})
+        await asyncio.to_thread(db.update_bible_study_session, session["id"], {"ai_explanation": explanation})
         session["ai_explanation"] = explanation
+        # Trigger background synthesis
+        asyncio.create_task(synthesize_session_journey(current_user["id"], session["id"], "bibleStudy"))
     except Exception:
         logger.exception("Error generating AI explanation")
 
@@ -609,7 +683,7 @@ async def get_bible_study_sessions(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get all Bible study sessions for current user"""
-    sessions = db.get_bible_study_sessions(current_user["id"])
+    sessions = await asyncio.to_thread(db.get_bible_study_sessions, current_user["id"])
     return sessions
 
 
@@ -618,7 +692,7 @@ async def get_bible_study_session(
     session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Get a specific Bible study session"""
-    session = db.get_bible_study_session(session_id)
+    session = await asyncio.to_thread(db.get_bible_study_session, session_id)
     if not session:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
@@ -641,14 +715,14 @@ async def create_bible_study_message(
 ):
     """Create a message in a Bible study session"""
     # Verify session ownership
-    session = db.get_bible_study_session(session_id)
+    session = await asyncio.to_thread(db.get_bible_study_session, session_id)
     if not session or session["user_id"] != current_user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ACCESS_DENIED)
 
     message_dict = message_data.model_dump()
     message_dict["session_id"] = session_id
 
-    message = db.create_bible_study_message(message_dict)
+    message = await asyncio.to_thread(db.create_bible_study_message, message_dict)
     if not message:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -667,11 +741,11 @@ async def get_bible_study_messages(
 ):
     """Get all messages for a Bible study session"""
     # Verify session ownership
-    session = db.get_bible_study_session(session_id)
+    session = await asyncio.to_thread(db.get_bible_study_session, session_id)
     if not session or session["user_id"] != current_user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ACCESS_DENIED)
 
-    messages = db.get_bible_study_messages(session_id)
+    messages = await asyncio.to_thread(db.get_bible_study_messages, session_id)
     return messages
 
 
@@ -687,7 +761,7 @@ async def create_emotional_support_session(
     session_dict = session_data.model_dump()
     session_dict["user_id"] = current_user["id"]
 
-    session = db.create_emotional_support_session(session_dict)
+    session = await asyncio.to_thread(db.create_emotional_support_session, session_dict)
     if not session:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -696,14 +770,18 @@ async def create_emotional_support_session(
 
     # Generate AI response
     try:
-        response = ai_service.provide_emotional_support(
+        custom_instructions = _get_user_custom_instructions(current_user)
+        response = await asyncio.to_thread(
+            ai_service.provide_emotional_support,
             mood=session_data.mood,
             situation=session_data.situation_description or "",
-            custom_instructions=_get_user_custom_instructions(current_user),
+            custom_instructions=custom_instructions,
         )
 
-        db.update_emotional_support_session(session["id"], {"ai_response": response})
+        await asyncio.to_thread(db.update_emotional_support_session, session["id"], {"ai_response": response})
         session["ai_response"] = response
+        # Trigger background synthesis
+        asyncio.create_task(synthesize_session_journey(current_user["id"], session["id"], "emotionalSupport"))
     except Exception:
         logger.exception("Error generating AI response")
 
@@ -717,7 +795,7 @@ async def get_emotional_support_sessions(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get all emotional support sessions for current user"""
-    sessions = db.get_emotional_support_sessions(current_user["id"])
+    sessions = await asyncio.to_thread(db.get_emotional_support_sessions, current_user["id"])
     return sessions
 
 
@@ -732,14 +810,14 @@ async def create_emotional_support_message(
 ):
     """Create a message in an emotional support session"""
     # Verify session ownership
-    session = db.get_emotional_support_session(session_id)
+    session = await asyncio.to_thread(db.get_emotional_support_session, session_id)
     if not session or session["user_id"] != current_user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ACCESS_DENIED)
 
     message_dict = message_data.model_dump()
     message_dict["session_id"] = session_id
 
-    message = db.create_emotional_support_message(message_dict)
+    message = await asyncio.to_thread(db.create_emotional_support_message, message_dict)
     if not message:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -758,11 +836,11 @@ async def get_emotional_support_messages(
 ):
     """Get all messages for an emotional support session"""
     # Verify session ownership
-    session = db.get_emotional_support_session(session_id)
+    session = await asyncio.to_thread(db.get_emotional_support_session, session_id)
     if not session or session["user_id"] != current_user["id"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ACCESS_DENIED)
 
-    messages = db.get_emotional_support_messages(session_id)
+    messages = await asyncio.to_thread(db.get_emotional_support_messages, session_id)
     return messages
 
 
@@ -774,7 +852,7 @@ async def get_devotion_settings(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Get devotion settings"""
-    settings_data = db.get_devotion_settings(current_user["id"])
+    settings_data = await asyncio.to_thread(db.get_devotion_settings, current_user["id"])
     if not settings_data:
         # Create default settings
         default_settings = {
@@ -785,7 +863,7 @@ async def get_devotion_settings(
             "topics": [],
             "auto_prayer": True,
         }
-        settings_data = db.create_devotion_settings(default_settings)
+        settings_data = await asyncio.to_thread(db.create_devotion_settings, default_settings)
 
     return settings_data
 
@@ -796,8 +874,10 @@ async def update_devotion_settings(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Update devotion settings"""
-    settings_result = db.update_devotion_settings(
-        current_user["id"], settings_data.model_dump(exclude_unset=True)
+    settings_result = await asyncio.to_thread(
+        db.update_devotion_settings,
+        current_user["id"],
+        settings_data.model_dump(exclude_unset=True),
     )
     if not settings_result:
         raise HTTPException(
@@ -816,7 +896,7 @@ async def schedule_devotion(
     devotion_dict = devotion_data.model_dump()
     devotion_dict["user_id"] = current_user["id"]
 
-    devotion = db.create_devotion(devotion_dict)
+    devotion = await asyncio.to_thread(db.create_devotion, devotion_dict)
     if not devotion:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -829,7 +909,7 @@ async def schedule_devotion(
 @app.get("/api/v1/devotion/devotions", response_model=List[Devotion])
 async def get_devotions(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get all devotions for current user"""
-    devotions = db.get_devotions(current_user["id"])
+    devotions = await asyncio.to_thread(db.get_devotions, current_user["id"])
     return devotions
 
 
@@ -838,7 +918,8 @@ async def complete_devotion(
     devotion_id: str, current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Mark a devotion as completed"""
-    devotion = db.update_devotion(
+    devotion = await asyncio.to_thread(
+        db.update_devotion,
         devotion_id,
         {"status": "completed", "completed_at": datetime.now(timezone.utc).isoformat()},
     )
@@ -846,6 +927,7 @@ async def complete_devotion(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=DEVOTION_NOT_FOUND
         )
+    invalidate_home_cache(current_user["id"])
     return devotion
 
 
@@ -860,7 +942,7 @@ async def create_devotion_message(
 ):
     """Create a message in a devotion session"""
     # Verify devotion ownership
-    devotions = db.get_devotions(current_user["id"])
+    devotions = await asyncio.to_thread(db.get_devotions, current_user["id"])
     devotion = next((d for d in devotions if d["id"] == devotion_id), None)
     if not devotion:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=DEVOTION_NOT_FOUND)
@@ -868,7 +950,7 @@ async def create_devotion_message(
     message_dict = message_data.model_dump()
     message_dict["devotion_id"] = devotion_id
 
-    message = db.create_devotion_message(message_dict)
+    message = await asyncio.to_thread(db.create_devotion_message, message_dict)
     if not message:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -887,32 +969,35 @@ async def get_devotion_messages(
 ):
     """Get all messages for a devotion session"""
     # Verify devotion ownership
-    devotions = db.get_devotions(current_user["id"])
+    devotions = await asyncio.to_thread(db.get_devotions, current_user["id"])
     devotion = next((d for d in devotions if d["id"] == devotion_id), None)
     if not devotion:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=DEVOTION_NOT_FOUND)
 
-    messages = db.get_devotion_messages(devotion_id)
+    messages = await asyncio.to_thread(db.get_devotion_messages, devotion_id)
     return messages
 
 
 async def process_devotion_ai(devotion_id: str):
     """Helper to process AI interaction for daily devotion"""
     try:
-        messages = db.get_devotion_messages(devotion_id)
+        messages = await asyncio.to_thread(db.get_devotion_messages, devotion_id)
         conversation_history = [
             {"role": m["role"], "content": m["content"]} for m in messages
         ]
 
         # Get devotion context
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT user_id, day_plan_summary FROM devotions WHERE id = ?", (devotion_id,))
-            row = cursor.fetchone()
-            if not row: return
-            user_id = row['user_id']
+        def get_user_id():
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT user_id, day_plan_summary FROM devotions WHERE id = ?", (devotion_id,))
+                row = cursor.fetchone()
+                return row['user_id'] if row else None
 
-        user_profile = db.get_profile(user_id)
+        user_id = await asyncio.to_thread(get_user_id)
+        if not user_id: return
+
+        user_profile = await asyncio.to_thread(db.get_profile, user_id)
         custom_instructions = (
             _get_user_custom_instructions(user_profile) if user_profile else None
         )
@@ -924,7 +1009,8 @@ async def process_devotion_ai(devotion_id: str):
             custom_instructions=custom_instructions,
         )
         
-        db.create_devotion_message(
+        await asyncio.to_thread(
+            db.create_devotion_message,
             {"devotion_id": devotion_id, "role": "assistant", "content": response}
         )
         
@@ -943,8 +1029,8 @@ async def process_devotion_ai(devotion_id: str):
 async def websocket_devotion(websocket: WebSocket, devotion_id: str):
     """WebSocket endpoint for real-time devotion chat with authentication"""
     try:
-        user = get_current_user_websocket(websocket)
-        devotions = db.get_devotions(user.get("id"))
+        user = await get_current_user_websocket(websocket)
+        devotions = await asyncio.to_thread(db.get_devotions, user.get("id"))
         devotion = next((d for d in devotions if d.get("id") == devotion_id), None)
         if not devotion:
             await websocket.close(
@@ -956,7 +1042,8 @@ async def websocket_devotion(websocket: WebSocket, devotion_id: str):
         while True:
             data = await websocket.receive_json()
             if data.get("type") == "message":
-                db.create_devotion_message(
+                await asyncio.to_thread(
+                    db.create_devotion_message,
                     {
                         "devotion_id": devotion_id,
                         "role": data.get("role", "user"),
@@ -1031,7 +1118,7 @@ async def get_bible_chapter(book: str, chapter: int, version: str = "KJV"):
 @app.get("/api/v1/bible/search", response_model=List[BibleVerse])
 async def search_bible(query: str):
     """Search Bible verses"""
-    verses = db.search_bible_verses(query)
+    verses = await asyncio.to_thread(db.search_bible_verses, query)
     return verses
 
 
@@ -1051,7 +1138,7 @@ async def get_bible_verse(book: str, chapter: int, verse: int, version: str = "K
             logger.exception("Redis error")
 
     # 2. Try SQLite (L2 Cache)
-    verse_data = db.get_bible_verse(book.lower(), chapter, verse, version)
+    verse_data = await asyncio.to_thread(db.get_bible_verse, book.lower(), chapter, verse, version)
     if verse_data:
         _cache_in_redis(cache_key, verse_data)
         return verse_data
@@ -1060,7 +1147,7 @@ async def get_bible_verse(book: str, chapter: int, verse: int, version: str = "K
     verse_data = await _fetch_verse_from_api(book, chapter, verse, version)
     if verse_data:
         # Cache in SQLite and Redis
-        db.save_bible_verses([verse_data])
+        await asyncio.to_thread(db.save_bible_verses, [verse_data])
         _cache_in_redis(cache_key, verse_data)
         return verse_data
 
@@ -1070,7 +1157,7 @@ async def get_bible_verse(book: str, chapter: int, verse: int, version: str = "K
 @app.get("/api/v1/bible/scriptures/{category}", response_model=List[ScriptureReference])
 async def get_scripture_references(category: str):
     """Get scripture references by category"""
-    references = db.get_scripture_references(category)
+    references = await asyncio.to_thread(db.get_scripture_references, category)
     return references
 
 
@@ -1090,16 +1177,57 @@ class ChatResponse(BaseModel):
     timestamp: datetime
 
 
+@app.get("/api/v1/ai/welcome-greeting")
+async def get_welcome_greeting(current_user: Dict[str, Any] = Depends(get_current_user)):
+    """Generate a highly personalized welcome greeting based on user personal context."""
+    user_id = current_user["id"]
+    profile = await asyncio.to_thread(db.get_profile, user_id)
+    if not profile:
+        return {"greeting": "Welcome back! How can I walk with you in faith today?"}
+         
+    context = (profile.get("aria_personal_context") or "").strip()
+    full_name = profile.get("full_name", "Believer")
+    first_name = full_name.split(" ")[0]
+    
+    if not context:
+        return {"greeting": f"Welcome back, {first_name}. I'm here to reflect and pray with you. What is on your heart today?"}
+         
+    # Prompt the LLM to generate a personalized check-in
+    prompt = f"""You are Aria, a Christ-centred spiritual companion. 
+Generate a warm, short (2-3 sentences max) welcome-back greeting for {first_name} based on their personal context.
+Reference their recent study focus or emotional hurdles if present in the context, and ask them how they are holding up or how you can support them today.
+Ground your greeting in a gentle, caring, and faith-filled tone. Do not use markdown format or list bullet points. Keep it in a single paragraph of text.
+
+Their current life and spiritual context:
+{context}
+
+Response:"""
+    
+    try:
+        response_content = await asyncio.to_thread(
+            ai_service.generate_response,
+            messages=[{"role": "user", "content": prompt}],
+            mode="general"
+        )
+        return {"greeting": response_content.strip()}
+    except Exception:
+        logger.exception("Failed to generate welcome greeting")
+        return {"greeting": f"Welcome back, {first_name}. How are you holding up today?"}
+
+
 @app.post("/api/v1/ai/generate", response_model=AIResponse)
 async def generate_ai_response(
     request: AIRequest, current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Generate AI response for any mode"""
     try:
-        content = ai_service.generate_response(
+        custom_instructions = _get_user_custom_instructions(current_user)
+        content = await asyncio.to_thread(
+            ai_service.generate_response,
             request.messages,
             request.mode,
-            custom_instructions=_get_user_custom_instructions(current_user),
+            custom_instructions=custom_instructions,
+            user_id=current_user["id"],
         )
         return AIResponse(content=content, mode=request.mode)
     except Exception:
@@ -1154,6 +1282,7 @@ async def voice_chat(
             messages=[{"role": "user", "content": transcription}],
             mode="general",
             custom_instructions=custom_instructions,
+            user_id=current_user["id"],
         )
 
         return {
@@ -1665,6 +1794,39 @@ def _resample_24k_to_16k_float32(pcm_bytes: bytes) -> bytes:
 # ==================== Voice Call WebSocket ====================
 
 
+# ==================== Voice Call WebSocket ====================
+
+
+async def synthesize_voice_journey(user_id: str, messages: List[Dict[str, str]]):
+    """Background task to synthesize a journey summary from a voice call transcript."""
+    try:
+        synthesis = await asyncio.to_thread(
+            ai_service.synthesize_journey,
+            messages,
+            "voiceCall"
+        )
+        if not synthesis:
+            return
+            
+        profile = db.get_profile(user_id)
+        if not profile:
+            return
+            
+        old_context = profile.get("aria_personal_context") or ""
+        old_entries = [e.strip() for e in old_context.split("\n\n") if e.strip()]
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        new_context_entry = f"[{timestamp} Voice Session Takeaway]: {synthesis}"
+        
+        if not old_entries or old_entries[-1] != new_context_entry:
+            old_entries.append(new_context_entry)
+            updated_context = "\n\n".join(old_entries[-6:])
+            db.update_profile(user_id, {"aria_personal_context": updated_context})
+            logger.info(f"Successfully updated personal context from voice call for user {user_id}")
+    except Exception:
+        logger.exception("Failed background voice journey synthesis task")
+
+
 @app.websocket("/ws/voice-call/{call_id}")
 async def websocket_voice_call(websocket: WebSocket, call_id: str):
     """Voice call websocket endpoint. Bridges frontend to the S2S Hugging Face space."""
@@ -1680,6 +1842,11 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
         return
 
     voice_preference = user.get("aria_voice", "Adaora") if user else "Adaora"
+    
+    # Get user custom instructions
+    user_id = user.get("id") if user else None
+    profile = db.get_profile(user_id) if user_id else None
+    custom_instructions = _get_user_custom_instructions(profile) if profile else None
 
     # Build Aria's spiritual companion persona
     ARIA_SPIRITUAL_SYSTEM_PROMPT = (
@@ -1696,8 +1863,12 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
         "- Be culturally sensitive and inclusive across all Christian denominations.\n"
         "- Keep responses brief in voice — 2 to 4 sentences unless the user asks for more depth.\n"
         "- If you do not know something, admit it humbly and point to Scripture or prayer.\n"
-        "\n"
-        "You open every new conversation with a warm greeting and a gentle check-in, "
+    )
+    if custom_instructions:
+        ARIA_SPIRITUAL_SYSTEM_PROMPT += f"\n\n{custom_instructions}"
+        
+    ARIA_SPIRITUAL_SYSTEM_PROMPT += (
+        "\n\nYou open every new conversation with a warm greeting and a gentle check-in, "
         "such as: 'Hi, I'm Aria. How are you doing today? I'm here for you.'"
     )
 
@@ -1725,8 +1896,8 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
                     "system_prompt": ARIA_SPIRITUAL_SYSTEM_PROMPT,
                 }
                 await ws.send(json.dumps(config_payload))
-                conf_response = await ws.recv()
-                logger.info(f"S2S configured (attempt {attempt}): {conf_response}")
+                config_response = await ws.recv()
+                logger.info(f"S2S configured (attempt {attempt}): {config_response}")
                 return ws
             except Exception as e:
                 logger.warning(f"S2S connect attempt {attempt} failed: {e}")
@@ -1754,6 +1925,7 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
     # Shared mutable reference so forward_frontend_to_s2s sees reconnected ws
     s2s_ref = {"ws": s2s_ws}
     reconnecting = asyncio.Event()
+    call_messages = []
 
     async def forward_frontend_to_s2s():
         try:
@@ -1799,17 +1971,26 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
                             elif msg == "Transcribing...":
                                 await voice_call_manager.send_message(call_id, {"type": "user_speaking", "speaking": False})
                         elif msg_type == "transcription":
-                            await voice_call_manager.send_message(call_id, {
-                                "type": "transcript",
-                                "text": data.get("text", ""),
-                                "role": "user"
-                            })
+                            text = data.get("text", "")
+                            if text:
+                                call_messages.append({"role": "user", "content": text})
+                                await voice_call_manager.send_message(call_id, {
+                                    "type": "transcript",
+                                    "text": text,
+                                    "role": "user"
+                                })
                         elif msg_type == "llm_text":
-                            await voice_call_manager.send_message(call_id, {
-                                "type": "transcript",
-                                "text": data.get("text", ""),
-                                "role": "assistant"
-                            })
+                            text = data.get("text", "")
+                            if text:
+                                if call_messages and call_messages[-1]["role"] == "assistant":
+                                    call_messages[-1]["content"] += " " + text
+                                else:
+                                    call_messages.append({"role": "assistant", "content": text})
+                                await voice_call_manager.send_message(call_id, {
+                                    "type": "transcript",
+                                    "text": text,
+                                    "role": "assistant"
+                                })
                         elif msg_type == "done":
                             await voice_call_manager.send_message(call_id, {"type": "aria_speaking", "speaking": False})
                             aria_speaking_active = False
@@ -1888,6 +2069,10 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
                 await websocket.close()
         except Exception:
             pass
+            
+        # Trigger background synthesis
+        if call_messages and user_id:
+            asyncio.create_task(synthesize_voice_journey(user_id, call_messages))
 class ConnectionManager:
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
@@ -1939,6 +2124,8 @@ async def process_bible_study_ai(session_id: str):
                 session_id,
                 {"type": "message", "role": "assistant", "content": response},
             )
+            # Trigger background synthesis
+            asyncio.create_task(synthesize_session_journey(session["user_id"], session_id, "bibleStudy"))
     except Exception:
         logger.exception("Error in Bible study AI")
         await manager.send_message(
@@ -2003,6 +2190,9 @@ async def process_emotional_support_ai(session_id: str):
         await manager.send_message(
             session_id, {"type": "message", "role": "assistant", "content": response}
         )
+        # Trigger background synthesis
+        if session:
+            asyncio.create_task(synthesize_session_journey(session["user_id"], session_id, "emotionalSupport"))
     except Exception:
         logger.exception("Error in emotional support AI")
         await manager.send_message(
@@ -2014,8 +2204,8 @@ async def process_emotional_support_ai(session_id: str):
 async def websocket_emotional_support(websocket: WebSocket, session_id: str):
     """WebSocket endpoint for real-time emotional support chat with authentication"""
     try:
-        user = get_current_user_websocket(websocket)
-        sessions = db.get_emotional_support_sessions(user.get("id"))
+        user = await get_current_user_websocket(websocket)
+        sessions = await asyncio.to_thread(db.get_emotional_support_sessions, user.get("id"))
         session = next((s for s in sessions if s.get("id") == session_id), None)
         if not session:
             await websocket.close(
@@ -2027,7 +2217,8 @@ async def websocket_emotional_support(websocket: WebSocket, session_id: str):
         while True:
             data = await websocket.receive_json()
             if data.get("type") == "message":
-                db.create_emotional_support_message(
+                await asyncio.to_thread(
+                    db.create_emotional_support_message,
                     {
                         "session_id": session_id,
                         "role": data.get("role", "user"),
@@ -2040,15 +2231,14 @@ async def websocket_emotional_support(websocket: WebSocket, session_id: str):
         manager.disconnect(session_id)
     except Exception:
         logger.exception("Emotional support WebSocket error")
-
-
 # ==================== AI Chat Endpoints ====================
 
 
 @app.get("/api/v1/ai-chat/sessions", response_model=List[AIChatSession])
 async def get_chat_sessions(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get all chat sessions for the current user"""
-    return db.get_chat_sessions(current_user["id"])
+    sessions = await asyncio.to_thread(db.get_chat_sessions, current_user["id"])
+    return sessions
 
 
 @app.post("/api/v1/ai-chat/sessions", response_model=AIChatSession)
@@ -2057,7 +2247,7 @@ async def create_chat_session(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Create a new chat session"""
-    session = db.create_chat_session(current_user["id"], session_data.title)
+    session = await asyncio.to_thread(db.create_chat_session, current_user["id"], session_data.title)
     if not session:
         raise HTTPException(status_code=500, detail=FAILED_TO_CREATE_SESSION)
     return session
@@ -2070,10 +2260,11 @@ async def get_chat_messages(
     session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Get all messages for a chat session"""
-    session = db.get_chat_session(session_id)
+    session = await asyncio.to_thread(db.get_chat_session, session_id)
     if not session or session.get("user_id") != current_user.get("id"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    return db.get_chat_session_messages(session_id)
+    messages = await asyncio.to_thread(db.get_chat_session_messages, session_id)
+    return messages
 
 
 @app.post("/api/v1/ai/chat", response_model=AIResponse)
@@ -2094,20 +2285,28 @@ async def chat_with_aria(
                 if request.messages
                 else "New Conversation"
             )
-            session = db.create_chat_session(user_id, title)
+            session = await asyncio.to_thread(db.create_chat_session, user_id, title)
             if not session:
                 raise HTTPException(status_code=500, detail=FAILED_TO_CREATE_SESSION)
             session_id = session["id"]
 
+            # Save the welcome message if the frontend sent it as the first message
+            if len(request.messages) > 1 and request.messages[0].get("role") == "assistant":
+                await asyncio.to_thread(
+                    db.create_chat_message,
+                    {"session_id": session_id, "role": "assistant", "content": request.messages[0].get("content", "")}
+                )
+
         # Save user message
         user_message = request.messages[-1].get("content", "") if request.messages else ""
         if user_message:
-            db.create_chat_message(
+            await asyncio.to_thread(
+                db.create_chat_message,
                 {"session_id": session_id, "role": "user", "content": user_message}
             )
 
         # Get custom instructions
-        profile = db.get_profile(user_id)
+        profile = await asyncio.to_thread(db.get_profile, user_id)
         custom_instructions = (
             _get_user_custom_instructions(profile) if profile else None
         )
@@ -2118,14 +2317,17 @@ async def chat_with_aria(
         ]
 
         # Generate response
-        response_content = ai_service.generate_response(
+        response_content = await asyncio.to_thread(
+            ai_service.generate_response,
             messages=full_context,
             mode=request.mode or "general",
             custom_instructions=custom_instructions,
+            user_id=user_id,
         )
 
         # Save assistant message
-        db.create_chat_message(
+        await asyncio.to_thread(
+            db.create_chat_message,
             {"session_id": session_id, "role": "assistant", "content": response_content}
         )
 
@@ -2150,18 +2352,26 @@ async def chat_with_aria_stream(
 
         if not session_id:
             title = request.messages[-1].get("content", "")[:30] if request.messages else "New Conversation"
-            session = db.create_chat_session(user_id, title)
+            session = await asyncio.to_thread(db.create_chat_session, user_id, title)
             if not session:
                 raise HTTPException(status_code=500, detail=FAILED_TO_CREATE_SESSION)
             session_id = session["id"]
 
+            # Save the welcome message if the frontend sent it as the first message
+            if len(request.messages) > 1 and request.messages[0].get("role") == "assistant":
+                await asyncio.to_thread(
+                    db.create_chat_message,
+                    {"session_id": session_id, "role": "assistant", "content": request.messages[0].get("content", "")}
+                )
+
         user_message = request.messages[-1].get("content", "") if request.messages else ""
         if user_message:
-            db.create_chat_message(
+            await asyncio.to_thread(
+                db.create_chat_message,
                 {"session_id": session_id, "role": "user", "content": user_message}
             )
 
-        profile = db.get_profile(user_id)
+        profile = await asyncio.to_thread(db.get_profile, user_id)
         custom_instructions = _get_user_custom_instructions(profile) if profile else None
         full_context = [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in request.messages]
 
@@ -2171,6 +2381,7 @@ async def chat_with_aria_stream(
                     messages=full_context,
                     mode=request.mode or "general",
                     custom_instructions=custom_instructions,
+                    user_id=user_id,
                 ))
             )
             full_content = ""
@@ -2178,7 +2389,8 @@ async def chat_with_aria_stream(
                 full_content += chunk
                 yield chunk
             if full_content:
-                db.create_chat_message(
+                await asyncio.to_thread(
+                    db.create_chat_message,
                     {"session_id": session_id, "role": "assistant", "content": full_content}
                 )
 
@@ -2189,12 +2401,23 @@ async def chat_with_aria_stream(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=FAILED_TO_GENERATE_RESPONSE)
 
 
+def invalidate_home_cache(user_id: str):
+    """Invalidate cached home data in Redis for a specific user"""
+    if settings.redis_enabled and redis_client and user_id:
+        try:
+            cache_key = f"user:home_data:{user_id}"
+            redis_client.delete(cache_key)
+            logger.info(f"🧹 Invalidated home data cache for user: {user_id}")
+        except Exception:
+            logger.exception("Failed to delete Redis home data cache")
+
+
 # ==================== Serve Frontend ====================
 
 
 @app.get("/api/v1/home/data")
 async def get_home_data(current_user: Dict[str, Any] = Depends(get_current_user)):
-    """Get all home page data including verse, activity and stats"""
+    """Get all home page data including verse, activity and stats with Redis caching"""
     from datetime import datetime
 
     # Get user profile - handle case where current_user might be None
@@ -2213,25 +2436,36 @@ async def get_home_data(current_user: Dict[str, Any] = Depends(get_current_user)
             "recent_prayers": [],
         }
 
-    # Get user profile
-    profile = db.get_profile(user_id)
+    # 1. Try Redis cache
+    cache_key = f"user:home_data:{user_id}"
+    if settings.redis_enabled and redis_client:
+        try:
+            cached_data = redis_client.get(cache_key)
+            if cached_data:
+                logger.info(f"🚀 Redis HIT for home data: {cache_key}")
+                return json.loads(cached_data)
+        except Exception:
+            logger.exception("Redis home data cache check failed")
+
+    # 2. Query database in thread pool
+    profile = await asyncio.to_thread(db.get_profile, user_id)
     user_name = profile.get("full_name", "Believer") if profile else "Believer"
 
     # Get recent activity
-    activity = db.get_user_activity(user_id, limit=3)
+    activity = await asyncio.to_thread(db.get_user_activity, user_id, limit=3)
 
     # Get user stats
-    stats = db.get_user_stats(user_id)
+    stats = await asyncio.to_thread(db.get_user_stats, user_id)
 
     # Get recent prayers
-    prayers = db.get_prayers(user_id)
+    prayers = await asyncio.to_thread(db.get_prayers, user_id)
     recent_prayers = prayers[:3] if prayers else []
 
     # Get personalized verse - Cache in DB to ensure it only changes once per day
     try:
         today = datetime.now().strftime("%Y-%m-%d")
         # Try database cache first
-        verse = db.get_cached_verse(user_id, today)
+        verse = await asyncio.to_thread(db.get_cached_verse, user_id, today)
 
         # If no cached verse, generate new one
         if not verse:
@@ -2242,14 +2476,14 @@ async def get_home_data(current_user: Dict[str, Any] = Depends(get_current_user)
                     if a.get("type") == "support":
                         recent_moods.append(a.get("title", ""))
 
-            # Generate personalized verse with insight
-            verse = ai_service.get_personalized_verse(recent_moods)
+            # Generate personalized verse with insight (runs AI, offloaded to thread)
+            verse = await asyncio.to_thread(ai_service.get_personalized_verse, recent_moods)
 
-            # Generate Daily Manna based on the verse
-            verse["daily_manna"] = ai_service.get_daily_manna(verse)
+            # Generate Daily Manna based on the verse (runs AI, offloaded to thread)
+            verse["daily_manna"] = await asyncio.to_thread(ai_service.get_daily_manna, verse)
 
             # Save to database cache
-            db.save_cached_verse(user_id, today, verse)
+            await asyncio.to_thread(db.save_cached_verse, user_id, today, verse)
     except Exception:
         logger.exception("Error getting personalized verse")
         # Fallback verse
@@ -2260,13 +2494,22 @@ async def get_home_data(current_user: Dict[str, Any] = Depends(get_current_user)
             "daily_manna": "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead.",
         }
 
-    return {
+    response_data = {
         "user": {"name": user_name},
         "verse_of_day": verse,
         "activity": activity,
         "stats": stats,
         "recent_prayers": recent_prayers,
     }
+
+    # 3. Store in Redis cache with 60s expiration
+    if settings.redis_enabled and redis_client:
+        try:
+            redis_client.setex(cache_key, 60, json.dumps(response_data))
+        except Exception:
+            logger.exception("Redis home data cache save failed")
+
+    return response_data
 
 
 @app.get("/api/v1/home/verse")
@@ -2279,24 +2522,24 @@ async def get_personalized_verse(
         today = datetime.now().strftime("%Y-%m-%d")
 
         # Try database cache first
-        verse = db.get_cached_verse(user_id, today)
+        verse = await asyncio.to_thread(db.get_cached_verse, user_id, today)
 
         # If no cached verse, generate new one
         if not verse:
             # Get recent activity to determine user's current state
-            activity = db.get_user_activity(current_user["id"], limit=5)
+            activity = await asyncio.to_thread(db.get_user_activity, current_user["id"], limit=5)
             recent_moods = []
             for a in activity:
                 if a.get("type") == "support":
                     recent_moods.append(a.get("title", ""))
 
-            verse = ai_service.get_personalized_verse(recent_moods)
+            verse = await asyncio.to_thread(ai_service.get_personalized_verse, recent_moods)
 
             # Generate Daily Manna based on the verse
-            verse["daily_manna"] = ai_service.get_daily_manna(verse)
+            verse["daily_manna"] = await asyncio.to_thread(ai_service.get_daily_manna, verse)
 
             # Save to database cache
-            db.save_cached_verse(user_id, today, verse)
+            await asyncio.to_thread(db.save_cached_verse, user_id, today, verse)
 
         return {"success": True, "verse": verse}
     except Exception:
@@ -2318,7 +2561,7 @@ async def get_home_activity(
 ):
     """Get user's recent activity for the home page or full list"""
     try:
-        activity = db.get_user_activity(current_user["id"], limit=limit)
+        activity = await asyncio.to_thread(db.get_user_activity, current_user["id"], limit=limit)
         return {"success": True, "activity": activity}
     except Exception:
         logger.exception("Error getting activity")
@@ -2329,7 +2572,7 @@ async def get_home_activity(
 async def get_home_stats(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get user stats for spiritual growth"""
     try:
-        stats = db.get_user_stats(current_user["id"])
+        stats = await asyncio.to_thread(db.get_user_stats, current_user["id"])
         return {"success": True, "stats": stats}
     except Exception:
         logger.exception("Error getting stats")
@@ -2352,20 +2595,21 @@ async def create_prayer(
     prayer_dict = prayer_data.model_dump()
     prayer_dict["user_id"] = current_user["id"]
 
-    prayer = db.create_prayer(prayer_dict)
+    prayer = await asyncio.to_thread(db.create_prayer, prayer_dict)
     if not prayer:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create prayer",
         )
 
+    invalidate_home_cache(current_user["id"])
     return prayer
 
 
 @app.get("/api/v1/prayers", response_model=List[Prayer])
 async def get_prayers(current_user: Dict[str, Any] = Depends(get_current_user)):
     """Get all prayers for current user"""
-    prayers = db.get_prayers(current_user["id"])
+    prayers = await asyncio.to_thread(db.get_prayers, current_user["id"])
     return prayers
 
 
@@ -2374,12 +2618,13 @@ async def delete_prayer(
     prayer_id: str, current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Delete a prayer"""
-    success = db.delete_prayer(prayer_id, current_user["id"])
+    success = await asyncio.to_thread(db.delete_prayer, prayer_id, current_user["id"])
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Prayer not found or failed to delete",
         )
+    invalidate_home_cache(current_user["id"])
     return {"success": True, "message": "Prayer deleted"}
 
 
@@ -2393,6 +2638,100 @@ async def serve_frontend():
 async def serve_frontend_app(path: str):
     """Serve the frontend application for any app route"""
     return FileResponse("static/index.html")
+
+
+@app.on_event("startup")
+async def startup_event():
+    # Start the proactive devotions background task
+    asyncio.create_task(proactive_devotions_scheduler())
+
+
+async def proactive_devotions_scheduler():
+    """Background task running every minute to trigger devotions for users when it is their preferred time."""
+    logger.info("⏰ Proactive devotions background scheduler started.")
+    while True:
+        try:
+            # Check users' devotions
+            profiles = db.get_all_profiles()
+            
+            for profile in profiles:
+                user_id = profile.get("id")
+                if not user_id:
+                    continue
+                
+                # Fetch user's devotion settings
+                settings_data = db.get_devotion_settings(user_id)
+                if not settings_data:
+                    # Default: UTC, 6:00 AM
+                    tz_str = "UTC"
+                    pref_time_str = "06:00"
+                else:
+                    tz_str = settings_data.get("timezone") or "UTC"
+                    pref_time_str = settings_data.get("preferred_time") or "06:00"
+                
+                # Get current time in user's timezone
+                from zoneinfo import ZoneInfo
+                try:
+                    tz = ZoneInfo(tz_str)
+                except Exception:
+                    tz = ZoneInfo("UTC")
+                
+                local_time = datetime.now(tz)
+                
+                # Parse preferred time
+                try:
+                    pref_hour, pref_minute = map(int, pref_time_str.split(":"))
+                except Exception:
+                    pref_hour, pref_minute = 6, 0
+                
+                # Check if local time is past preferred time
+                if local_time.hour > pref_hour or (local_time.hour == pref_hour and local_time.minute >= pref_minute):
+                    # Check if devotion is already cached for today's local date
+                    local_date_str = local_time.strftime("%Y-%m-%d")
+                    cached_verse = db.get_cached_verse(user_id, local_date_str)
+                    if not cached_verse:
+                        # 1. Fetch unanswered prayers
+                        with db.get_connection() as conn:
+                            cur = db._cursor(conn)
+                            cur.execute(
+                                "SELECT title, content FROM prayers WHERE user_id = %s AND isanswered = FALSE ORDER BY created_at DESC LIMIT 5",
+                                (user_id,)
+                            )
+                            prayers = cur.fetchall()
+                            unanswered_prayers = [f"{p['title'] or ''}: {p['content']}".strip() for p in prayers]
+
+                        # 2. Fetch last 3 emotional support moods/descriptions
+                        with db.get_connection() as conn:
+                            cur = db._cursor(conn)
+                            cur.execute(
+                                "SELECT mood, situation_description FROM emotional_support_sessions WHERE user_id = %s ORDER BY created_at DESC LIMIT 3",
+                                (user_id,)
+                            )
+                            support_sessions = cur.fetchall()
+                            recent_moods = [f"{s['mood'] or ''} ({s['situation_description'] or ''})".strip() for s in support_sessions]
+
+                        # 3. Generate proactive devotion
+                        logger.info(f"Generating proactive devotion for user {user_id} for date {local_date_str}...")
+                        first_name = profile.get("full_name", "Believer").split(" ")[0]
+                        devotion = ai_service.generate_proactive_devotion(unanswered_prayers, recent_moods, first_name)
+                        
+                        # 4. Save to database cache
+                        db.save_cached_verse(user_id, local_date_str, devotion)
+                        logger.info(f"Proactive devotion saved for user {user_id} for date {local_date_str}")
+                        
+                        # 5. Push notification simulation payload
+                        struggle = "your spiritual walk"
+                        if recent_moods:
+                            struggle = support_sessions[0]["mood"]
+                        elif unanswered_prayers:
+                            struggle = prayers[0]["title"] or "your needs"
+                        
+                        headline = f"Your morning bread is ready, {first_name}. I was praying about your concern regarding {struggle}..."
+                        logger.info(f"🔔 PUSH NOTIFICATION SIMULATION PAYLOAD: {headline}")
+        except Exception:
+            logger.exception("Error in proactive devotions scheduler loop")
+            
+        await asyncio.sleep(60)  # Check every 60 seconds
 
 
 if __name__ == "__main__":
