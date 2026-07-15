@@ -24,16 +24,21 @@ During the Blueprint setup (or after in the Dashboard), you MUST set these varia
 
 | Variable | Description |
 |----------|-------------|
+| `DATABASE_URL` | Your PostgreSQL Connection URL (e.g., from Supabase) |
+| `SUPABASE_URL` | Your Supabase Project URL |
+| `SUPABASE_KEY` | Your Supabase public/anon Key |
 | `OPENAI_API_KEY` | Your OpenAI API Key |
 | `REDIS_URL` | Your Upstash Redis URL (`rediss://...`) |
-| `REDIS_ENABLED` | Set to `true` |
+| `REDIS_ENABLED` | Set to `true` (or `false` to disable caching) |
+| `YARNGPT_API_KEY` | Your YarnGPT API Key (if using YarnGPT) |
+| `NVIDIA_API_KEY` | Your NVIDIA API Key (if using NVIDIA models) |
+| `API_BIBLE_KEY` | Your Bible API Key (if using API.Bible) |
 
-## Step 4: Important Note on Data (SQLite)
-Since you are using SQLite (`aria.db`):
-- **On Render's Free Tier**: Files are ephemeral. Every time the server restarts or you redeploy, your database (prayers, notes, sessions) will be wiped.
-- **Solution**: If you need persistent data, you should either:
-    1. Upgrade the Backend service to the **Starter** plan ($7/mo) and attach a **Disk** (I've included the commented-out code for this in `render.yaml`).
-    2. Switch from SQLite to a managed database like **Render PostgreSQL** (which has a free tier).
+## Step 4: Database Storage (PostgreSQL & Supabase Auth)
+The application has been migrated from SQLite to **PostgreSQL**.
+- All user auth is handled securely through **Supabase Auth**.
+- All structured data (notes, profiles, devotions, prayers, study sessions) is persisted in your **PostgreSQL** database (typically hosted on Supabase).
+- Data will remain persistent across restarts and redeploys without needing a Render Disk.
 
 ## Step 5: Verify the URLs
 - Once deployed, Render will provide a URL for your frontend (e.g., `https://aria-frontend.onrender.com`).

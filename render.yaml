@@ -12,8 +12,12 @@ services:
         value: 3.11.0
       - key: PYO3_USE_ABI3_FORWARD_COMPATIBILITY
         value: "1"
-      - key: DATABASE_PATH
-        value: /opt/render/project/src/data/aria.db
+      - key: DATABASE_URL
+        sync: false # Set this to your PostgreSQL connection string
+      - key: SUPABASE_URL
+        sync: false # Set this to your Supabase URL
+      - key: SUPABASE_KEY
+        sync: false # Set this to your Supabase anon/public Key
       - key: REDIS_ENABLED
         value: "true"
       - key: CORS_ORIGINS
@@ -22,6 +26,12 @@ services:
         sync: false # Set this in Render Dashboard
       - key: REDIS_URL
         sync: false # Set this in Render Dashboard
+      - key: YARNGPT_API_KEY
+        sync: false # Set this in Render Dashboard if using YarnGPT
+      - key: NVIDIA_API_KEY
+        sync: false # Set this in Render Dashboard if using Nvidia APIs
+      - key: API_BIBLE_KEY
+        sync: false # Set this in Render Dashboard if using Bible API
       - key: SECRET_KEY
         generateValue: true
     # Note: Free tier doesn't support Disks. 
