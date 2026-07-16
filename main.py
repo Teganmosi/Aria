@@ -1856,7 +1856,6 @@ async def synthesize_voice_journey(user_id: str, messages: List[Dict[str, str]])
         logger.exception("Failed background voice journey synthesis task")
 
 
-@app.websocket("/ws/voice-call/{call_id}")
 async def _connect_and_configure_s2s(call_id: str, pocket_voice: str, system_prompt: str):
     """Connect to S2S with exponential backoff retry (handles 1012 cold-start)."""
     import websockets
