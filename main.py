@@ -1496,31 +1496,33 @@ async def _generate_pocket_tts(text: str, voice: str) -> Optional[bytes]:
     try:
         import httpx
         chunks = _split_text_into_chunks(text, max_chunk_len=450)
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            all_pcm = []
-            for chunk_idx, chunk in enumerate(chunks):
-                logger.info(f"Generating Pocket-TTS chunk {chunk_idx + 1}/{len(chunks)}: length={len(chunk)}")
-                payload = {"text": chunk, "voice": pocket_voice}
-                chunk_wav = None
-                response = await client.post("https://teganmosi-realtime.hf.space/tts", json=payload)
-                if response.status_code == 200:
-                    chunk_wav = response.content
+        
+        async def fetch_chunk(client: httpx.AsyncClient, chunk: str, chunk_idx: int) -> bytes:
+            logger.info(f"Generating Pocket-TTS chunk {chunk_idx + 1}/{len(chunks)}: length={len(chunk)}")
+            payload = {"text": chunk, "voice": pocket_voice}
+            chunk_wav = None
+            response = await client.post("https://teganmosi-realtime.hf.space/tts", json=payload)
+            if response.status_code == 200:
+                chunk_wav = response.content
+            else:
+                logger.warning(f"Pocket-TTS POST failed for chunk {chunk_idx + 1} with status {response.status_code}; trying GET fallback...")
+                response_get = await client.get("https://teganmosi-realtime.hf.space/tts", params={"text": chunk, "voice": pocket_voice})
+                if response_get.status_code == 200:
+                    chunk_wav = response_get.content
                 else:
-                    logger.warning(f"Pocket-TTS POST failed for chunk {chunk_idx + 1} with status {response.status_code}; trying GET fallback...")
-                    response_get = await client.get("https://teganmosi-realtime.hf.space/tts", params={"text": chunk, "voice": pocket_voice})
-                    if response_get.status_code == 200:
-                        chunk_wav = response_get.content
-                    else:
-                        logger.error(f"Pocket-TTS GET also failed for chunk {chunk_idx + 1} with status {response_get.status_code}")
-                
-                if chunk_wav is None:
-                    raise RuntimeError(f"Failed to generate Pocket-TTS audio for chunk {chunk_idx + 1}")
-                
-                chunk_pcm = _wav_to_pcm16(chunk_wav)
-                if not chunk_pcm:
-                    raise RuntimeError(f"Failed to extract PCM bytes from WAV for chunk {chunk_idx + 1}")
-                all_pcm.append(chunk_pcm)
+                    logger.error(f"Pocket-TTS GET also failed for chunk {chunk_idx + 1} with status {response_get.status_code}")
             
+            if chunk_wav is None:
+                raise RuntimeError(f"Failed to generate Pocket-TTS audio for chunk {chunk_idx + 1}")
+            
+            chunk_pcm = _wav_to_pcm16(chunk_wav)
+            if not chunk_pcm:
+                raise RuntimeError(f"Failed to extract PCM bytes from WAV for chunk {chunk_idx + 1}")
+            return chunk_pcm
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            tasks = [fetch_chunk(client, chunk, idx) for idx, chunk in enumerate(chunks)]
+            all_pcm = await asyncio.gather(*tasks)
             combined_pcm = b"".join(all_pcm)
             return _pcm16_to_wav(combined_pcm, sample_rate=24000)
     except Exception:
@@ -1579,35 +1581,93 @@ async def _generate_openai_tts(text: str, voice: str, response_format: str) -> O
     return None
 
 
+def _get_tts_hash(text: str, voice: str, response_format: str) -> str:
+    import hashlib
+    key = f"{text}:{voice}:{response_format}"
+    return hashlib.sha256(key.encode('utf-8')).hexdigest()
+
+
 async def _generate_tts_bytes(text: str, voice: str, response_format: str) -> bytes:
-    """Generate TTS bytes using Pocket-TTS (primary), GCP, YarnGPT, or OpenAI (fallbacks)"""
-    # 1. Try Pocket-TTS (Primary)
+    """Generate TTS bytes using Pocket-TTS (primary), GCP, YarnGPT, or OpenAI (fallbacks) with L1/L2 caching"""
+    text_hash = _get_tts_hash(text, voice, response_format)
+    cache_key = f"tts:cache:{text_hash}"
+    
+    # 1. Try Redis (L1 Cache)
+    if settings.redis_enabled and redis_client:
+        try:
+            cached_data = redis_client.get(cache_key)
+            if cached_data:
+                logger.info(f"🚀 Redis HIT for TTS: {cache_key}")
+                if isinstance(cached_data, str):
+                    try:
+                        import base64
+                        return base64.b64decode(cached_data)
+                    except Exception:
+                        return cached_data.encode('utf-8')
+                return cached_data
+        except Exception:
+            logger.exception("Error reading from Redis L1 Cache for TTS")
+            
+    # 2. Try PostgreSQL (L2 Cache)
+    try:
+        db_cached = await asyncio.to_thread(db.get_cached_tts, text_hash)
+        if db_cached:
+            logger.info(f"🚀 Database HIT for TTS: {text_hash}")
+            if settings.redis_enabled and redis_client:
+                try:
+                    import base64
+                    redis_client.setex(cache_key, 3600 * 24 * 7, base64.b64encode(db_cached).decode('utf-8'))
+                except Exception:
+                    logger.exception("Error saving cached TTS to Redis")
+            return db_cached
+    except Exception:
+        logger.exception("Error reading from Database L2 Cache for TTS")
+
+    # 3. Generate TTS bytes on cache miss
+    generated_bytes = None
+    
+    # 3.1 Try Pocket-TTS (Primary)
     pocket_bytes = await _generate_pocket_tts(text, voice)
     if pocket_bytes:
-        return pocket_bytes
+        generated_bytes = pocket_bytes
 
-    # 2. Try Google Cloud Text-to-Speech
-    if _is_gcp_tts_configured():
+    # 3.2 Try Google Cloud Text-to-Speech
+    if not generated_bytes and _is_gcp_tts_configured():
         logger.info(f"Generating TTS using Google Cloud (voice={voice})")
         gcp_bytes = _generate_gcp_tts(text, voice, response_format)
         if gcp_bytes:
-            return gcp_bytes
-        logger.warning("Google Cloud TTS generation failed; attempting fallback...")
+            generated_bytes = gcp_bytes
+        else:
+            logger.warning("Google Cloud TTS generation failed; attempting fallback...")
 
-    # 3. Try YarnGPT
-    yarngpt_bytes = await _generate_yarngpt_tts(text, voice, response_format)
-    if yarngpt_bytes:
-        return yarngpt_bytes
+    # 3.3 Try YarnGPT
+    if not generated_bytes:
+        yarngpt_bytes = await _generate_yarngpt_tts(text, voice, response_format)
+        if yarngpt_bytes:
+            generated_bytes = yarngpt_bytes
 
-    # 4. Try OpenAI
-    openai_bytes = await _generate_openai_tts(text, voice, response_format)
-    if openai_bytes:
-        return openai_bytes
+    # 3.4 Try OpenAI
+    if not generated_bytes:
+        openai_bytes = await _generate_openai_tts(text, voice, response_format)
+        if openai_bytes:
+            generated_bytes = openai_bytes
 
-    raise HTTPException(
-        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="No Text-to-Speech provider is available or configured."
-    )
+    if not generated_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="No Text-to-Speech provider is available or configured."
+        )
+
+    # 4. Save to L1/L2 Caches
+    try:
+        await asyncio.to_thread(db.save_cached_tts, text_hash, text, voice, response_format, generated_bytes)
+        if settings.redis_enabled and redis_client:
+            import base64
+            redis_client.setex(cache_key, 3600 * 24 * 7, base64.b64encode(generated_bytes).decode('utf-8'))
+    except Exception:
+        logger.exception("Failed to save generated TTS to cache")
+
+    return generated_bytes
 
 
 @app.post("/api/v1/tts")
@@ -1629,9 +1689,14 @@ async def text_to_speech(request: TTSRequest):
         if content.startswith(b"RIFF"):
             media_type = AUDIO_WAV
         
+        headers = {
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=31536000, immutable",
+        }
         return StreamingResponse(
             io.BytesIO(content),
-            media_type=media_type
+            media_type=media_type,
+            headers=headers
         )
     except HTTPException:
         raise
@@ -1679,7 +1744,7 @@ async def text_to_speech_get(
         
         headers = {
             "Accept-Ranges": "bytes",
-            "Cache-Control": "no-cache",
+            "Cache-Control": "public, max-age=31536000, immutable",
         }
         
         return StreamingResponse(

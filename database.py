@@ -174,12 +174,26 @@ class Database:
                 with self.get_connection() as conn:
                     cur = conn.cursor()
                     cur.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users')")
-                    if cur.fetchone()[0]:
+                    users_exists = cur.fetchone()[0]
+                    
+                    # Ensure the new tts_cache table exists regardless
+                    cur.execute("""
+                    CREATE TABLE IF NOT EXISTS tts_cache (
+                        text_hash VARCHAR(64) PRIMARY KEY,
+                        text TEXT NOT NULL,
+                        voice VARCHAR(50) NOT NULL,
+                        response_format VARCHAR(10) NOT NULL,
+                        audio_data BYTEA NOT NULL,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    )
+                    """)
+                    
+                    if users_exists:
                         logger.info("Database tables already exist. Skipping schema setup.")
                         self.__class__._tables_ensured = True
                         return
             except Exception as e:
-                logger.warning(f"Failed to check if users table exists: {e}. Performing full schema check.")
+                logger.warning(f"Failed to check if users/tts_cache table exists: {e}. Performing full schema check.")
 
             # Dynamically check existing id column types to prevent foreign key datatype mismatches (UUID vs TEXT)
             id_type = None
@@ -388,6 +402,17 @@ class Database:
                     aria_insight TEXT,
                     daily_manna TEXT,
                     cached_date TEXT NOT NULL
+                )
+                """)
+
+                cur.execute("""
+                CREATE TABLE IF NOT EXISTS tts_cache (
+                    text_hash VARCHAR(64) PRIMARY KEY,
+                    text TEXT NOT NULL,
+                    voice VARCHAR(50) NOT NULL,
+                    response_format VARCHAR(10) NOT NULL,
+                    audio_data BYTEA NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
                 """)
 
@@ -1424,6 +1449,38 @@ class Database:
         except Exception:
             logger.exception("Error getting all profiles")
             return []
+
+    def get_cached_tts(self, text_hash: str) -> Optional[bytes]:
+        """Look up cached TTS bytes by text parameters hash"""
+        try:
+            with self.get_connection() as conn:
+                cur = self._cursor(conn)
+                cur.execute("SELECT audio_data FROM tts_cache WHERE text_hash = %s", (text_hash,))
+                row = cur.fetchone()
+                if row:
+                    data = row["audio_data"]
+                    if isinstance(data, memoryview):
+                        return data.tobytes()
+                    return data
+                return None
+        except Exception:
+            logger.exception("Error getting cached TTS")
+            return None
+
+    def save_cached_tts(self, text_hash: str, text: str, voice: str, response_format: str, audio_data: bytes) -> bool:
+        """Store generated TTS bytes in database cache"""
+        try:
+            with self.get_connection() as conn:
+                cur = self._cursor(conn)
+                binary_data = psycopg2.Binary(audio_data) if "postgres" in settings.database_url else audio_data
+                cur.execute(
+                    "INSERT INTO tts_cache (text_hash, text, voice, response_format, audio_data) VALUES (%s, %s, %s, %s, %s) ON CONFLICT (text_hash) DO NOTHING",
+                    (text_hash, text, voice, response_format, binary_data),
+                )
+                return True
+        except Exception:
+            logger.exception("Error saving cached TTS")
+            return False
 
 
 db = Database()

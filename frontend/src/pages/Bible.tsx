@@ -197,6 +197,12 @@ export const Bible = () => {
       const voice = selectedVoiceName || 'Idera'
       const url = ttsService.getSpeechUrl(verses[idx].text, voice)
       
+      // Pre-fetch next verse's audio in background to allow browser caching
+      if (isChapterPlayback && idx + 1 < verses.length) {
+        const nextUrl = ttsService.getSpeechUrl(verses[idx + 1].text, voice)
+        fetch(nextUrl).catch(() => {})
+      }
+
       const audio = new Audio(url)
       audioRef.current = audio
       
