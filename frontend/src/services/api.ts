@@ -240,15 +240,48 @@ export const aiChatService = {
       ? `${API_BASE_URL}/ai/chat/stream?session_id=${sessionId}`
       : `${API_BASE_URL}/ai/chat/stream`
 
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       method: 'POST',
       headers: getStreamHeaders(),
       body: JSON.stringify({ messages, mode }),
     })
 
+    if (response.status === 401) {
+      const refreshToken = localStorage.getItem('refreshToken')
+      if (refreshToken) {
+        try {
+          const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: refreshToken }),
+          })
+
+          if (refreshResponse.ok) {
+            const data = await refreshResponse.json()
+            if (data.access_token) {
+              localStorage.setItem('authToken', data.access_token)
+              if (data.refresh_token) {
+                localStorage.setItem('refreshToken', data.refresh_token)
+              }
+              // Retry the streaming fetch with the new token
+              response = await fetch(url, {
+                method: 'POST',
+                headers: getStreamHeaders(),
+                body: JSON.stringify({ messages, mode }),
+              })
+            }
+          }
+        } catch (refreshError) {
+          console.error('Token refresh failed in chatStream:', refreshError)
+        }
+      }
+    }
+
     if (!response.ok) {
       if (response.status === 401) {
         localStorage.removeItem('authToken')
+        localStorage.removeItem('refreshToken')
+        localStorage.removeItem('authUser')
         if (
           !globalThis.location.pathname.includes('/login') &&
           !globalThis.location.pathname.includes('/register')

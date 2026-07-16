@@ -2823,28 +2823,41 @@ def _get_user_local_time(profile: Dict[str, Any]) -> datetime:
     return datetime.now(tz)
 
 
+def _scan_and_check_devotions() -> List[tuple[Dict[str, Any], str, str]]:
+    """Synchronously scan profiles and find users needing devotions generated."""
+    try:
+        profiles = db.get_all_profiles()
+        to_generate = []
+        for profile in profiles:
+            user_id = profile.get("id")
+            if not user_id:
+                continue
+            
+            local_time = _get_user_local_time(profile)
+            
+            # Check if local time is past preferred time
+            if _should_trigger_devotion(profile, local_time):
+                # Check if devotion is already cached for today's local date
+                local_date_str = local_time.strftime("%Y-%m-%d")
+                cached_verse = db.get_cached_verse(user_id, local_date_str)
+                if not cached_verse:
+                    to_generate.append((profile, user_id, local_date_str))
+        return to_generate
+    except Exception:
+        logger.exception("Error scanning devotions in background thread")
+        return []
+
+
 async def proactive_devotions_scheduler():
     """Background task running every minute to trigger devotions for users when it is their preferred time."""
     logger.info("⏰ Proactive devotions background scheduler started.")
     while True:
         try:
-            # Check users' devotions
-            profiles = db.get_all_profiles()
+            # Offload the entire blocking DB scan to a thread pool
+            to_generate = await asyncio.to_thread(_scan_and_check_devotions)
             
-            for profile in profiles:
-                user_id = profile.get("id")
-                if not user_id:
-                    continue
-                
-                local_time = _get_user_local_time(profile)
-                
-                # Check if local time is past preferred time
-                if _should_trigger_devotion(profile, local_time):
-                    # Check if devotion is already cached for today's local date
-                    local_date_str = local_time.strftime("%Y-%m-%d")
-                    cached_verse = db.get_cached_verse(user_id, local_date_str)
-                    if not cached_verse:
-                        await asyncio.to_thread(_generate_and_save_proactive_devotion, profile, user_id, local_date_str)
+            for profile, user_id, local_date_str in to_generate:
+                await asyncio.to_thread(_generate_and_save_proactive_devotion, profile, user_id, local_date_str)
         except Exception:
             logger.exception("Error in proactive devotions scheduler loop")
             

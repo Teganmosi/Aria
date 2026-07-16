@@ -164,6 +164,18 @@ class Database:
         
         self.__class__._ensuring_tables = True
         try:
+            # Fast-path check: if users table already exists, skip rest of schema setup (saves dozens of DB roundtrips)
+            try:
+                with self.get_connection() as conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'users')")
+                    if cur.fetchone()[0]:
+                        logger.info("Database tables already exist. Skipping schema setup.")
+                        self.__class__._tables_ensured = True
+                        return
+            except Exception as e:
+                logger.warning(f"Failed to check if users table exists: {e}. Performing full schema check.")
+
             # Dynamically check existing id column types to prevent foreign key datatype mismatches (UUID vs TEXT)
             id_type = None
             try:
