@@ -43,6 +43,7 @@ except Exception:
 class Database:
     _instance: Optional["Database"] = None
     _pool: Optional[ThreadedConnectionPool] = None
+    _pool_pid: Optional[int] = None
     _tables_ensured: bool = False
     _ensuring_tables: bool = False
 
@@ -98,13 +99,15 @@ class Database:
             except Exception:
                 logger.exception("⚠️ Failed to initialize Supabase client (possibly invalid key)")
 
-        if not self.__class__._pool:
+        current_pid = os.getpid()
+        if not self.__class__._pool or getattr(self.__class__, "_pool_pid", None) != current_pid:
             try:
                 self.__class__._pool = ThreadedConnectionPool(
                     minconn=settings.db_pool_min,
                     maxconn=settings.db_pool_max,
                     dsn=settings.database_url,
                 )
+                self.__class__._pool_pid = current_pid
                 # Ensure tables exist in the database (whether local or remote Supabase)
                 self._ensure_tables()
             except Exception:
@@ -120,14 +123,16 @@ class Database:
 
     @contextmanager
     def get_connection(self):
-        if not self.__class__._pool:
-            logger.info("Attempting lazy database pool initialization...")
+        current_pid = os.getpid()
+        if not self.__class__._pool or getattr(self.__class__, "_pool_pid", None) != current_pid:
+            logger.info(f"Attempting lazy database pool initialization for PID {current_pid}...")
             try:
                 self.__class__._pool = ThreadedConnectionPool(
                     minconn=settings.db_pool_min,
                     maxconn=settings.db_pool_max,
                     dsn=settings.database_url,
                 )
+                self.__class__._pool_pid = current_pid
             except Exception as e:
                 logger.exception("Lazy pool initialization failed")
                 raise RuntimeError(f"Database connection pool not initialized: {e}")
