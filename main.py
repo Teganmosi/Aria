@@ -1707,7 +1707,9 @@ class VoiceCallManager:
         self.active_calls: Dict[str, WebSocket] = {}
 
     async def connect(self, websocket: WebSocket, call_id: str):
-        await websocket.accept()
+        from starlette.websockets import WebSocketState
+        if websocket.client_state == WebSocketState.CONNECTING:
+            await websocket.accept()
         self.active_calls[call_id] = websocket
 
     def disconnect(self, call_id: str):
@@ -2076,6 +2078,9 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
         logger.exception("WebSocket authentication failed")
         await websocket.close(code=4001, reason="Authentication failed")
         return
+
+    # Accept the connection early to complete handshake and avoid browser/load-balancer timeouts
+    await websocket.accept()
 
     voice_preference = user.get("aria_voice", "Adaora") if user else "Adaora"
     
