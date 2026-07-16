@@ -2072,15 +2072,14 @@ async def _forward_s2s_to_frontend(
 @app.websocket("/ws/voice-call/{call_id}")
 async def websocket_voice_call(websocket: WebSocket, call_id: str):
     """Voice call websocket endpoint. Bridges frontend to the S2S Hugging Face space."""
+    # Accept connection immediately to ensure clean WS close frame (4001) instead of 403 on auth failure
+    await websocket.accept()
     try:
         user = await get_current_user_websocket(websocket)
     except Exception:
         logger.exception("WebSocket authentication failed")
         await websocket.close(code=4001, reason="Authentication failed")
         return
-
-    # Accept the connection early to complete handshake and avoid browser/load-balancer timeouts
-    await websocket.accept()
 
     voice_preference = user.get("aria_voice", "Adaora") if user else "Adaora"
     
