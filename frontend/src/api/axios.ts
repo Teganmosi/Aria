@@ -126,8 +126,14 @@ axiosPrivate.interceptors.response.use(
     return response
   },
   async (error: unknown) => {
-    // Fallback to cache on GET request network errors
-    if (axios.isAxiosError(error) && error.config && error.config.method?.toLowerCase() === 'get') {
+    // Fallback to cache on GET request network errors (skip on auth 401/403 to allow redirection/refresh)
+    if (
+      axios.isAxiosError(error) &&
+      error.config &&
+      error.config.method?.toLowerCase() === 'get' &&
+      error.response?.status !== 401 &&
+      error.response?.status !== 403
+    ) {
       const cacheKey = `aria_cache:${error.config.url}`
       const cached = localStorage.getItem(cacheKey)
       if (cached) {
