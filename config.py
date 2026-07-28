@@ -1,7 +1,21 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List, Optional
 import json
+import logging
 import os
+
+logger = logging.getLogger(__name__)
+
+# Secret values that must never be used to sign JWTs in a running server.
+# Anyone who knows these (they're in public docs/examples) can forge valid auth tokens.
+_INSECURE_SECRET_KEYS = {
+    "",
+    "your_secret_key_here",
+    "your_secret_key_for_jwt",
+    "secret",
+    "changeme",
+    "change_me",
+}
 
 class Settings(BaseSettings):
     # API Keys (Still needed)
@@ -18,8 +32,9 @@ class Settings(BaseSettings):
     
     # Database
     database_url: str = "postgresql://postgres:password@localhost:5433/aria"
-    db_pool_min: int = 10
-    db_pool_max: int = 100
+    # Modest defaults: Supabase free tier allows ~20 concurrent connections total.
+    db_pool_min: int = 2
+    db_pool_max: int = 10
 
     # Redis Configuration
     redis_url: str = "redis://localhost:6379"
@@ -56,6 +71,17 @@ class Settings(BaseSettings):
         env_secret = os.getenv('SECRET_KEY')
         if env_secret:
             self.secret_key = env_secret
+        if self.secret_key in _INSECURE_SECRET_KEYS:
+            raise RuntimeError(
+                "SECRET_KEY is a known insecure placeholder — anyone could forge auth tokens with it. "
+                "Generate a strong key with: "
+                'python -c "import secrets; print(secrets.token_urlsafe(48))" '
+                "and set it in your .env (local) or the Render dashboard (production)."
+            )
+        if len(self.secret_key) < 32:
+            logger.warning(
+                "SECRET_KEY is shorter than 32 characters — generate a stronger key before deploying to production."
+            )
         self.redis_enabled = os.getenv('REDIS_ENABLED', str(self.redis_enabled)).lower() == 'true'
 
     model_config = SettingsConfigDict(

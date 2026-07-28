@@ -1,7 +1,7 @@
 // @ts-nocheck — full TS typing is a follow-up pass; Axios migration done here
-import { axiosBase, axiosPrivate } from '../api/axios'
+import { axiosBase, axiosPrivate, API_BASE_URL } from '../api/axios'
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002/api/v1'
+export { API_BASE_URL }
 
 // Used only by chatStream (streaming generator — not compatible with Axios)
 const getStreamHeaders = () => {
@@ -305,15 +305,25 @@ export const aiChatService = {
 }
 
 // Voice Call Service — WebSocket-based real-time voice
+
+function resolveWsHost(): string {
+  const fromEnv = import.meta.env.VITE_WS_URL
+  if (fromEnv) return fromEnv
+  if (import.meta.env.DEV) return 'localhost:8002'
+  throw new Error(
+    'VITE_WS_URL is not configured. Set it to the backend WebSocket host, e.g. wss://aria-backend.onrender.com'
+  )
+}
+
 export const voiceCallService = {
-  // C1 deferred: token in WebSocket URL — do not change
+  // No token in the URL — URLs leak into logs. The component sends the token as the
+  // first WebSocket message after connecting (see VoiceCall.tsx).
   getWebSocketUrl: (callId: string) => {
-    let wsHost = import.meta.env.VITE_WS_URL || 'localhost:8002'
+    let wsHost = resolveWsHost()
     wsHost = wsHost.replace(/^(wss?):\/\//, '')
     const isLocalhost = wsHost.startsWith('localhost') || wsHost.startsWith('127.0.0.1')
     const wsProtocol = (!isLocalhost || globalThis.location.protocol === 'https:') ? 'wss:' : 'ws:'
-    const token = localStorage.getItem('authToken')
-    return `${wsProtocol}//${wsHost}/ws/voice-call/${callId}?token=${token}`
+    return `${wsProtocol}//${wsHost}/ws/voice-call/${callId}`
   },
 
   createCallSession: async (mode = 'general') => {
@@ -415,6 +425,31 @@ export const notesService = {
 }
 
 // Text to Speech Service
+
+// <audio> elements cannot send Authorization headers, so the GET /tts endpoint takes a
+// token in the query string. We never put the main access token there (it would leak into
+// server/proxy logs and browser history) — instead we fetch a short-lived, purpose-built
+// audio token and cache it until just before expiry.
+let cachedAudioToken: { token: string; expiresAt: number } | null = null
+
+async function getTtsAudioToken(): Promise<string> {
+  const now = Date.now()
+  if (cachedAudioToken && cachedAudioToken.expiresAt - now > 30_000) {
+    return cachedAudioToken.token
+  }
+  const { data } = await axiosPrivate.post('/tts/audio-token')
+  cachedAudioToken = {
+    token: data.audio_token,
+    expiresAt: now + (data.expires_in_seconds ?? 300) * 1000,
+  }
+  return cachedAudioToken.token
+}
+
+/** Drop the cached audio token (call on logout). */
+export function clearTtsAudioTokenCache(): void {
+  cachedAudioToken = null
+}
+
 export const ttsService = {
   generateSpeech: async (text: string, voice = 'Idera', responseFormat = 'mp3'): Promise<Blob> => {
     const { data } = await axiosPrivate.post(
@@ -424,16 +459,14 @@ export const ttsService = {
     )
     return data
   },
-  getSpeechUrl: (text: string, voice = 'Idera', responseFormat = 'mp3'): string => {
-    const token = localStorage.getItem('authToken') || ''
+  getSpeechUrl: async (text: string, voice = 'Idera', responseFormat = 'mp3'): Promise<string> => {
+    const token = await getTtsAudioToken()
     const params = new URLSearchParams({
       text,
       voice,
       response_format: responseFormat,
+      token,
     })
-    if (token) {
-      params.append('token', token)
-    }
     return `${API_BASE_URL}/tts?${params.toString()}`
   },
 }

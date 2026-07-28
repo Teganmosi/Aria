@@ -1,4 +1,3 @@
-```
 # Dependencies
 node_modules/
 
@@ -9,7 +8,10 @@ build/
 # Environment variables
 .env
 .env.local
+.env.production
 *.env.*
+!.env.example
+!frontend/.env.example
 
 # Editor/IDE files
 .vscode/
@@ -35,5 +37,14 @@ htmlcov/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Local databases
+*.db
+*.sqlite3
+
+# Credentials and keys
+*.pem
+*.key
+credentials.json
 gcp-credentials-temp.json
-```
+hf_aria/

@@ -21,7 +21,7 @@ services:
       - key: REDIS_ENABLED
         value: "true"
       - key: CORS_ORIGINS
-        value: '["*"]'
+        sync: false # REQUIRED: JSON array of your frontend's public origin(s), e.g. ["https://aria-frontend.onrender.com"]. Never use ["*"] — the server refuses to boot with a wildcard.
       - key: OPENAI_API_KEY
         sync: false # Set this in Render Dashboard
       - key: REDIS_URL
@@ -34,6 +34,8 @@ services:
         sync: false # Set this in Render Dashboard if using Bible API
       - key: SECRET_KEY
         generateValue: true
+      - key: SENTRY_DSN
+        sync: false # Optional: set to your Sentry DSN to enable error tracking
     # Note: Free tier doesn't support Disks. 
     # If you upgrade to Starter, uncomment below for persistent data:
     # disks:

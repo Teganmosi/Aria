@@ -1,46 +1,66 @@
 // @ts-nocheck
 import { useState, useEffect, useRef, useMemo } from 'react'
-import PropTypes from 'prop-types'
 import { Mic, PhoneOff, ShieldCheck, Headphones } from 'lucide-react'
 import { voiceCallService } from '../services/api'
+import { getAccessToken } from '../api/axios'
 import './VoiceCall.css'
 
+// Reconnection policy for transient network drops.
+const MAX_RECONNECT_ATTEMPTS = 3
+const RECONNECT_BASE_DELAY_MS = 1000
+
+const float32BufferToBase64 = (buffer) => {
+    const bytes = new Uint8Array(buffer)
+    let binary = ''
+    const CHUNK = 0x8000
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+    }
+    return btoa(binary)
+}
+
 export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
-    const [status, setStatus] = useState('initializing') // initializing, connecting, active, error
+    const [status, setStatus] = useState('initializing') // initializing, connecting, active, reconnecting, error
     const [transcript, setTranscript] = useState('')
     const [isUserSpeaking, setIsUserSpeaking] = useState(false)
     const [isAriaSpeaking, setIsAriaSpeaking] = useState(false)
     const [isMuted, setIsMuted] = useState(false)
     const [error, setError] = useState(null)
     const [volume, setVolume] = useState(0)
+    const [timeWarning, setTimeWarning] = useState(null) // minutes remaining, from server
 
-    // Refs that mirror state so async closures always read the latest value (H4, H5)
+    // Refs that mirror state so async closures always read the latest value
     const isMutedRef = useRef(false)
     const statusRef = useRef('initializing')
+    const userEndedRef = useRef(false)
+    const hasStartedRef = useRef(false)
+    const reconnectAttemptsRef = useRef(0)
+    const reconnectTimerRef = useRef(null)
+    const sessionIdRef = useRef(null)
 
     const wsRef = useRef(null)
     const audioContextRef = useRef(null)
     const streamRef = useRef(null)
-    const processorRef = useRef(null)
+    const workletNodeRef = useRef(null)
+    const sourceNodeRef = useRef(null)
+    const silentSinkRef = useRef(null)
+    const analyserRef = useRef(null)
+    const animationFrameRef = useRef(null)
     const audioQueueRef = useRef([])
     const isPlayingRef = useRef(false)
     const currentSourceRef = useRef(null)
-    const analyserRef = useRef(null)
-    const animationFrameRef = useRef(null)
 
-    // Keep refs in sync with state so closures always see the latest values
     useEffect(() => { isMutedRef.current = isMuted }, [isMuted])
     useEffect(() => { statusRef.current = status }, [status])
 
-    // Pre-computed so Math.random() doesn't run on every render (M9)
     const waveHeights = useMemo(
         () => Array.from({ length: 12 }, () => Math.random() * 40 + 20),
         []
     )
 
-    // Status label mapping
     const statusLabel = useMemo(() => {
         if (status === 'connecting') return 'Establishing Spiritual Bridge'
+        if (status === 'reconnecting') return 'Reconnecting…'
         if (status === 'active') {
             if (isAriaSpeaking) return 'Aria is speaking'
             if (isUserSpeaking) return 'Listening to you'
@@ -50,142 +70,208 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
         return 'Initializing'
     }, [status, isAriaSpeaking, isUserSpeaking])
 
+    // ── Teardown ──────────────────────────────────────────────────────────────
     const endCall = () => {
+        userEndedRef.current = true
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current)
+            reconnectTimerRef.current = null
+        }
         if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
-        if (wsRef.current) wsRef.current.close()
+
+        if (wsRef.current) {
+            try { wsRef.current.close(1000, 'Call ended') } catch (e) { /* ignore */ }
+        }
         if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop())
-        if (audioContextRef.current) audioContextRef.current.close()
+
+        // Fully dismantle the audio graph — leaving nodes connected leaks them
+        // for the lifetime of the AudioContext.
+        const context = audioContextRef.current
+        if (workletNodeRef.current) {
+            try { workletNodeRef.current.disconnect() } catch (e) { /* ignore */ }
+            workletNodeRef.current.port.onmessage = null
+        }
+        if (sourceNodeRef.current) {
+            try { sourceNodeRef.current.disconnect() } catch (e) { /* ignore */ }
+        }
+        if (silentSinkRef.current) {
+            try { silentSinkRef.current.disconnect() } catch (e) { /* ignore */ }
+        }
+        if (analyserRef.current) {
+            try { analyserRef.current.disconnect() } catch (e) { /* ignore */ }
+        }
         if (currentSourceRef.current) {
             try { currentSourceRef.current.stop() } catch (e) { /* ignore */ }
+        }
+        if (context) {
+            context.close().catch(() => { /* already closed */ })
         }
 
         wsRef.current = null
         streamRef.current = null
         audioContextRef.current = null
+        workletNodeRef.current = null
+        sourceNodeRef.current = null
+        silentSinkRef.current = null
         analyserRef.current = null
         currentSourceRef.current = null
+        audioQueueRef.current = []
+        isPlayingRef.current = false
+
         setStatus('initializing')
         setTranscript('')
         setError(null)
         setVolume(0)
+        setTimeWarning(null)
         setIsUserSpeaking(false)
         setIsAriaSpeaking(false)
     }
 
     useEffect(() => {
         if (isOpen) {
+            userEndedRef.current = false
+            hasStartedRef.current = false
+            reconnectAttemptsRef.current = 0
             startCall()
         } else {
             endCall()
         }
         return () => endCall()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen])
+
+    // ── Audio setup (AudioWorklet, runs on the audio thread) ──────────────────
+    const setupAudio = async () => {
+        const AudioCtx = globalThis.AudioContext || globalThis.webkitAudioContext
+        // Capture at 16kHz — exactly what the S2S pipeline expects (Float32 mono).
+        const context = new AudioCtx({ sampleRate: 16000 })
+        audioContextRef.current = context
+
+        streamRef.current = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+                channelCount: 1,
+            },
+        })
+
+        // One source node, shared by the analyser and the capture worklet.
+        const source = context.createMediaStreamSource(streamRef.current)
+        sourceNodeRef.current = source
+
+        analyserRef.current = context.createAnalyser()
+        analyserRef.current.fftSize = 256
+        source.connect(analyserRef.current)
+
+        await context.audioWorklet.addModule('/pcm-capture-processor.js')
+        const workletNode = new AudioWorkletNode(context, 'pcm-capture-processor')
+        workletNode.port.onmessage = (e) => {
+            const ws = wsRef.current
+            if (ws?.readyState === WebSocket.OPEN && !isMutedRef.current && e.data?.audio) {
+                ws.send(JSON.stringify({
+                    type: 'audio_input',
+                    audio: float32BufferToBase64(e.data.audio),
+                }))
+            }
+        }
+        source.connect(workletNode)
+        // An AudioWorkletNode only keeps processing while connected to the graph;
+        // route it through a muted gain node.
+        const silentSink = context.createGain()
+        silentSink.gain.value = 0
+        workletNode.connect(silentSink)
+        silentSink.connect(context.destination)
+        workletNodeRef.current = workletNode
+        silentSinkRef.current = silentSink
+
+        // Volume visualization loop
+        const updateVolume = () => {
+            if (analyserRef.current) {
+                const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
+                analyserRef.current.getByteFrequencyData(dataArray)
+                const average = dataArray.reduce((p, c) => p + c, 0) / dataArray.length
+                setVolume(average)
+            }
+            animationFrameRef.current = requestAnimationFrame(updateVolume)
+        }
+        updateVolume()
+    }
+
+    // ── WebSocket ─────────────────────────────────────────────────────────────
+    const connectWebSocket = (sessionId) => {
+        const wsUrl = voiceCallService.getWebSocketUrl(sessionId)
+        const ws = new WebSocket(wsUrl)
+        wsRef.current = ws
+
+        ws.onopen = () => {
+            // Auth token travels as the first message, never in the URL.
+            ws.send(JSON.stringify({ type: 'auth', token: getAccessToken() || '' }))
+            reconnectAttemptsRef.current = 0
+            if (statusRef.current !== 'active') {
+                setStatus(hasStartedRef.current ? 'reconnecting' : 'connecting')
+            }
+        }
+
+        ws.onmessage = (event) => {
+            let data
+            try {
+                data = JSON.parse(event.data)
+            } catch {
+                console.error('[VoiceCall] received non-JSON WebSocket message')
+                return
+            }
+            handleWsMessage(data)
+        }
+
+        ws.onerror = () => {
+            console.error('[VoiceCall] WebSocket error')
+        }
+
+        ws.onclose = (event) => {
+            if (userEndedRef.current) return
+            // Auth failures and policy rejects are fatal — retrying won't help.
+            if (event.code === 4001 || event.code === 4003 || event.code === 1008) {
+                setError(event.reason || 'Connection rejected. Please try again.')
+                setStatus('error')
+                return
+            }
+            if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+                const delay = RECONNECT_BASE_DELAY_MS * Math.pow(2, reconnectAttemptsRef.current)
+                reconnectAttemptsRef.current += 1
+                setStatus('reconnecting')
+                reconnectTimerRef.current = setTimeout(() => connectWebSocket(sessionId), delay)
+            } else {
+                setError('Connection lost. Please try again.')
+                setStatus('error')
+            }
+        }
+    }
 
     const startCall = async () => {
         try {
             setStatus('connecting')
-
-            // 1. Create session
+            setError(null)
             const { session_id } = await voiceCallService.createCallSession(mode)
-
-            // 2. Initialize Audio
-            const AudioCtx = globalThis.AudioContext || globalThis.webkitAudioContext
-            // Capture at 16kHz — this is exactly what Pocket-S2S expects (Float32 16kHz mono)
-            audioContextRef.current = new AudioCtx({ sampleRate: 16000 })
-            streamRef.current = await navigator.mediaDevices.getUserMedia({
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true,
-                    channelCount: 1,
-                },
-            })
-
-            // Add Analyser for visualization
-            analyserRef.current = audioContextRef.current.createAnalyser()
-            analyserRef.current.fftSize = 256
-            const source = audioContextRef.current.createMediaStreamSource(streamRef.current)
-            source.connect(analyserRef.current)
-
-            // Start animation loop for volume
-            const updateVolume = () => {
-                if (analyserRef.current) {
-                    const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount)
-                    analyserRef.current.getByteFrequencyData(dataArray)
-                    const average = dataArray.reduce((p, c) => p + c, 0) / dataArray.length
-                    setVolume(average)
-                }
-                animationFrameRef.current = requestAnimationFrame(updateVolume)
-            }
-            updateVolume()
-
-            // 3. Setup WebSocket
-            const wsUrl = voiceCallService.getWebSocketUrl(session_id)
-            wsRef.current = new WebSocket(wsUrl)
-
-            wsRef.current.onopen = () => {
-                setStatus('active')
-                setupAudioProcessor()
-            }
-
-            wsRef.current.onmessage = (event) => {
-                const data = JSON.parse(event.data)
-                handleWsMessage(data)
-            }
-
-            wsRef.current.onerror = (event) => {
-                console.error('[VoiceCall] WebSocket error:', event)
-                console.error('[VoiceCall] WS URL was:', wsRef.current?.url)
-                statusRef.current = 'error'
-                setError('Connection failed. Please try again.')
-                setStatus('error')
-            }
-
-            wsRef.current.onclose = () => {
-                if (statusRef.current !== 'error') setStatus('initializing')
-            }
-
+            sessionIdRef.current = session_id
+            await setupAudio()
+            connectWebSocket(session_id)
         } catch (err) {
-            setError(err.message || 'Could not access microphone')
+            console.error('[VoiceCall] start failed:', err)
+            if (err?.name === 'NotAllowedError') {
+                setError('Microphone access was denied. Please allow it and try again.')
+            } else {
+                setError(err?.message || 'Could not start the call')
+            }
             setStatus('error')
         }
     }
 
-    const setupAudioProcessor = () => {
-        const context = audioContextRef.current
-        const source = context.createMediaStreamSource(streamRef.current)
-
-        // 4096 samples at 16kHz = ~256ms chunks — good balance of latency vs overhead
-        processorRef.current = context.createScriptProcessor(4096, 1, 1)
-
-        processorRef.current.onaudioprocess = (e) => {
-            if (wsRef.current?.readyState === WebSocket.OPEN && !isMutedRef.current) {
-                // Send Float32 PCM at 16kHz — exactly what Pocket-S2S expects
-                // No conversion needed: Web Audio API gives us Float32 natively
-                const float32 = e.inputBuffer.getChannelData(0)
-                const bytes = new Uint8Array(float32.buffer)
-                let binary = ''
-                const CHUNK = 0x8000
-                for (let i = 0; i < bytes.length; i += CHUNK) {
-                    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
-                }
-                wsRef.current.send(JSON.stringify({ type: 'audio_input', audio: btoa(binary) }))
-            }
-        }
-
-        source.connect(processorRef.current)
-        const silentSink = context.createGain()
-        silentSink.gain.value = 0
-        processorRef.current.connect(silentSink)
-        silentSink.connect(context.destination)
-    }
-
+    // ── Playback (Int16 24kHz PCM from S2S) ───────────────────────────────────
     const clearAudioQueue = () => {
         audioQueueRef.current = []
         if (currentSourceRef.current) {
-            try {
-                currentSourceRef.current.stop()
-            } catch (e) { /* ignore */ }
+            try { currentSourceRef.current.stop() } catch (e) { /* ignore */ }
             currentSourceRef.current = null
         }
         isPlayingRef.current = false
@@ -201,8 +287,8 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
         isPlayingRef.current = true
         const chunk = audioQueueRef.current.shift()
         const context = audioContextRef.current
+        if (!context) return
 
-        // Playback buffer at 24kHz — matching Pocket-S2S output sample rate
         const buffer = context.createBuffer(1, chunk.length, 24000)
         buffer.getChannelData(0).set(chunk)
 
@@ -221,7 +307,7 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
             bytes[i] = binary.charCodeAt(i)
         }
 
-        // S2S output is Int16 PCM at 24kHz — convert to Float32 for Web Audio playback
+        // S2S output is Int16 PCM at 24kHz — convert to Float32 for Web Audio playback.
         const pcm16 = new Int16Array(bytes.buffer)
         const float32 = new Float32Array(pcm16.length)
         for (let i = 0; i < pcm16.length; i++) {
@@ -237,8 +323,9 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
     const handleWsMessage = (data) => {
         switch (data.type) {
             case 'conversation_started':
+                hasStartedRef.current = true
                 setStatus('active')
-                setTranscript('')
+                setError(null)
                 break
             case 'audio_output':
                 queueAudioResponse(data.audio)
@@ -256,8 +343,14 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
                 setIsAriaSpeaking(data.speaking)
                 break
             case 'status':
-                // Reconnection notices from the backend (e.g. 'Reconnecting to Aria...')
                 setTranscript(data.message || '')
+                break
+            case 'time_warning':
+                setTimeWarning(data.minutes_remaining ?? null)
+                break
+            case 'call_ending':
+                setError(data.message || 'Call ended')
+                onClose()
                 break
             case 'error':
                 setError(data.message)
@@ -284,7 +377,7 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
                 <div className="ring ring-1"></div>
                 <div className="ring ring-2"></div>
                 <div className="ring ring-3"></div>
-                
+
                 <div className="avatar-image-wrapper">
                     <div className={`pulsing-orb ${isAriaSpeaking ? 'aria-speaking' : ''} ${isUserSpeaking ? 'user-speaking' : ''}`}>
                         <div className="orb-layer layer-1"></div>
@@ -300,8 +393,8 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
 
                 <div className="waveform-container">
                     {[...Array(12)].map((_, i) => (
-                        <div 
-                            key={i} 
+                        <div
+                            key={i}
                             className={`wave-bar ${(isUserSpeaking || isAriaSpeaking) ? 'speaking' : ''}`}
                             style={{
                                 height: `${Math.max(8, (isUserSpeaking ? volume : (isAriaSpeaking ? waveHeights[i] : 8)))}px`,
@@ -318,6 +411,12 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
                         transcript || (status === 'connecting' ? 'Preparing the sanctuary...' : 'I am here, listening...')
                     )}
                 </div>
+
+                {timeWarning !== null && !error && (
+                    <div style={{ color: '#f59e0b', marginTop: '8px', fontSize: '0.9rem' }}>
+                        ⏳ {timeWarning} minute{timeWarning === 1 ? '' : 's'} remaining on this call
+                    </div>
+                )}
             </div>
 
             <div className="controls-bar">
@@ -353,10 +452,3 @@ export const VoiceCall = ({ isOpen, onClose, mode = 'voiceCall' }) => {
         </div>
     )
 }
-
-VoiceCall.propTypes = {
-    isOpen: PropTypes.bool.isRequired,
-    onClose: PropTypes.func.isRequired,
-    mode: PropTypes.string
-}
-

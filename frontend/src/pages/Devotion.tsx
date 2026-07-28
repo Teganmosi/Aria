@@ -161,7 +161,7 @@ export const Devotion = () => {
     try {
       const userVoice = user?.aria_voice || 'verse'
       const voice = FRONTEND_VOICE_MAP[userVoice] || 'Idera'
-      const url = ttsService.getSpeechUrl(text, voice)
+      const url = await ttsService.getSpeechUrl(text, voice)
       
       const audio = new Audio(url)
       audioRef.current = audio

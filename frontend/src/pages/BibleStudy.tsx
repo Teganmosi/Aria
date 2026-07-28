@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { BookOpen, Sparkles, MessageCircle, Play, RefreshCw, Plus, Clock, ArrowRight, Heart, Search, Scroll, X, Quote } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { toast } from 'sonner'
 import { bibleService, aiService } from '../services/api'
 import { useAuth } from '../hooks/useAuth'
 import { AnimatedBackground } from '../components/ui/SharedComponents'
@@ -124,8 +125,13 @@ export const BibleStudy = () => {
 
         setMessages([{ role: 'companion', content: initialMsg }])
         await bibleService.createStudyMessage(session.id, 'assistant', initialMsg)
-      } catch { }
-    } catch (err) { } finally { setIsLoading(false) }
+      } catch (err) {
+        console.error('BibleStudy: failed to persist initial message:', err)
+      }
+    } catch (err) {
+      console.error('BibleStudy: failed to start session:', err)
+      toast.error('Could not start the Bible study session. Please try again.')
+    } finally { setIsLoading(false) }
   }
 
   const sendMessage = async () => {

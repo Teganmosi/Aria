@@ -1,6 +1,20 @@
 import axios, { AxiosRequestConfig } from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8002/api/v1'
+/**
+ * Resolve the backend API base URL. In production builds a missing VITE_API_URL is a
+ * hard error — silently falling back to localhost would break every request with no
+ * obvious cause. In dev, localhost is a convenient default.
+ */
+function resolveApiBaseUrl(): string {
+  const fromEnv = import.meta.env.VITE_API_URL
+  if (fromEnv) return fromEnv
+  if (import.meta.env.DEV) return 'http://localhost:8002/api/v1'
+  throw new Error(
+    'VITE_API_URL is not configured. Set it to the backend URL, e.g. https://aria-backend.onrender.com/api/v1'
+  )
+}
+
+export const API_BASE_URL = resolveApiBaseUrl()
 
 export const axiosBase = axios.create({
   baseURL: API_BASE_URL,

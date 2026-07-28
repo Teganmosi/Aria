@@ -38,7 +38,12 @@ export const Register = () => {
   }
 
   const handleGoogleLogin = () => {
-    const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:8002/api/v1'
+    const backendUrl =
+      import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:8002/api/v1' : null)
+    if (!backendUrl) {
+      toast.error('This app is misconfigured: VITE_API_URL is missing')
+      return
+    }
     const redirectTo = window.location.origin + '/login'
     window.location.href = `${backendUrl}/auth/oauth/google?redirect_to=${encodeURIComponent(redirectTo)}`
   }

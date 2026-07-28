@@ -18,7 +18,13 @@ export const useWebSocket = (url, onMessage) => {
       }
 
       ws.current.onmessage = (event) => {
-        const data = JSON.parse(event.data)
+        let data
+        try {
+          data = JSON.parse(event.data)
+        } catch {
+          console.error('useWebSocket: received non-JSON message', event.data)
+          return
+        }
         onMessage?.(data)
       }
 

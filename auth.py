@@ -3,7 +3,8 @@ import uuid
 import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError as JWTError  # PyJWT base class for all decode errors
 from fastapi import Depends, HTTPException, status, WebSocket, WebSocketException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from config import settings
@@ -232,20 +233,34 @@ def blacklist_token(token: str) -> None:
     db.revoke_token(jti, expires_at)
 
 async def get_current_user_websocket(websocket: WebSocket) -> Dict[str, Any]:
-    """Get the current authenticated user from WebSocket connection"""
+    """Authenticate a WebSocket connection.
+
+    The token may be provided either as the first message on the socket
+    ({"type": "auth", "token": "..."}) — preferred — or as a `?token=` query
+    parameter (legacy; URLs leak into server and proxy logs).
+    """
     token = websocket.query_params.get("token")
-    if not token: 
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Missing token")
-    
+    if not token:
+        try:
+            first = await asyncio.wait_for(websocket.receive_json(), timeout=15)
+        except Exception:
+            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Missing token")
+        if not isinstance(first, dict) or first.get("type") != "auth" or not first.get("token"):
+            raise WebSocketException(
+                code=status.WS_1008_POLICY_VIOLATION,
+                reason='Expected first message {"type": "auth", "token": "..."}',
+            )
+        token = first["token"]
+
     payload = decode_access_token(token)
-    if not payload: 
+    if not payload:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
-    
+
     user_id = payload.get("sub")
     profile = await asyncio.to_thread(db.get_profile, user_id)
-    if not profile: 
+    if not profile:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
-    
+
     return profile
 
 

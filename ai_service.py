@@ -292,12 +292,14 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
                     self.AI_CONFIGS[mode]['model'] = "gpt-4o-mini"
                 logger.info("OpenAI client initialized for standard OpenAI (model: gpt-4o-mini)")
             else:
-                self._client = OpenAI(
-                    base_url="https://integrate.api.nvidia.com/v1",
-                    api_key=""
-                )
+                # No usable provider — do NOT create a client with an empty key: every call
+                # would fail with a confusing 401 from Nvidia. Generation methods guard on None.
+                self._client = None
                 self.model_name = DEFAULT_MODEL
-                logger.warning("No API key configured for standard OpenAI or Nvidia NIM")
+                logger.error(
+                    "No AI provider configured — set NVIDIA_API_KEY or OPENAI_API_KEY. "
+                    "AI features will return errors until a key is present."
+                )
     
     def _build_system_prompt(self, mode: str, custom_instructions: Optional[str] = None) -> str:
         """Assemble the full system prompt: mode prompt + translations block + user context."""
@@ -408,6 +410,10 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
         """Generate AI response for the given mode, supporting memory search and Bible tools."""
         if mode not in self.AI_CONFIGS:
             raise ValueError(f"Invalid mode: {mode}")
+        if self._client is None:
+            raise RuntimeError(
+                "AI provider is not configured. Set NVIDIA_API_KEY or OPENAI_API_KEY in the environment."
+            )
 
         config = self.AI_CONFIGS[mode]
         system_prompt = self._build_system_prompt(mode, custom_instructions)
@@ -521,6 +527,10 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
         """Generate AI response as a stream, supporting memory search and Bible tools."""
         if mode not in self.AI_CONFIGS:
             raise ValueError(f"Invalid mode: {mode}")
+        if self._client is None:
+            raise RuntimeError(
+                "AI provider is not configured. Set NVIDIA_API_KEY or OPENAI_API_KEY in the environment."
+            )
 
         config = self.AI_CONFIGS[mode]
         system_prompt = self._build_system_prompt(mode, custom_instructions)

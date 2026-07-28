@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { authService } from '../services/api'
+import { authService, clearTtsAudioTokenCache } from '../services/api'
 import { setTokens, clearTokens } from '../api/axios'
 import type { AuthState, AuthResponse, User } from '../types'
 
@@ -46,6 +46,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ user: userData, isAuthenticated: true })
     } catch {
       clearTokens()
+      clearTtsAudioTokenCache()
       localStorage.removeItem('authUser')
       set({ user: null, isAuthenticated: false, showAuthModal: true })
     } finally {
@@ -77,6 +78,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     clearTokens()
+    clearTtsAudioTokenCache()
     localStorage.removeItem('authUser')
     set({ user: null, isAuthenticated: false, showAuthModal: true })
   },

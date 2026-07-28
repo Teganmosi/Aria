@@ -2,6 +2,7 @@ from fastapi import (
     FastAPI,
     Depends,
     HTTPException,
+    Query,
     Request,
     status,
     WebSocket,
@@ -11,11 +12,11 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import asyncio
 import logging
 import json
@@ -339,14 +340,85 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS middleware
+# CORS middleware — explicit origins only. A wildcard ("*") combined with credentials
+# lets any website make authenticated requests as your users, so refuse to boot with it.
+_cors_origins = settings.cors_origins_list
+if "*" in _cors_origins:
+    raise RuntimeError(
+        'CORS_ORIGINS must not contain "*" — a wildcard origin lets any website call the API '
+        "as your users (and browsers reject it together with credentials anyway). "
+        "Set CORS_ORIGINS to a JSON array of explicit origins, e.g. "
+        '\'["https://aria-frontend.onrender.com", "http://localhost:5173"]\'.'
+    )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Attach baseline security headers to every response."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), payment=()")
+    # Render terminates TLS and sets X-Forwarded-Proto; only send HSTS on real HTTPS.
+    forwarded_proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    if forwarded_proto == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=63072000; includeSubDomains"
+        )
+    return response
+
+
+# ==================== Error Tracking (optional) ====================
+# Set SENTRY_DSN to enable production error tracking; unset = no-op.
+if os.getenv("SENTRY_DSN"):
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=os.getenv("SENTRY_DSN"),
+            environment="development" if settings.debug else "production",
+            traces_sample_rate=0.1,
+        )
+        logger.info("Sentry error tracking enabled")
+    except Exception:
+        logger.exception("Failed to initialize Sentry")
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    """Drain shared resources so deploys/restarts don't leak connections or hang sessions."""
+    for call_id in list(voice_call_manager.active_calls):
+        try:
+            ws = voice_call_manager.active_calls.get(call_id)
+            if ws is not None:
+                await ws.close(code=1001, reason="Server shutting down")
+        except Exception:
+            logger.debug(f"Error closing voice call {call_id} on shutdown", exc_info=True)
+    voice_call_manager.active_calls.clear()
+    voice_call_manager.calls_by_user.clear()
+
+    try:
+        pool = getattr(db.__class__, "_pool", None)
+        if pool is not None:
+            pool.closeall()
+            db.__class__._pool = None
+            logger.info("Database connection pool closed")
+    except Exception:
+        logger.exception("Error closing database pool on shutdown")
+
+    try:
+        if redis_client is not None:
+            redis_client.close()
+            logger.info("Redis connection closed")
+    except Exception:
+        logger.exception("Error closing Redis on shutdown")
 
 # Mount static files for frontend
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -367,8 +439,35 @@ async def root(request: Request):
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy"}
+    """Health check — verifies the database (and Redis, if enabled) are actually reachable.
+    Render's health checks rely on this, so a node with a dead DB must report unhealthy."""
+    checks: Dict[str, Any] = {}
+
+    def _db_ping() -> bool:
+        try:
+            with db.get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                    return cur.fetchone()[0] == 1
+        except Exception as exc:
+            logger.warning(f"Health check DB ping failed: {exc}")
+            return False
+
+    checks["database"] = await asyncio.to_thread(_db_ping)
+
+    if settings.redis_enabled and redis_client is not None:
+        try:
+            await asyncio.to_thread(redis_client.ping)
+            checks["redis"] = True
+        except Exception as exc:
+            logger.warning(f"Health check Redis ping failed: {exc}")
+            checks["redis"] = False
+
+    healthy = all(checks.values())
+    return JSONResponse(
+        {"status": "healthy" if healthy else "unhealthy", "checks": checks},
+        status_code=status.HTTP_200_OK if healthy else status.HTTP_503_SERVICE_UNAVAILABLE,
+    )
 
 
 # ==================== Authentication Endpoints ====================
@@ -1200,7 +1299,8 @@ class ChatResponse(BaseModel):
 
 
 @app.get("/api/v1/ai/welcome-greeting")
-async def get_welcome_greeting(current_user: Dict[str, Any] = Depends(get_current_user)):
+@limiter.limit("5/minute")
+async def get_welcome_greeting(request: Request, current_user: Dict[str, Any] = Depends(get_current_user)):
     """Generate a highly personalized welcome greeting based on user personal context."""
     user_id = current_user["id"]
     profile = await asyncio.to_thread(db.get_profile, user_id)
@@ -1238,20 +1338,21 @@ Response:"""
 
 
 @app.post("/api/v1/ai/generate", response_model=AIResponse)
+@limiter.limit("20/minute")
 async def generate_ai_response(
-    request: AIRequest, current_user: Dict[str, Any] = Depends(get_current_user)
+    request: Request, payload: AIRequest, current_user: Dict[str, Any] = Depends(get_current_user)
 ):
     """Generate AI response for any mode"""
     try:
         custom_instructions = _get_user_custom_instructions(current_user)
         content = await asyncio.to_thread(
             ai_service.generate_response,
-            request.messages,
-            request.mode,
+            payload.messages,
+            payload.mode,
             custom_instructions=custom_instructions,
             user_id=current_user["id"],
         )
-        return AIResponse(content=content, mode=request.mode)
+        return AIResponse(content=content, mode=payload.mode)
     except Exception:
         logger.exception("Error generating AI response")
         raise HTTPException(
@@ -1262,7 +1363,9 @@ async def generate_ai_response(
 
 
 @app.post("/api/v1/ai/voice-chat")
+@limiter.limit("10/minute")
 async def voice_chat(
+    request: Request,
     audio_file: UploadFile = File(...),
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -1328,20 +1431,41 @@ class VoiceSessionCreate(BaseModel):
     )
 
 
+# Per-tier voice call duration limits (enforced server-side in websocket_voice_call).
+# Once the premium tier ships, free users move to the 2-minute cap below and premium
+# users get extended limits; until then everyone keeps the current 10-minute limit so
+# we don't degrade the experience with no upgrade path to offer.
+FREE_TIER_CALL_LIMIT_MINUTES = 2
+PREMIUM_TIER_CALL_LIMIT_MINUTES = 60
+
+
+def _get_voice_call_limits(profile: Optional[Dict[str, Any]]) -> tuple:
+    """Return (max_duration_minutes, warning_at_minutes) for a user profile."""
+    is_premium = bool((profile or {}).get("is_premium"))
+    if is_premium:
+        return PREMIUM_TIER_CALL_LIMIT_MINUTES, PREMIUM_TIER_CALL_LIMIT_MINUTES - 5
+    # TODO(premium-launch): switch free users to FREE_TIER_CALL_LIMIT_MINUTES
+    # (with warning at 1.5 min) when the premium tier goes live.
+    return 10, 8
+
+
 @app.post("/api/v1/ai/voice-session", response_model=Dict[str, Any])
+@limiter.limit("5/minute")
 async def create_voice_session(
-    request: VoiceSessionCreate,
+    request: Request,
+    payload: VoiceSessionCreate,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Create a new voice call session and return session ID"""
     import uuid
 
+    max_minutes, warning_minutes = _get_voice_call_limits(current_user)
     session_id = str(uuid.uuid4())
     return {
         "session_id": session_id,
-        "mode": request.mode,
-        "max_duration_minutes": 10,
-        "warning_at_minutes": 8,
+        "mode": payload.mode,
+        "max_duration_minutes": max_minutes,
+        "warning_at_minutes": warning_minutes,
     }
 
 
@@ -1671,10 +1795,11 @@ async def _generate_tts_bytes(text: str, voice: str, response_format: str) -> by
 
 
 @app.post("/api/v1/tts")
-async def text_to_speech(request: TTSRequest):
+@limiter.limit("30/minute")
+async def text_to_speech(request: Request, payload: TTSRequest, current_user: Dict = Depends(get_current_user)):
     """Proxy Text-to-Speech requests to the active TTS provider with fallback"""
     try:
-        content = await _generate_tts_bytes(request.text, request.voice, request.response_format)
+        content = await _generate_tts_bytes(payload.text, payload.voice, payload.response_format)
         
         from fastapi.responses import StreamingResponse
         import io
@@ -1685,7 +1810,7 @@ async def text_to_speech(request: TTSRequest):
             "opus": "audio/opus",
             "flac": "audio/flac"
         }
-        media_type = content_types.get(request.response_format.lower(), AUDIO_MPEG)
+        media_type = content_types.get(payload.response_format.lower(), AUDIO_MPEG)
         if content.startswith(b"RIFF"):
             media_type = AUDIO_WAV
         
@@ -1709,23 +1834,24 @@ async def text_to_speech(request: TTSRequest):
 
 
 @app.get("/api/v1/tts")
+@limiter.limit("30/minute")
 async def text_to_speech_get(
+    request: Request,
     text: str,
+    token: str = Query(..., description="Short-lived audio token from POST /api/v1/tts/audio-token"),
     voice: Optional[str] = "Idera",
     response_format: Optional[str] = "mp3",
-    token: Optional[str] = None
 ):
-    """Proxy Text-to-Speech requests to the active TTS provider via GET for progressive streaming"""
-    if token:
-        try:
-            from auth import get_current_user_from_token
-            get_current_user_from_token(token)
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired authentication token."
-            )
-            
+    """Proxy Text-to-Speech requests to the active TTS provider via GET for progressive streaming
+    in <audio> elements (which cannot send Authorization headers).
+
+    Requires a short-lived audio token. Main access tokens must never be placed in URLs —
+    they leak into server logs, proxy logs and browser history.
+    """
+    from auth import get_current_user_from_token
+    # Raises 401 if the token is missing, invalid or expired.
+    await get_current_user_from_token(token)
+
     try:
         content = await _generate_tts_bytes(text, voice, response_format)
         
@@ -1762,23 +1888,60 @@ async def text_to_speech_get(
         )
 
 
+# Short-lived token used in <audio> src URLs (see GET /api/v1/tts).
+AUDIO_TOKEN_TTL_MINUTES = 5
+
+
+@app.post("/api/v1/tts/audio-token")
+@limiter.limit("10/minute")
+async def create_tts_audio_token(request: Request, current_user: Dict = Depends(get_current_user)):
+    """Issue a short-lived token for use in <audio> src URLs.
+
+    <audio> elements cannot send Authorization headers, so the GET TTS endpoint
+    accepts a token in the query string. To limit exposure if such a URL leaks
+    into logs, this token is scoped and expires in minutes — never put the main
+    access token in a URL.
+    """
+    from auth import create_access_token
+    token = create_access_token(
+        {"sub": current_user["id"], "scope": "tts"},
+        expires_delta=timedelta(minutes=AUDIO_TOKEN_TTL_MINUTES),
+    )
+    return {"audio_token": token, "expires_in_seconds": AUDIO_TOKEN_TTL_MINUTES * 60}
+
+
 # ==================== Voice Call WebSocket ====================
 
 
 class VoiceCallManager:
     """Manager for active voice call WebSocket connections."""
 
+    #: Max simultaneous voice calls a single user may hold open (abuse prevention).
+    MAX_CALLS_PER_USER = 1
+
     def __init__(self):
         self.active_calls: Dict[str, WebSocket] = {}
+        self.calls_by_user: Dict[str, set] = {}
 
-    async def connect(self, websocket: WebSocket, call_id: str):
+    def user_active_call_count(self, user_id: str) -> int:
+        return len(self.calls_by_user.get(user_id, set()))
+
+    async def connect(self, websocket: WebSocket, call_id: str, user_id: Optional[str] = None):
         from starlette.websockets import WebSocketState
         if websocket.client_state == WebSocketState.CONNECTING:
             await websocket.accept()
         self.active_calls[call_id] = websocket
+        if user_id:
+            self.calls_by_user.setdefault(user_id, set()).add(call_id)
 
-    def disconnect(self, call_id: str):
+    def disconnect(self, call_id: str, user_id: Optional[str] = None):
         self.active_calls.pop(call_id, None)
+        if user_id:
+            calls = self.calls_by_user.get(user_id)
+            if calls:
+                calls.discard(call_id)
+                if not calls:
+                    self.calls_by_user.pop(user_id, None)
 
     async def send_message(self, call_id: str, message: Dict[str, Any]):
         if call_id in self.active_calls:
@@ -2146,11 +2309,17 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
         return
 
     voice_preference = user.get("aria_voice", "Adaora") if user else "Adaora"
-    
+
     # Get user custom instructions
     user_id = user.get("id") if user else None
     profile = db.get_profile(user_id) if user_id else None
     custom_instructions = _get_user_custom_instructions(profile) if profile else None
+
+    # Enforce the per-user concurrent call cap before doing any expensive work.
+    if user_id and voice_call_manager.user_active_call_count(user_id) >= voice_call_manager.MAX_CALLS_PER_USER:
+        logger.warning(f"Voice call {call_id}: rejected, user {user_id} already has an active call")
+        await websocket.close(code=4003, reason="Another call is already active")
+        return
 
     # Build Aria's spiritual companion persona
     ARIA_SPIRITUAL_SYSTEM_PROMPT = (
@@ -2189,7 +2358,7 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
         return
 
     # Connect frontend
-    await voice_call_manager.connect(websocket, call_id)
+    await voice_call_manager.connect(websocket, call_id, user_id)
     await voice_call_manager.send_message(
         call_id, {"type": "conversation_started", "message": "Connected to Aria."}
     )
@@ -2199,12 +2368,40 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
     reconnecting = asyncio.Event()
     call_messages = []
 
+    # Server-side duration enforcement (the free-tier cap will reuse this when premium ships).
+    max_minutes, warning_minutes = _get_voice_call_limits(profile or user)
+
+    async def _call_duration_watchdog():
+        try:
+            await asyncio.sleep(warning_minutes * 60)
+            await voice_call_manager.send_message(call_id, {
+                "type": "time_warning",
+                "minutes_remaining": max_minutes - warning_minutes,
+                "message": f"You have {max_minutes - warning_minutes} minute(s) left on this call.",
+            })
+            await asyncio.sleep((max_minutes - warning_minutes) * 60)
+            await voice_call_manager.send_message(call_id, {
+                "type": "call_ending",
+                "reason": "time_limit_reached",
+                "message": "Call time limit reached. Ending call.",
+            })
+        except asyncio.CancelledError:
+            return
+        # Closing the frontend socket unwinds the whole call (gather returns, cleanup runs).
+        try:
+            from starlette.websockets import WebSocketState
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.close(code=4100, reason="time_limit_reached")
+        except Exception:
+            logger.debug(f"Voice call {call_id}: close at time limit failed", exc_info=True)
+
     # Run tasks concurrently
     tasks = [
         asyncio.create_task(_forward_frontend_to_s2s(websocket, call_id, s2s_ref, reconnecting)),
         asyncio.create_task(_forward_s2s_to_frontend(
             call_id, s2s_ref, reconnecting, call_messages, pocket_voice, ARIA_SPIRITUAL_SYSTEM_PROMPT
-        ))
+        )),
+        asyncio.create_task(_call_duration_watchdog()),
     ]
     try:
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -2212,7 +2409,7 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
         for t in tasks:
             if not t.done():
                 t.cancel()
-        voice_call_manager.disconnect(call_id)
+        voice_call_manager.disconnect(call_id, user_id)
         try:
             await s2s_ref["ws"].close()
         except Exception:
@@ -2422,8 +2619,10 @@ async def get_chat_messages(
 
 
 @app.post("/api/v1/ai/chat", response_model=AIResponse)
+@limiter.limit("20/minute")
 async def chat_with_aria(
-    request: AIRequest,
+    request: Request,
+    payload: AIRequest,
     session_id: Optional[str] = None,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
@@ -2435,8 +2634,8 @@ async def chat_with_aria(
         if not session_id:
             # Try to extract a title from the first message
             title = (
-                request.messages[-1].get("content", "")[:30]
-                if request.messages
+                payload.messages[-1].get("content", "")[:30]
+                if payload.messages
                 else "New Conversation"
             )
             session = await asyncio.to_thread(db.create_chat_session, user_id, title)
@@ -2445,14 +2644,14 @@ async def chat_with_aria(
             session_id = session["id"]
 
             # Save the welcome message if the frontend sent it as the first message
-            if len(request.messages) > 1 and request.messages[0].get("role") == "assistant":
+            if len(payload.messages) > 1 and payload.messages[0].get("role") == "assistant":
                 await asyncio.to_thread(
                     db.create_chat_message,
-                    {"session_id": session_id, "role": "assistant", "content": request.messages[0].get("content", "")}
+                    {"session_id": session_id, "role": "assistant", "content": payload.messages[0].get("content", "")}
                 )
 
         # Save user message
-        user_message = request.messages[-1].get("content", "") if request.messages else ""
+        user_message = payload.messages[-1].get("content", "") if payload.messages else ""
         if user_message:
             await asyncio.to_thread(
                 db.create_chat_message,
@@ -2467,14 +2666,14 @@ async def chat_with_aria(
 
         # Prepare full context for AI
         full_context = [
-            {"role": m.get("role", "user"), "content": m.get("content", "")} for m in request.messages
+            {"role": m.get("role", "user"), "content": m.get("content", "")} for m in payload.messages
         ]
 
         # Generate response
         response_content = await asyncio.to_thread(
             ai_service.generate_response,
             messages=full_context,
-            mode=request.mode or "general",
+            mode=payload.mode or "general",
             custom_instructions=custom_instructions,
             user_id=user_id,
         )
@@ -2485,7 +2684,7 @@ async def chat_with_aria(
             {"session_id": session_id, "role": "assistant", "content": response_content}
         )
 
-        return AIResponse(content=response_content, mode=request.mode or "general")
+        return AIResponse(content=response_content, mode=payload.mode or "general")
 
     except Exception:
         logger.exception("Chat error")
@@ -2532,17 +2731,19 @@ async def _generate_chat_stream(session_id: str, full_context: List[Dict[str, st
 
 
 @app.post("/api/v1/ai/chat/stream")
+@limiter.limit("10/minute")
 async def chat_with_aria_stream(
-    request: AIRequest,
+    request: Request,
+    payload: AIRequest,
     session_id: Optional[str] = None,
     current_user: Dict[str, Any] = Depends(get_current_user),
 ):
     """Stream chat with Aria and save to history"""
     try:
         user_id = current_user["id"]
-        session_id = await _get_or_create_chat_session(user_id, session_id, request.messages)
+        session_id = await _get_or_create_chat_session(user_id, session_id, payload.messages)
 
-        user_message = request.messages[-1].get("content", "") if request.messages else ""
+        user_message = payload.messages[-1].get("content", "") if payload.messages else ""
         if user_message:
             await asyncio.to_thread(
                 db.create_chat_message,
@@ -2551,10 +2752,10 @@ async def chat_with_aria_stream(
 
         profile = await asyncio.to_thread(db.get_profile, user_id)
         custom_instructions = _get_user_custom_instructions(profile) if profile else None
-        full_context = [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in request.messages]
+        full_context = [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in payload.messages]
 
         return StreamingResponse(
-            _generate_chat_stream(session_id, full_context, request.mode or "general", custom_instructions, user_id),
+            _generate_chat_stream(session_id, full_context, payload.mode or "general", custom_instructions, user_id),
             media_type="text/plain"
         )
 

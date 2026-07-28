@@ -110,6 +110,8 @@ class Database:
                 self.__class__._pool_pid = current_pid
                 # Ensure tables exist in the database (whether local or remote Supabase)
                 self._ensure_tables()
+                # Apply any unapplied versioned SQL migrations from supabase/migrations/
+                self._apply_pending_migrations()
             except Exception:
                 logger.exception("⚠️ Failed to initialize database connection pool on startup")
                 logger.warning("Database connection will be retried lazily during request handling.")
@@ -162,6 +164,54 @@ class Database:
                 self._pool.putconn(conn, close=close_conn)
             except Exception:
                 logger.exception("Error returning connection to pool")
+
+    def _apply_pending_migrations(self):
+        """Apply unapplied SQL migrations from supabase/migrations/ in filename order.
+
+        Existing databases are baselined on first run: if the schema already exists
+        (users table present) but schema_migrations is new, all current files are
+        recorded as applied without being executed — they were either run manually in
+        Supabase or are covered by _ensure_tables. New files added later run normally.
+        """
+        migrations_dir = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "supabase", "migrations"
+        )
+        if not os.path.isdir(migrations_dir):
+            return
+        try:
+            with self.get_connection() as conn:
+                cur = self._cursor(conn)
+                cur.execute(
+                    "CREATE TABLE IF NOT EXISTS schema_migrations ("
+                    "filename TEXT PRIMARY KEY, applied_at TIMESTAMP DEFAULT NOW())"
+                )
+                cur.execute("SELECT filename FROM schema_migrations")
+                applied = {r["filename"] for r in cur.fetchall()}
+                files = sorted(f for f in os.listdir(migrations_dir) if f.endswith(".sql"))
+                if not applied and files:
+                    cur.execute(
+                        "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+                        "WHERE table_schema = 'public' AND table_name = 'users') AS exists_"
+                    )
+                    if cur.fetchone()["exists_"]:
+                        for f in files:
+                            cur.execute(
+                                "INSERT INTO schema_migrations (filename) VALUES (%s)", (f,)
+                            )
+                        logger.info(f"Baselined {len(files)} existing SQL migrations")
+                        return
+                for f in files:
+                    if f in applied:
+                        continue
+                    with open(os.path.join(migrations_dir, f), encoding="utf-8") as fh:
+                        sql = fh.read()
+                    logger.info(f"Applying migration {f}")
+                    cur.execute(sql)
+                    cur.execute(
+                        "INSERT INTO schema_migrations (filename) VALUES (%s)", (f,)
+                    )
+        except Exception:
+            logger.exception("Failed to apply pending SQL migrations")
 
     def _ensure_tables(self):
         if self.__class__._tables_ensured or self.__class__._ensuring_tables:
@@ -1438,6 +1488,8 @@ class Database:
 
         except Exception:
             logger.exception("Error searching user memory")
+            return []
+        return results
 
     def get_all_profiles(self) -> List[Dict[str, Any]]:
         """Get all profiles from the database"""
