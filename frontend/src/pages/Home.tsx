@@ -42,7 +42,7 @@ const FaithStreak = ({ days, streak }) => {
           <h4 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-main)', fontWeight: 700 }}>{streak} Day Streak</h4>
         </div>
       </div>
-      <div className="flex justify-between mb-4">
+      <div className="faith-streak-days flex justify-between mb-4">
         {dayLabels.map((day, i) => {
           const isCompleted = days && days[i]
           const currentDay = new Date(sunday)
@@ -52,12 +52,13 @@ const FaithStreak = ({ days, streak }) => {
           return (
             <div key={i} className="flex flex-col items-center gap-2">
               <span style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--text-muted)' }}>{day}</span>
-              <div style={{
-                width: '30px', height: '30px', borderRadius: '50%',
-                background: isCompleted ? 'var(--brand-accent)' : (i === todayIndex ? 'var(--text-main)' : 'var(--input-bg)'),
-                color: isCompleted ? 'var(--text-inverse)' : (i === todayIndex ? 'var(--bg-main)' : 'var(--text-muted)'),
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 700
-              }}>
+              <div
+                className="streak-day"
+                style={{
+                  background: isCompleted ? 'var(--brand-accent)' : (i === todayIndex ? 'var(--text-main)' : 'var(--input-bg)'),
+                  color: isCompleted ? 'var(--text-inverse)' : (i === todayIndex ? 'var(--bg-main)' : 'var(--text-muted)'),
+                }}
+              >
                 {displayDate}
               </div>
             </div>
@@ -260,32 +261,12 @@ export const Home = () => {
           <p className="home-greeting">{greeting}, {(user?.full_name ?? 'SANCTUARY').split(' ')[0].toUpperCase()}</p>
           <h1 className="home-title" style={{ fontSize: isMobile ? '2rem' : '3.5rem' }}>Let's walk in faith today.</h1>
         </div>
-        <div className="flex gap-6 items-center">
-          <Settings
-            size={22}
-            color="var(--text-main)"
-            className="cursor-pointer"
-            onClick={() => navigate('/app/profile')}
-          />
-          <div
-            className="w-11 h-11 rounded-full bg-[var(--bg-alt)] overflow-hidden border-2 border-[var(--bg-card)] shadow-[var(--shadow-main)] cursor-pointer"
-            onClick={() => navigate('/app/profile')}
-          >
-            {user?.avatar_url ? (
-              <img src={user.avatar_url} className="w-full h-full object-cover" alt="Profile" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center font-bold text-[var(--text-secondary)]" style={{ fontSize: '0.9rem' }}>
-                {getInitials(user?.full_name)}
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* Top Feature Grid */}
       <div className="top-feature-grid">
         {/* Quote Card */}
-        <div className="bg-[var(--bg-card)] rounded-3xl shadow-[var(--shadow-main)] border border-[var(--border-color)] relative overflow-hidden" style={{ padding: isMobile ? '1.5rem' : '2.5rem' }}>
+        <div className="top-feature-quote bg-[var(--bg-card)] rounded-3xl shadow-[var(--shadow-main)] border border-[var(--border-color)] relative overflow-hidden" style={{ padding: isMobile ? '1.5rem' : '2.5rem' }}>
           <Quote size={isMobile ? 24 : 40} color="var(--brand-accent)" style={{ opacity: 0.2, marginBottom: '1.5rem' }} />
           <p style={{ fontSize: isMobile ? '1.25rem' : '1.75rem', lineHeight: '1.4', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", fontStyle: 'italic', margin: '0 0 1.5rem' }}>
             "{verseObj.verse}"
@@ -301,7 +282,7 @@ export const Home = () => {
         </div>
 
         {/* Right Stack */}
-        <div className="flex flex-col gap-6">
+        <div className="top-feature-stack flex flex-col gap-6">
           <FaithStreak streak={stats.streak_days} days={stats.streak_history} />
           <ActionCard icon={MessageSquare} title="Guided Presence" subtitle="Start a Conversation" background="#0B192C" onClick={() => navigate('/app/ai-chat')} />
           <ActionCard icon={Bookmark} title="Deep Reflection" subtitle="Begin Devotion" background="var(--brand-accent)" onClick={() => navigate('/app/devotion')} />
@@ -355,17 +336,17 @@ export const Home = () => {
       </div>
 
       {/* Bottom Manna */}
-      <div className="bg-[var(--gradient-card)] rounded-[40px] border border-[var(--border-color)] shadow-[var(--shadow-main)]" style={{ padding: isMobile ? '2.5rem 1.5rem' : '4rem 5rem' }}>
+      <div className="daily-manna-container">
         {/* Header row */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <div className="w-[52px] h-[52px] bg-[var(--brand-accent)] rounded-[16px] flex items-center justify-center" style={{ boxShadow: '0 8px 20px rgba(245, 206, 77, 0.2)', flexShrink: 0 }}>
+        <div className="daily-manna-header flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="daily-manna-icon bg-[var(--brand-accent)] flex items-center justify-center">
               <Sparkles size={24} color="var(--text-inverse)" />
             </div>
             <div>
-              <p style={{ margin: 0, fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.2em' }}>DAILY MANNA</p>
+              <p className="daily-manna-category">DAILY MANNA</p>
               {typeof verseObj.daily_manna === 'object' && verseObj.daily_manna?.title && (
-                <h3 style={{ margin: 0, fontSize: isMobile ? '1.1rem' : '1.4rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", fontWeight: 500 }}>
+                <h3 className="daily-manna-title font-serif">
                   {verseObj.daily_manna.title}
                 </h3>
               )}
@@ -374,19 +355,7 @@ export const Home = () => {
           <button
             onClick={toggleMannaAudio}
             title={mannaPlaying ? 'Stop' : 'Listen'}
-            style={{
-              background: mannaPlaying ? 'var(--brand-accent)' : 'var(--input-bg)',
-              border: '1px solid var(--border-color)',
-              borderRadius: '50%',
-              width: 44,
-              height: 44,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              flexShrink: 0,
-              transition: 'all 0.2s',
-            }}
+            className={`daily-manna-audio-btn ${mannaPlaying ? 'playing' : ''}`}
           >
             {mannaPlaying
               ? <VolumeX size={18} color="var(--text-inverse)" />
@@ -396,57 +365,43 @@ export const Home = () => {
 
         {/* Sections */}
         {typeof verseObj.daily_manna === 'object' && verseObj.daily_manna ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+          <div className="daily-manna-sections flex flex-col">
             {/* Reflection */}
-            <div style={{ padding: '1.75rem', borderRadius: '20px', background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
-              <p style={{ margin: '0 0 0.75rem', fontSize: '0.6rem', fontWeight: 800, color: 'var(--brand-accent)', letterSpacing: '0.2em' }}>REFLECTION</p>
-              <p style={{ margin: 0, fontSize: isMobile ? '0.95rem' : '1.05rem', lineHeight: 1.75, color: 'var(--text-secondary)' }}>
+            <div className="manna-section reflection-section">
+              <p className="manna-section-label">REFLECTION</p>
+              <p className="manna-section-content">
                 {verseObj.daily_manna.reflection}
               </p>
             </div>
 
             {/* Prayer */}
-            <div style={{ padding: '1.75rem', borderRadius: '20px', background: 'var(--input-bg)', borderLeft: '3px solid var(--brand-accent)' }}>
-              <p style={{ margin: '0 0 0.75rem', fontSize: '0.6rem', fontWeight: 800, color: 'var(--brand-accent)', letterSpacing: '0.2em' }}>PRAYER</p>
-              <p style={{ margin: 0, fontSize: isMobile ? '0.95rem' : '1.05rem', lineHeight: 1.75, color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", fontStyle: 'italic' }}>
+            <div className="manna-section prayer-section">
+              <p className="manna-section-label font-serif">PRAYER</p>
+              <p className="manna-section-content font-serif italic">
                 {verseObj.daily_manna.prayer}
               </p>
             </div>
 
             {/* Application */}
-            <div style={{ padding: '1.75rem', borderRadius: '20px', background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
-              <p style={{ margin: '0 0 0.75rem', fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.2em' }}>TODAY'S APPLICATION</p>
-              <p style={{ margin: 0, fontSize: isMobile ? '0.9rem' : '1rem', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
+            <div className="manna-section application-section">
+              <p className="manna-section-label">TODAY'S APPLICATION</p>
+              <p className="manna-section-content">
                 {verseObj.daily_manna.application}
               </p>
             </div>
           </div>
         ) : (
-          <h2 style={{ fontSize: isMobile ? '1.4rem' : '1.8rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif", lineHeight: 1.6, margin: '0 0 2.5rem' }}>
+          <h2 className="daily-manna-text font-serif">
             "{typeof verseObj.daily_manna === 'string' ? verseObj.daily_manna : "Grant me the grace to see Your hand in the mundane today, and the courage to follow where You lead."}"
           </h2>
         )}
 
         {/* Save button */}
-        <div style={{ marginTop: '2.5rem', display: 'flex', justifyContent: 'center' }}>
+        <div className="daily-manna-save-container flex justify-center">
           <button
             onClick={handleSaveManna}
             disabled={isSaved}
-            style={{
-              background: isSaved ? '#10b981' : 'var(--text-main)',
-              color: 'var(--bg-main)',
-              border: 'none',
-              padding: '1.1rem 2.75rem',
-              borderRadius: '50px',
-              fontSize: '0.75rem',
-              fontWeight: 800,
-              letterSpacing: '0.1em',
-              cursor: isSaved ? 'default' : 'pointer',
-              transition: 'all 0.3s',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-            }}
+            className={`daily-manna-save-btn flex items-center gap-2 ${isSaved ? 'saved' : ''}`}
           >
             {isSaved && <CheckCircle2 size={16} />}
             {isSaved ? 'SAVED TO JOURNAL' : 'SAVE TO DEVOTIONS'}
