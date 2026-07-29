@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     dashscope_api_key: str = ""
     premium_voice_engine: str = "gemini"  # "gemini" | "qwen"
 
+    # Payments (Paystack)
+    paystack_secret_key: str = ""  # sk_test_... in test mode, sk_live_... in production
+    public_backend_url: str = "http://localhost:8002"  # where Paystack redirects/webhooks back to
+    frontend_url: str = "http://localhost:5173"        # where users land after checkout
+
     # Application Configuration
     aria_custom_prompt: Optional[str] = None # Added support for custom prompt
     app_name: str = "Aria - Your Spiritual Companion"

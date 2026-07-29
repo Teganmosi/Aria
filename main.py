@@ -30,7 +30,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from config import settings
-from models import ForgotPasswordRequest, ResetPasswordRequest
+from models import ForgotPasswordRequest, ResetPasswordRequest, TopUpRequest
 from auth import supabase_auth_forgot_password, supabase_auth_reset_password
 from voice_engines import select_voice_engine, ProviderConnectionLost
 
@@ -1973,6 +1973,165 @@ async def create_tts_audio_token(request: Request, current_user: Dict = Depends(
         expires_delta=timedelta(minutes=AUDIO_TOKEN_TTL_MINUTES),
     )
     return {"audio_token": token, "expires_in_seconds": AUDIO_TOKEN_TTL_MINUTES * 60}
+
+
+# ==================== Billing — Premium Voice Tier ====================
+
+
+# Minute packs (NGN). Pricing is provisional — finalized in Sprint 4 from real
+# provider cost data. amount_ngn is whole naira; Paystack amounts are in kobo (×100).
+VOICE_MINUTE_PACKS = [
+    {"id": "starter",  "label": "Starter",  "minutes": 60,  "amount_ngn": 2500},
+    {"id": "standard", "label": "Standard", "minutes": 180, "amount_ngn": 6000},
+    {"id": "abundant", "label": "Abundant", "minutes": 500, "amount_ngn": 14000},
+]
+
+
+def _paystack_headers() -> Dict[str, str]:
+    if not settings.paystack_secret_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Payments are not configured yet. Please try again later.",
+        )
+    return {"Authorization": f"Bearer {settings.paystack_secret_key}"}
+
+
+def _verify_and_credit_paystack(reference: str) -> str:
+    """Verify a Paystack transaction server-side and credit the minutes pack.
+
+    Idempotent: the unique provider_ref constraint means a replayed callback or
+    webhook cannot double-credit. Returns 'credited' or 'duplicate'.
+    """
+    import httpx
+    from psycopg2.errors import UniqueViolation
+
+    resp = httpx.get(
+        f"https://api.paystack.co/transaction/verify/{reference}",
+        headers=_paystack_headers(),
+        timeout=30,
+    )
+    data = (resp.json() or {}).get("data") or {}
+    if data.get("status") != "success":
+        raise HTTPException(status_code=400, detail="Payment was not successful.")
+
+    metadata = data.get("metadata") or {}
+    user_id = metadata.get("user_id")
+    pack = next((p for p in VOICE_MINUTE_PACKS if p["id"] == metadata.get("pack_id")), None)
+    if not user_id or not pack:
+        raise HTTPException(status_code=400, detail="Payment metadata is missing or invalid.")
+    if int(data.get("amount") or 0) != pack["amount_ngn"] * 100:
+        raise HTTPException(status_code=400, detail="Payment amount does not match the pack.")
+
+    try:
+        db.record_wallet_transaction(
+            user_id, "topup", pack["minutes"],
+            amount_ngn=pack["amount_ngn"], provider_ref=reference,
+            description=f"{pack['label']} minutes pack",
+        )
+        # First successful purchase promotes the account to premium permanently
+        # (the premium engine stays available; empty balance falls back to free).
+        db.set_user_tier(user_id, "premium")
+        logger.info(f"Credited {pack['minutes']} minutes to user {user_id} (ref {reference})")
+        return "credited"
+    except UniqueViolation:
+        logger.info(f"Duplicate Paystack credit ignored (ref {reference})")
+        return "duplicate"
+
+
+@app.get("/api/v1/billing/packs", response_model=Dict[str, Any])
+async def get_voice_packs(current_user: Dict = Depends(get_current_user)):
+    """Available minutes packs for premium voice calls."""
+    return {"packs": VOICE_MINUTE_PACKS, "currency": "NGN"}
+
+
+@app.get("/api/v1/billing/wallet", response_model=Dict[str, Any])
+async def get_billing_wallet(current_user: Dict = Depends(get_current_user)):
+    """Current minutes balance + recent wallet activity."""
+    wallet = await asyncio.to_thread(db.get_wallet, current_user["id"])
+    transactions = await asyncio.to_thread(db.get_wallet_transactions, current_user["id"], 20)
+    return {
+        "tier": current_user.get("tier") or "free",
+        "minutes_balance": float(wallet.get("minutes_balance") or 0),
+        "transactions": transactions,
+    }
+
+
+@app.post("/api/v1/billing/initialize", response_model=Dict[str, Any])
+@limiter.limit("10/minute")
+async def initialize_topup(request: Request, payload: TopUpRequest, current_user: Dict = Depends(get_current_user)):
+    """Start a Paystack checkout for a minutes pack; returns the hosted checkout URL."""
+    import httpx
+
+    pack = next((p for p in VOICE_MINUTE_PACKS if p["id"] == payload.pack_id), None)
+    if not pack:
+        raise HTTPException(status_code=404, detail="Unknown minutes pack.")
+    email = current_user.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Account has no email on record.")
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.paystack.co/transaction/initialize",
+            headers=_paystack_headers(),
+            json={
+                "email": email,
+                "amount": pack["amount_ngn"] * 100,  # kobo
+                "currency": "NGN",
+                "metadata": {"pack_id": pack["id"], "user_id": current_user["id"]},
+                "callback_url": f"{settings.public_backend_url}/api/v1/billing/paystack/callback",
+            },
+        )
+    body = resp.json()
+    if not body.get("status"):
+        logger.error(f"Paystack initialize failed: {body}")
+        raise HTTPException(status_code=502, detail="Could not start the payment. Please try again.")
+    return {
+        "authorization_url": body["data"]["authorization_url"],
+        "access_code": body["data"]["access_code"],
+        "reference": body["data"]["reference"],
+    }
+
+
+@app.get("/api/v1/billing/paystack/callback", include_in_schema=False)
+async def paystack_callback(trxref: Optional[str] = None, reference: Optional[str] = None):
+    """Where Paystack sends the shopper's browser after checkout. Verifies the
+    transaction server-side (never trusts the browser), then redirects home."""
+    frontend = settings.frontend_url.rstrip("/")
+    ref = reference or trxref
+    if not ref:
+        return RedirectResponse(f"{frontend}/app/profile?topup=error", status_code=303)
+    try:
+        await asyncio.to_thread(_verify_and_credit_paystack, ref)
+        return RedirectResponse(f"{frontend}/app/profile?topup=success", status_code=303)
+    except Exception:
+        logger.exception("Paystack callback verification failed")
+        return RedirectResponse(f"{frontend}/app/profile?topup=error", status_code=303)
+
+
+@app.post("/api/v1/billing/paystack/webhook", include_in_schema=False)
+async def paystack_webhook(request: Request):
+    """Paystack POSTs charge.success here as the reliable crediting path
+    (browsers don't always complete the redirect). HMAC-verified, idempotent."""
+    import hashlib
+    import hmac
+
+    if not settings.paystack_secret_key:
+        raise HTTPException(status_code=503, detail="Payments not configured")
+    body = await request.body()
+    signature = request.headers.get("x-paystack-signature", "")
+    expected = hmac.new(settings.paystack_secret_key.encode(), body, hashlib.sha512).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+
+    event = json.loads(body)
+    if event.get("event") == "charge.success":
+        ref = (event.get("data") or {}).get("reference")
+        if ref:
+            try:
+                await asyncio.to_thread(_verify_and_credit_paystack, ref)
+            except Exception:
+                logger.exception("Paystack webhook credit failed")
+    return {"status": "ok"}
 
 
 # ==================== Voice Call WebSocket ====================

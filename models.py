@@ -447,6 +447,10 @@ class ForgotPasswordRequest(BaseModel):
     redirect_to: str  # Frontend URL Supabase redirects to with recovery tokens
 
 
+class TopUpRequest(BaseModel):
+    pack_id: str
+
+
 class ResetPasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=8)
     # PKCE flow (Supabase default): ?code= in the reset link

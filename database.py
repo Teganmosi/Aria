@@ -1688,6 +1688,14 @@ class Database:
                 (duration_seconds, status, provider_cost_usd, minutes_charged, session_id),
             )
 
+    def set_user_tier(self, user_id: str, tier: str) -> None:
+        with self.get_connection() as conn:
+            cur = self._cursor(conn)
+            cur.execute(
+                "UPDATE profiles SET tier = %s, updated_at = NOW() WHERE id = %s",
+                (tier, user_id),
+            )
+
     def get_all_profiles(self) -> List[Dict[str, Any]]:
         """Get all profiles from the database"""
         try:
