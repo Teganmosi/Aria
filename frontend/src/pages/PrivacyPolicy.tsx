@@ -2,7 +2,7 @@ import { LegalPage } from '../components/LegalPage'
 
 /**
  * Aria Privacy Policy — version 1.0.
- * Placeholders to finalize before launch: {{OPERATOR_NAME}}, {{CONTACT_EMAIL}}, {{JURISDICTION}}.
+ * Placeholders to finalize before launch: {{OPERATOR_NAME}}, {{CONTACT_EMAIL}}, the Federal Republic of Nigeria.
  */
 export const PrivacyPolicy = () => (
   <LegalPage title="Privacy Policy" lastUpdated="July 29, 2026" version="1.0">
@@ -24,7 +24,7 @@ export const PrivacyPolicy = () => (
 
     <h2>1. Who we are</h2>
     <p>
-      Aria (&quot;Aria&quot;, &quot;we&quot;, &quot;us&quot;) is operated by {'{{OPERATOR_NAME}}'}.
+      Aria (&quot;Aria&quot;, &quot;we&quot;, &quot;us&quot;) is operated by the Aria team.
       Questions about this policy or your data: <strong>{'{{CONTACT_EMAIL}}'}</strong>.
     </p>
 
@@ -127,7 +127,7 @@ export const PrivacyPolicy = () => (
     <h2>10. Contact</h2>
     <p>
       Anything unclear, or a request about your data: <strong>{'{{CONTACT_EMAIL}}'}</strong>.
-      Governed under the laws of {'{{JURISDICTION}}'}.
+      Governed under the laws of {'the Federal Republic of Nigeria'}.
     </p>
   </LegalPage>
 )

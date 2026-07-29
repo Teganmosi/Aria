@@ -2,12 +2,12 @@ import { LegalPage } from '../components/LegalPage'
 
 /**
  * Aria Terms of Service — version 1.0.
- * Placeholders to finalize before launch: {{OPERATOR_NAME}}, {{CONTACT_EMAIL}}, {{JURISDICTION}}.
+ * Placeholders to finalize before launch: {{OPERATOR_NAME}}, {{CONTACT_EMAIL}}, the Federal Republic of Nigeria.
  */
 export const TermsOfService = () => (
   <LegalPage title="Terms of Service" lastUpdated="July 29, 2026" version="1.0">
     <p>
-      These terms are the agreement between you and Aria (operated by {'{{OPERATOR_NAME}}'})
+      These terms are the agreement between you and Aria (operated by the Aria team)
       when you use our website and applications. By creating an account or using Aria, you
       accept them — along with our{' '}
       <a href="/privacy" style={{ color: 'var(--brand-solid)' }}>Privacy Policy</a>.
@@ -111,7 +111,7 @@ export const TermsOfService = () => (
 
     <h2>10. Governing law and contact</h2>
     <p>
-      These terms are governed by the laws of {'{{JURISDICTION}}'}, without regard to conflict of
+      These terms are governed by the laws of {'the Federal Republic of Nigeria'}, without regard to conflict of
       law rules. Any disputes will be resolved in the courts of that jurisdiction, unless local
       law grants you another venue.
     </p>
