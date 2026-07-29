@@ -1413,6 +1413,16 @@ class Database:
             logger.exception("Error getting chat sessions")
             return []
 
+    def delete_chat_session(self, session_id: str, user_id: str) -> bool:
+        try:
+            with self.get_connection() as conn:
+                cur = self._cursor(conn)
+                cur.execute("DELETE FROM ai_chat_sessions WHERE id = %s AND user_id = %s", (session_id, user_id))
+                return cur.rowcount > 0
+        except Exception:
+            logger.exception("Error deleting chat session")
+            return False
+
     def get_chat_session_messages(self, session_id: str) -> List[Dict[str, Any]]:
         try:
             with self.get_connection() as conn:

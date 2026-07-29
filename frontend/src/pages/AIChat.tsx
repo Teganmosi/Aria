@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { useState, useRef, useEffect } from 'react'
-import { Mic, Send, Sparkles, X, History } from 'lucide-react'
+import { Mic, Send, Sparkles, X, History, Phone, Trash2, Check, Plus, MessageSquare } from 'lucide-react'
 import { toast } from 'sonner'
 import ReactMarkdown from 'react-markdown'
 import { aiChatService, profileService } from '../services/api'
@@ -8,6 +8,7 @@ import { useChatSessions } from '../hooks/use-chat-sessions'
 import { useAuth } from '../hooks/useAuth'
 import { AnimatedBackground } from '../components/ui/SharedComponents'
 import { VoiceCall } from '../components/VoiceCall'
+
 
 const markdownComponents = {
   ol: ({ children }) => <ol className="list-decimal pl-5 space-y-2">{children}</ol>,
@@ -37,6 +38,132 @@ export const AIChat = () => {
   const [ariaCustomPrompt, setAriaCustomPrompt] = useState(user?.aria_custom_prompt || '')
   const [ariaPersonalContext, setAriaPersonalContext] = useState(user?.aria_personal_context || '')
   const [ariaVoice, setAriaVoice] = useState(user?.aria_voice || 'sage')
+
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordingDuration, setRecordingDuration] = useState(0)
+  const [isTranscribing, setIsTranscribing] = useState(false)
+  const mediaRecorderRef = useRef(null)
+  const audioChunksRef = useRef([])
+  const timerIntervalRef = useRef(null)
+
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current)
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop()
+      }
+    }
+  }, [])
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      audioChunksRef.current = []
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      }
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
+        stream.getTracks().forEach(track => track.stop())
+        await transcribeAndSetInput(audioBlob)
+      }
+
+      mediaRecorder.start()
+      setIsRecording(true)
+      setRecordingDuration(0)
+
+      timerIntervalRef.current = setInterval(() => {
+        setRecordingDuration(prev => prev + 1)
+      }, 1000)
+    } catch (err) {
+      console.error("Error starting recording:", err)
+      toast.error("Could not access microphone. Please check permissions.")
+    }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop()
+      setIsRecording(false)
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current)
+        timerIntervalRef.current = null
+      }
+    }
+  }
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.onstop = () => {
+        const stream = mediaRecorderRef.current.stream
+        stream.getTracks().forEach(track => track.stop())
+      }
+      mediaRecorderRef.current.stop()
+      setIsRecording(false)
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current)
+        timerIntervalRef.current = null
+      }
+      setRecordingDuration(0)
+      toast.info("Recording cancelled")
+    }
+  }
+
+  const transcribeAndSetInput = async (blob) => {
+    try {
+      setIsTranscribing(true)
+      const data = await aiChatService.transcribeAudio(blob)
+      if (data.transcription) {
+        setChatInput(data.transcription)
+        toast.success("Voice note transcribed!")
+      } else {
+        toast.error("Could not transcribe voice note")
+      }
+    } catch (err) {
+      console.error("Transcription failed:", err)
+      toast.error("Failed to process audio")
+    } finally {
+      setIsTranscribing(false)
+    }
+  }
+
+  const formatDuration = (seconds) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`
+  }
+
+  const handleDeleteSession = async (e, sessionId) => {
+    e.stopPropagation()
+    if (!window.confirm("Are you sure you want to delete this conversation?")) return
+    try {
+      await aiChatService.deleteSession(sessionId)
+      toast.success("Conversation deleted")
+      if (currentSessionId === sessionId) {
+        setCurrentSessionId(null)
+        setMessages([])
+        setSessionTitle('New Conversation')
+        try {
+          const res = await aiChatService.getWelcomeGreeting()
+          if (res?.greeting) {
+            setMessages([{ id: 'welcome', role: 'assistant', content: res.greeting }])
+          }
+        } catch (err) {
+          console.error("Error fetching welcome greeting:", err)
+        }
+      }
+      await refetchSessions()
+    } catch (err) {
+      console.error("Failed to delete session:", err)
+      toast.error("Failed to delete conversation")
+    }
+  }
 
   const messagesEndRef = useRef(null)
 
@@ -157,17 +284,17 @@ export const AIChat = () => {
         <div className="flex items-center gap-6">
           <button
             onClick={() => setIsCustomizing(true)}
-            className="bg-transparent border-0 flex items-center gap-2 text-[var(--text-secondary)] text-[0.8rem] font-semibold cursor-pointer tracking-[0.05em]"
+            className="bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10 px-4 py-2 rounded-full flex items-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-main)] text-[0.8rem] font-semibold cursor-pointer tracking-[0.05em] transition-all duration-300 shadow-[var(--shadow-main)]"
           >
-            <Sparkles size={16} />
+            <Sparkles size={14} className="text-[var(--brand-accent)] animate-pulse" />
             <span className="hidden lg:block">CUSTOMIZE ARIA</span>
           </button>
           <button
             onClick={() => setIsVoiceCallOpen(true)}
-            className="bg-transparent border-0 flex items-center gap-2 text-[var(--text-secondary)] text-[0.8rem] font-semibold cursor-pointer tracking-[0.05em]"
+            className="bg-[var(--brand-accent)] text-[var(--bg-main)] hover:bg-[var(--brand-accent-hover)] px-4 py-2 rounded-full flex items-center gap-2 text-[0.8rem] font-bold cursor-pointer tracking-[0.05em] transition-all duration-300 shadow-[0_4px_20px_rgba(245,206,77,0.25)] hover:scale-105"
           >
-            <Mic size={16} />
-            <span className="hidden lg:block text-[var(--brand-solid)]">CALL ARIA</span>
+            <Phone size={14} />
+            <span className="hidden lg:block">CALL ARIA</span>
           </button>
         </div>
       </header>
@@ -197,35 +324,53 @@ export const AIChat = () => {
               <X size={20} />
             </button>
           </div>
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             <button
               onClick={() => { setCurrentSessionId(null); setMessages([]); setSessionTitle('New Conversation'); setShowHistory(false) }}
-              className="p-4 bg-white/5 border border-dashed border-[var(--border-color)] rounded-xl text-[var(--text-main)] text-[0.8rem] cursor-pointer mb-4"
+              className="w-full p-4 bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 rounded-xl text-[var(--text-main)] hover:text-[var(--brand-accent)] text-[0.8rem] font-bold tracking-wide cursor-pointer mb-4 flex items-center justify-center gap-2 transition-all duration-300 shadow-[var(--shadow-main)] hover:scale-[1.02]"
             >
-              + NEW CHAT
+              <Plus size={16} />
+              NEW REFLECTION
             </button>
             {sessions.length === 0 ? (
-              <p className="text-[0.8rem] text-[var(--text-muted)] italic">No past reflections yet.</p>
+              <p className="text-[0.8rem] text-[var(--text-muted)] italic pl-2">No past reflections yet.</p>
             ) : (
               sessions.map(session => (
-                <button
+                <div
                   key={session.id}
-                  onClick={() => loadSession(session)}
-                  onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && loadSession(session)}
-                  className={`px-4 py-5 rounded-xl cursor-pointer transition-all duration-200 border text-left w-full bg-transparent font-[inherit] ${
-                    currentSessionId === session.id
-                      ? 'bg-[var(--bg-card)] border-[var(--border-color)] shadow-[var(--shadow-main)]'
-                      : 'border-transparent'
-                  }`}
-                  aria-label={`Select conversation: ${session.title || 'Conversation'}`}
+                  className="group relative flex items-center w-full"
                 >
-                  <h4 className={`font-serif italic text-[1rem] m-0 mb-1 ${currentSessionId === session.id ? 'font-bold text-[var(--text-main)]' : 'font-medium text-[var(--text-secondary)]'}`}>
-                    {session.title || 'Conversation'}
-                  </h4>
-                  <p className="text-[0.7rem] text-[var(--text-muted)] m-0">
-                    {new Date(session.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </p>
-                </button>
+                  {currentSessionId === session.id && (
+                    <div className="absolute left-0 top-3 bottom-3 w-1 bg-[var(--brand-accent)] rounded-r-md z-20 animate-pulse" />
+                  )}
+                  <button
+                    onClick={() => loadSession(session)}
+                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && loadSession(session)}
+                    className={`relative pl-5 pr-11 py-4 rounded-xl cursor-pointer transition-all duration-300 border text-left w-full bg-transparent font-[inherit] flex flex-col gap-1.5 ${
+                      currentSessionId === session.id
+                        ? 'bg-[var(--bg-card)] border-[var(--border-color)] shadow-[var(--shadow-main)]'
+                        : 'border-transparent hover:bg-white/5 hover:border-white/5'
+                    }`}
+                    aria-label={`Select conversation: ${session.title || 'Conversation'}`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <MessageSquare size={13} className={`shrink-0 mt-1 ${currentSessionId === session.id ? 'text-[var(--brand-accent)]' : 'text-[var(--text-muted)]'}`} />
+                      <h4 className={`font-serif italic text-[0.95rem] leading-[1.35] m-0 line-clamp-2 ${currentSessionId === session.id ? 'font-bold text-[var(--text-main)]' : 'font-medium text-[var(--text-secondary)]'}`}>
+                        {session.title || 'Conversation'}
+                      </h4>
+                    </div>
+                    <p className="pl-5 text-[0.7rem] text-[var(--text-muted)] m-0 font-medium">
+                      {new Date(session.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  </button>
+                  <button
+                    onClick={(e) => handleDeleteSession(e, session.id)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 p-2 bg-transparent hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-500 rounded-lg cursor-pointer border-0 opacity-0 group-hover:opacity-100 transition-all duration-200 z-10"
+                    title="Delete conversation"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               ))
             )}
           </div>
@@ -301,14 +446,6 @@ export const AIChat = () => {
                 </div>
               )}
 
-              {/* Floating call button */}
-              <button
-                onClick={() => setIsVoiceCallOpen(true)}
-                className="fixed bottom-32 right-8 w-14 h-14 rounded-full bg-[var(--brand-solid)] text-[var(--bg-main)] border-0 flex items-center justify-center shadow-[var(--shadow-main)] cursor-pointer z-[90] transition-all duration-300 hover:scale-110 hover:rotate-[5deg] hover:bg-[var(--brand-accent)] hover:text-[var(--brand-solid)]"
-              >
-                <Mic size={24} />
-              </button>
-
               <div ref={messagesEndRef} />
             </div>
           )}
@@ -316,20 +453,66 @@ export const AIChat = () => {
           {/* Fixed input bar */}
           <div className="fixed bottom-8 left-0 lg:left-80 right-0 px-8 lg:px-16 flex flex-col items-center z-[100] transition-all duration-300">
             <div className="relative w-full max-w-[800px]">
-              <input
-                type="text"
-                placeholder="Talk to Aria..."
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                className="w-full px-6 py-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-[1rem] text-[var(--text-main)] outline-none shadow-[var(--shadow-main)]"
-              />
-              <button
-                onClick={handleSend}
-                className="absolute right-4 top-1/2 -translate-y-1/2 bg-transparent border-0 text-[var(--brand-solid)] cursor-pointer"
-              >
-                <Send size={20} />
-              </button>
+              {isRecording ? (
+                <div className="w-full px-6 py-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl flex items-center justify-between shadow-[var(--shadow-main)]">
+                  <div className="flex items-center gap-3">
+                    <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-[var(--text-secondary)] text-[0.9rem] font-medium tracking-wide">
+                      Recording Voice Note: {formatDuration(recordingDuration)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={cancelRecording}
+                      className="bg-transparent border-0 text-red-500 hover:text-red-600 cursor-pointer flex items-center justify-center p-1 rounded-full hover:bg-red-50 dark:hover:bg-red-950/20 transition-all animate-fade-in"
+                      title="Cancel recording"
+                    >
+                      <Trash2 size={20} />
+                    </button>
+                    <button
+                      onClick={stopRecording}
+                      className="w-10 h-10 rounded-full bg-[var(--brand-accent)] text-[var(--bg-main)] hover:bg-[var(--brand-accent-hover)] border-0 flex items-center justify-center cursor-pointer shadow-sm transition-all"
+                      title="Stop and transcribe"
+                    >
+                      <Check size={20} strokeWidth={2.5} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    placeholder={isTranscribing ? "Transcribing voice..." : "Talk to Aria..."}
+                    value={chatInput}
+                    disabled={isTranscribing}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                    className={`w-full px-6 py-5 pr-28 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-[1rem] text-[var(--text-main)] outline-none shadow-[var(--shadow-main)] ${isTranscribing ? 'opacity-50' : ''}`}
+                  />
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                    <button
+                      onClick={startRecording}
+                      disabled={isTranscribing}
+                      className="p-2 bg-transparent border-0 text-[var(--text-secondary)] hover:text-[var(--text-main)] cursor-pointer rounded-full hover:bg-white/5 transition-all"
+                      title="Record voice note"
+                    >
+                      <Mic size={20} />
+                    </button>
+                    <button
+                      onClick={handleSend}
+                      disabled={isTranscribing || !chatInput.trim()}
+                      className={`p-2 bg-transparent border-0 cursor-pointer rounded-full transition-all ${
+                        chatInput.trim() 
+                          ? 'text-[var(--brand-accent)] hover:bg-white/5' 
+                          : 'text-[var(--text-muted)] cursor-not-allowed'
+                      }`}
+                      title="Send message"
+                    >
+                      <Send size={20} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="hidden lg:flex justify-center w-full mt-4 max-w-[800px] text-[0.6rem] text-[var(--text-muted)] tracking-[0.05em]">
               END-TO-END ENCRYPTED SANCTUARY

@@ -2950,6 +2950,17 @@ async def create_chat_session(
     return session
 
 
+@app.delete("/api/v1/ai-chat/sessions/{session_id}")
+async def delete_chat_session(
+    session_id: str, current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    """Delete a chat session and its messages"""
+    success = await asyncio.to_thread(db.delete_chat_session, session_id, current_user["id"])
+    if not success:
+        raise HTTPException(status_code=404, detail="Session not found or delete failed")
+    return {"success": True}
+
+
 @app.get(
     "/api/v1/ai-chat/sessions/{session_id}/messages", response_model=List[AIChatMessage]
 )

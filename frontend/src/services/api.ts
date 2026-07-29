@@ -252,6 +252,23 @@ export const aiChatService = {
     return data
   },
 
+  deleteSession: async (sessionId: string) => {
+    const { data } = await axiosPrivate.delete(`/ai-chat/sessions/${sessionId}`)
+    return data
+  },
+
+  transcribeAudio: async (audioBlob: Blob) => {
+    const formData = new FormData()
+    formData.append('audio_file', audioBlob, 'voice-note.wav')
+    const { data } = await axiosPrivate.post('/ai/voice-chat', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return data
+  },
+
+
   // Streaming generator — kept on native fetch; Axios does not support async generators
   chatStream: async function* (
     messages: unknown,
