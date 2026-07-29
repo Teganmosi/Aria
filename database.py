@@ -528,6 +528,16 @@ class Database:
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
                 """)
+                cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS consents (
+                    id SERIAL PRIMARY KEY,
+                    user_id {id_type} NOT NULL,
+                    document TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    source TEXT DEFAULT 'register',
+                    accepted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+                """)
 
                 # Indexes
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_bible_study_sessions_user_id ON bible_study_sessions (user_id)")
@@ -542,6 +552,7 @@ class Database:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens (user_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_ai_chat_sessions_user_id ON ai_chat_sessions (user_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_ai_chat_messages_session_id ON ai_chat_messages (session_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_consents_user_id ON consents (user_id)")
                 self.__class__._tables_ensured = True
         except Exception:
             logger.exception("Error ensuring tables")
@@ -1490,6 +1501,28 @@ class Database:
             logger.exception("Error searching user memory")
             return []
         return results
+
+    def record_consent(self, user_id: str, document: str, version: str, source: str = "register") -> None:
+        """Record that a user accepted a legal document (terms/privacy) at a given version.
+
+        Idempotent per user+document: later logins/OAuth exchanges don't stack rows.
+        A new document version should be recorded as a fresh row (keeps the audit trail).
+        """
+        try:
+            with self.get_connection() as conn:
+                cur = self._cursor(conn)
+                cur.execute(
+                    """
+                    INSERT INTO consents (user_id, document, version, source)
+                    SELECT %s, %s, %s, %s
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM consents WHERE user_id = %s AND document = %s
+                    )
+                    """,
+                    (user_id, document, version, source, user_id, document),
+                )
+        except Exception:
+            logger.exception("Failed to record consent")
 
     def get_all_profiles(self) -> List[Dict[str, Any]]:
         """Get all profiles from the database"""

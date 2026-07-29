@@ -10,6 +10,8 @@ import { Login } from './pages/Login'
 import { Register } from './pages/Register'
 import { ForgotPassword } from './pages/ForgotPassword'
 import { ResetPassword } from './pages/ResetPassword'
+import { PrivacyPolicy } from './pages/PrivacyPolicy'
+import { TermsOfService } from './pages/TermsOfService'
 
 // Protected App Layout - Eager loaded
 import { AppLayout } from './components/AppLayout'
@@ -169,6 +171,8 @@ function App() {
                 users must also be able to open reset links */}
             <Route path="/forgot-password" element={<PageTransition><ForgotPassword /></PageTransition>} />
             <Route path="/reset-password" element={<PageTransition><ResetPassword /></PageTransition>} />
+            <Route path="/privacy" element={<PageTransition><PrivacyPolicy /></PageTransition>} />
+            <Route path="/terms" element={<PageTransition><TermsOfService /></PageTransition>} />
             <Route path="/teaser" element={<LazyLoad><Teaser /></LazyLoad>} />
 
           {/* Protected App Routes */}

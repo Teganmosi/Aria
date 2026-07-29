@@ -118,7 +118,7 @@ export interface AuthState {
   isLoading: boolean
   checkAuth: () => Promise<void>
   login: (email: string, password: string) => Promise<AuthResponse>
-  register: (email: string, password: string, fullName: string) => Promise<AuthResponse>
+  register: (email: string, password: string, fullName: string, acceptedTerms: boolean) => Promise<AuthResponse>
   logout: () => void
   refreshUser: () => Promise<void>
   exchangeOAuthToken: (accessToken: string, refreshToken?: string) => Promise<AuthResponse>

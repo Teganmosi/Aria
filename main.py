@@ -30,6 +30,10 @@ from slowapi.errors import RateLimitExceeded
 from config import settings
 from models import ForgotPasswordRequest, ResetPasswordRequest
 from auth import supabase_auth_forgot_password, supabase_auth_reset_password
+
+# Bump when the Terms or Privacy Policy change materially; new signups record the
+# current version, and existing users should re-consent to the new version.
+LEGAL_DOCS_VERSION = "1.0"
 from models import (
     UserRegister,
     UserResponse,
@@ -515,6 +519,13 @@ async def reset_password(request: Request, payload: ResetPasswordRequest):
 async def register(request: Request, user_data: UserRegister):
     """Register a new user"""
     from auth import supabase_auth_signup
+
+    if not user_data.accepted_terms:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You must accept the Terms of Service and Privacy Policy to create an account.",
+        )
+
     result = await asyncio.to_thread(
         supabase_auth_signup,
         email=user_data.email,
@@ -527,6 +538,12 @@ async def register(request: Request, user_data: UserRegister):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=result.get("error", "Registration failed"),
         )
+
+    # Audit trail: record acceptance of the current legal documents.
+    new_user_id = (result.get("user") or {}).get("id")
+    if new_user_id:
+        await asyncio.to_thread(db.record_consent, new_user_id, "terms", LEGAL_DOCS_VERSION)
+        await asyncio.to_thread(db.record_consent, new_user_id, "privacy", LEGAL_DOCS_VERSION)
 
     return result
 
@@ -625,6 +642,13 @@ async def oauth_exchange(request_data: OAuthExchangeRequest):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=result.get("error", "OAuth exchange failed"),
         )
+
+    # OAuth users accept the terms implicitly by proceeding; record it once per user.
+    oauth_user_id = (result.get("user") or {}).get("id")
+    if oauth_user_id:
+        await asyncio.to_thread(db.record_consent, oauth_user_id, "terms", LEGAL_DOCS_VERSION, "oauth")
+        await asyncio.to_thread(db.record_consent, oauth_user_id, "privacy", LEGAL_DOCS_VERSION, "oauth")
+
     return result
 
 

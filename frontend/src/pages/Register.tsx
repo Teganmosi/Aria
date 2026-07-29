@@ -31,7 +31,7 @@ export const Register = () => {
 
   const onSubmit = async (values: RegisterFormData) => {
     try {
-      await authRegister(values.email, values.password, values.fullName)
+      await authRegister(values.email, values.password, values.fullName, values.acceptedTerms)
     } catch (err) {
       toast.error((err as Error).message || 'Failed to create account')
     }
@@ -170,7 +170,24 @@ export const Register = () => {
               {errors.confirmPassword && <p className="text-red-600 text-[0.8rem] mt-1">{errors.confirmPassword.message}</p>}
             </div>
 
-            <button type="submit" disabled={isSubmitting} style={{ marginTop: '1rem', width: '100%', padding: '1.25rem', borderRadius: '3rem', border: 'none', background: 'var(--brand-solid)', color: 'var(--bg-main)', fontSize: '1.05rem', fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.2s' }}>
+            <div style={{ marginTop: '1.25rem' }}>
+              <label style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                <input
+                  type="checkbox"
+                  {...register('acceptedTerms')}
+                  style={{ marginTop: '0.15rem', width: '16px', height: '16px', accentColor: 'var(--brand-solid)', cursor: 'pointer', flexShrink: 0 }}
+                />
+                <span>
+                  I agree to Aria&apos;s{' '}
+                  <Link to="/terms" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-main)', fontWeight: 600 }}>Terms of Service</Link>
+                  {' '}and{' '}
+                  <Link to="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--text-main)', fontWeight: 600 }}>Privacy Policy</Link>
+                </span>
+              </label>
+              {errors.acceptedTerms && <p className="text-red-600 text-[0.8rem] mt-1">{errors.acceptedTerms.message}</p>}
+            </div>
+
+            <button type="submit" disabled={isSubmitting} style={{ marginTop: '1.5rem', width: '100%', padding: '1.25rem', borderRadius: '3rem', border: 'none', background: 'var(--brand-solid)', color: 'var(--bg-main)', fontSize: '1.05rem', fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.2s' }}>
               {isSubmitting ? 'Creating Account...' : 'Create Account'}
             </button>
           </form>

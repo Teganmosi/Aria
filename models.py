@@ -439,6 +439,7 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8)
     full_name: Optional[str] = None
+    accepted_terms: bool = False
 
 
 class ForgotPasswordRequest(BaseModel):

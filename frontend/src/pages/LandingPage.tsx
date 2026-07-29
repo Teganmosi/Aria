@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { MessageSquare, Mic, BookOpen, Calendar, ArrowRight, Play, Sparkles } from 'lucide-react'
 import { AnimatedBackground, ThemeToggle } from '../components/ui/SharedComponents'
 import InteractiveCanvas from '../components/ui/InteractiveCanvas'
@@ -556,6 +556,8 @@ export const LandingPage = () => {
               </h5>
               <div className="flex flex-col gap-3 text-[0.85rem] text-[var(--text-secondary)]">
                 <a href="#about" className="l-nl">About Us</a>
+                <Link to="/privacy" className="l-nl">Privacy Policy</Link>
+                <Link to="/terms" className="l-nl">Terms of Service</Link>
               </div>
             </div>
           </div>

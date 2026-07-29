@@ -19,11 +19,12 @@ export const authService = {
     return data
   },
 
-  register: async (email: string, password: string, fullName: string) => {
+  register: async (email: string, password: string, fullName: string, acceptedTerms: boolean) => {
     const { data } = await axiosBase.post('/auth/register', {
       email,
       password,
       full_name: fullName,
+      accepted_terms: acceptedTerms,
     })
     return data
   },

@@ -62,8 +62,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     return response
   },
 
-  register: async (email: string, password: string, fullName: string): Promise<AuthResponse> => {
-    const response: AuthResponse = await authService.register(email, password, fullName)
+  register: async (email: string, password: string, fullName: string, acceptedTerms: boolean): Promise<AuthResponse> => {
+    const response: AuthResponse = await authService.register(email, password, fullName, acceptedTerms)
     if (response.access_token) {
       setTokens(response.access_token, response.refresh_token ?? '')
       const userData = response.user ?? response.data?.user ?? ({ email, full_name: fullName } as User)
