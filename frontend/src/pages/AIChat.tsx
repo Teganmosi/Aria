@@ -271,7 +271,7 @@ export const AIChat = () => {
       `}</style>
 
       {/* Header */}
-      <header className="px-8 py-6 lg:px-12 lg:py-8 flex justify-between items-center z-10 shrink-0">
+      <header className="px-4 py-4 md:px-8 md:py-6 lg:px-12 lg:py-8 flex justify-between items-center z-10 shrink-0">
         <div className="flex items-center gap-4">
           <button
             className="flex lg:hidden bg-transparent border-0 text-[var(--text-secondary)] cursor-pointer"
@@ -279,19 +279,19 @@ export const AIChat = () => {
           >
             <History size={20} />
           </button>
-          <h1 className="font-serif text-[1.25rem] text-[var(--text-secondary)] font-medium m-0">{sessionTitle}</h1>
+          <h1 className="font-serif text-[1.25rem] text-[var(--text-secondary)] font-medium m-0 line-clamp-1">{sessionTitle}</h1>
         </div>
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-3">
           <button
             onClick={() => setIsCustomizing(true)}
-            className="bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10 px-4 py-2 rounded-full flex items-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-main)] text-[0.8rem] font-semibold cursor-pointer tracking-[0.05em] transition-all duration-300 shadow-[var(--shadow-main)]"
+            className="bg-[var(--bg-card)] border border-[var(--border-color)] hover:bg-[var(--bg-alt)] hover:border-[var(--text-muted)] p-2.5 lg:px-4 lg:py-2 rounded-full flex items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-main)] text-[0.8rem] font-semibold cursor-pointer tracking-[0.05em] transition-all duration-300 shadow-[var(--shadow-main)]"
           >
             <Sparkles size={14} className="text-[var(--brand-accent)] animate-pulse" />
             <span className="hidden lg:block">CUSTOMIZE ARIA</span>
           </button>
           <button
             onClick={() => setIsVoiceCallOpen(true)}
-            className="bg-[var(--brand-accent)] text-[var(--bg-main)] hover:bg-[var(--brand-accent-hover)] px-4 py-2 rounded-full flex items-center gap-2 text-[0.8rem] font-bold cursor-pointer tracking-[0.05em] transition-all duration-300 shadow-[0_4px_20px_rgba(245,206,77,0.25)] hover:scale-105"
+            className="bg-[var(--brand-accent)] text-[#0B192C] hover:bg-[var(--brand-accent-hover)] p-2.5 lg:px-4 lg:py-2 rounded-full flex items-center justify-center gap-2 text-[0.8rem] font-bold cursor-pointer tracking-[0.05em] transition-all duration-300 shadow-[0_4px_20px_rgba(245,206,77,0.25)] hover:scale-105"
           >
             <Phone size={14} />
             <span className="hidden lg:block">CALL ARIA</span>
@@ -327,7 +327,7 @@ export const AIChat = () => {
           <div className="flex flex-col gap-3">
             <button
               onClick={() => { setCurrentSessionId(null); setMessages([]); setSessionTitle('New Conversation'); setShowHistory(false) }}
-              className="w-full p-4 bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 rounded-xl text-[var(--text-main)] hover:text-[var(--brand-accent)] text-[0.8rem] font-bold tracking-wide cursor-pointer mb-4 flex items-center justify-center gap-2 transition-all duration-300 shadow-[var(--shadow-main)] hover:scale-[1.02]"
+              className="w-full p-4 bg-[var(--bg-card)] border border-[var(--border-color)] hover:bg-[var(--bg-alt)] hover:border-[var(--brand-accent)] rounded-xl text-[var(--text-main)] hover:text-[var(--brand-accent)] text-[0.8rem] font-bold tracking-wide cursor-pointer mb-4 flex items-center justify-center gap-2 transition-all duration-300 shadow-[var(--shadow-main)] hover:scale-[1.02]"
             >
               <Plus size={16} />
               NEW REFLECTION
@@ -349,7 +349,7 @@ export const AIChat = () => {
                     className={`relative pl-5 pr-11 py-4 rounded-xl cursor-pointer transition-all duration-300 border text-left w-full bg-transparent font-[inherit] flex flex-col gap-1.5 ${
                       currentSessionId === session.id
                         ? 'bg-[var(--bg-card)] border-[var(--border-color)] shadow-[var(--shadow-main)]'
-                        : 'border-transparent hover:bg-white/5 hover:border-white/5'
+                        : 'border-transparent hover:bg-[var(--bg-card)] hover:border-[var(--border-color)]'
                     }`}
                     aria-label={`Select conversation: ${session.title || 'Conversation'}`}
                   >
@@ -372,7 +372,7 @@ export const AIChat = () => {
                   </button>
                 </div>
               ))
-            )}
+            ) }
           </div>
         </div>
 
@@ -390,7 +390,7 @@ export const AIChat = () => {
                   onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setIsVoiceCallOpen(true)}
                   aria-label="Tap to call Aria"
                 >
-                  <div className="w-14 h-14 bg-[var(--brand-solid)] text-[var(--bg-main)] rounded-full flex items-center justify-center transition-all duration-300 group-hover:bg-[var(--brand-accent)] group-hover:text-[var(--brand-solid)] group-hover:rotate-[15deg]">
+                  <div className="w-14 h-14 bg-[var(--brand-solid)] text-[var(--bg-main)] rounded-full flex items-center justify-center transition-all duration-300 group-hover:bg-[var(--brand-accent)] group-hover:text-[#0B192C] group-hover:rotate-[15deg]">
                     <Mic size={24} />
                   </div>
                   <span className="text-[0.65rem] tracking-[0.15em] text-[var(--text-secondary)] font-extrabold">TAP TO CALL</span>
@@ -411,13 +411,13 @@ export const AIChat = () => {
               <div className="flex gap-3 flex-wrap justify-center">
                 <button
                   onClick={() => setChatInput("I'd like to pray for strength")}
-                  className="bg-[var(--bg-card)] border border-[var(--border-color)] px-6 py-3 rounded-[2rem] text-[0.8rem] text-[var(--text-main)] font-semibold cursor-pointer"
+                  className="bg-[var(--bg-card)] border border-[var(--border-color)] px-6 py-3 rounded-[2rem] text-[0.8rem] text-[var(--text-main)] hover:bg-[var(--bg-alt)] hover:border-[var(--brand-accent)] hover:text-[var(--brand-accent)] font-semibold cursor-pointer transition-all duration-300"
                 >
                   ASK FOR PRAYER
                 </button>
                 <button
                   onClick={() => setChatInput("Explain Hebrews 11:1")}
-                  className="bg-[var(--bg-card)] border border-[var(--border-color)] px-6 py-3 rounded-[2rem] text-[0.8rem] text-[var(--text-main)] font-semibold cursor-pointer"
+                  className="bg-[var(--bg-card)] border border-[var(--border-color)] px-6 py-3 rounded-[2rem] text-[0.8rem] text-[var(--text-main)] hover:bg-[var(--bg-alt)] hover:border-[var(--brand-accent)] hover:text-[var(--brand-accent)] font-semibold cursor-pointer transition-all duration-300"
                 >
                   SCRIPTURE CONTEXT
                 </button>
@@ -451,10 +451,10 @@ export const AIChat = () => {
           )}
 
           {/* Fixed input bar */}
-          <div className="fixed bottom-8 left-0 lg:left-80 right-0 px-8 lg:px-16 flex flex-col items-center z-[100] transition-all duration-300">
+          <div className="fixed bottom-4 sm:bottom-8 left-0 lg:left-80 right-0 px-4 sm:px-8 lg:px-16 flex flex-col items-center z-[100] transition-all duration-300">
             <div className="relative w-full max-w-[800px]">
               {isRecording ? (
-                <div className="w-full px-6 py-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl flex items-center justify-between shadow-[var(--shadow-main)]">
+                <div className="w-full px-4 sm:px-6 py-4 sm:py-5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl flex items-center justify-between shadow-[var(--shadow-main)]">
                   <div className="flex items-center gap-3">
                     <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
                     <span className="text-[var(--text-secondary)] text-[0.9rem] font-medium tracking-wide">
@@ -471,7 +471,7 @@ export const AIChat = () => {
                     </button>
                     <button
                       onClick={stopRecording}
-                      className="w-10 h-10 rounded-full bg-[var(--brand-accent)] text-[var(--bg-main)] hover:bg-[var(--brand-accent-hover)] border-0 flex items-center justify-center cursor-pointer shadow-sm transition-all"
+                      className="w-10 h-10 rounded-full bg-[var(--brand-accent)] text-[#0B192C] hover:bg-[var(--brand-accent-hover)] border-0 flex items-center justify-center cursor-pointer shadow-sm transition-all"
                       title="Stop and transcribe"
                     >
                       <Check size={20} strokeWidth={2.5} />
@@ -487,13 +487,13 @@ export const AIChat = () => {
                     disabled={isTranscribing}
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                    className={`w-full px-6 py-5 pr-28 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-[1rem] text-[var(--text-main)] outline-none shadow-[var(--shadow-main)] ${isTranscribing ? 'opacity-50' : ''}`}
+                    className={`w-full px-4 sm:px-6 py-4 sm:py-5 pr-24 sm:pr-28 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-[0.95rem] sm:text-[1rem] text-[var(--text-main)] outline-none shadow-[var(--shadow-main)] ${isTranscribing ? 'opacity-50' : ''}`}
                   />
                   <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
                     <button
                       onClick={startRecording}
                       disabled={isTranscribing}
-                      className="p-2 bg-transparent border-0 text-[var(--text-secondary)] hover:text-[var(--text-main)] cursor-pointer rounded-full hover:bg-white/5 transition-all"
+                      className="p-2 bg-transparent border-0 text-[var(--text-secondary)] hover:text-[var(--text-main)] cursor-pointer rounded-full hover:bg-[var(--bg-alt)] transition-all"
                       title="Record voice note"
                     >
                       <Mic size={20} />
@@ -503,7 +503,7 @@ export const AIChat = () => {
                       disabled={isTranscribing || !chatInput.trim()}
                       className={`p-2 bg-transparent border-0 cursor-pointer rounded-full transition-all ${
                         chatInput.trim() 
-                          ? 'text-[var(--brand-accent)] hover:bg-white/5' 
+                          ? 'text-[var(--brand-accent)] hover:bg-[var(--bg-alt)]' 
                           : 'text-[var(--text-muted)] cursor-not-allowed'
                       }`}
                       title="Send message"
@@ -525,8 +525,8 @@ export const AIChat = () => {
 
       {/* Customization modal */}
       {isCustomizing && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-[15px] z-[100] flex items-center justify-center p-8">
-          <div className="w-full max-w-[500px] bg-[var(--bg-main)] rounded-[32px] p-12 border border-[var(--border-color)]">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-[15px] z-[100] flex items-center justify-center p-4 sm:p-8">
+          <div className="w-full max-w-[500px] bg-[var(--bg-main)] rounded-[32px] p-6 sm:p-12 border border-[var(--border-color)]">
             <h2 className="font-serif text-[1.75rem] text-[var(--text-main)] mb-8">Customize Aria</h2>
 
             <div className="mb-6">
@@ -572,13 +572,13 @@ export const AIChat = () => {
             <div className="flex gap-4">
               <button
                 onClick={handleSaveCustomization}
-                className="flex-1 p-4 bg-[var(--brand-solid)] text-[var(--bg-main)] border-0 rounded-xl font-semibold cursor-pointer"
+                className="flex-1 p-4 bg-[var(--brand-accent)] text-[#0B192C] hover:bg-[var(--brand-accent-hover)] border-0 rounded-xl font-bold cursor-pointer transition-all"
               >
                 UPDATE ARIA
               </button>
               <button
                 onClick={() => setIsCustomizing(false)}
-                className="flex-1 p-4 bg-transparent border border-[var(--border-color)] text-[var(--text-secondary)] rounded-xl font-semibold cursor-pointer"
+                className="flex-1 p-4 bg-transparent border border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-main)] hover:border-[var(--text-muted)] rounded-xl font-semibold cursor-pointer transition-all"
               >
                 CLOSE
               </button>
