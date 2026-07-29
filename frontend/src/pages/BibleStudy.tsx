@@ -134,10 +134,10 @@ export const BibleStudy = () => {
     } finally { setIsLoading(false) }
   }
 
-  const sendMessage = async () => {
-    if (!userMessage.trim()) return
-    const userMsg = userMessage.trim()
-    setUserMessage('')
+  const sendMessage = async (presetText?: string) => {
+    const userMsg = (presetText ?? userMessage).trim()
+    if (!userMsg) return
+    if (presetText === undefined) setUserMessage('')
     setMessages(prev => [...prev, { role: 'user', content: userMsg }])
     setIsLoading(true)
     try {
@@ -154,6 +154,8 @@ export const BibleStudy = () => {
         await bibleService.createStudyMessage(sessionId, 'assistant', aiResponse)
       }
     } catch (err) {
+      console.error('BibleStudy: message failed, showing fallback:', err)
+      toast.error('Aria had trouble responding — showing a gentle fallback.')
       setMessages(prev => [...prev, { role: 'companion', content: "I'm reflecting on what you said. Could you share a bit more of your heart on this?" }])
     } finally { setIsLoading(false) }
   }
@@ -298,13 +300,13 @@ export const BibleStudy = () => {
                     <div className="study-actions">
                       <p className="action-label">QUICK CONTEMPLATION</p>
                       <div className="action-btns">
-                        <button onClick={() => { setUserMessage("Summarize the key theological message here."); }} className="action-pill">
+                        <button onClick={() => sendMessage("Summarize the key theological message here.")} className="action-pill">
                           <Sparkles size={14} /> THEOLOGICAL SUMMARY
                         </button>
-                        <button onClick={() => { setUserMessage("How can I apply this to my life practically?"); }} className="action-pill">
+                        <button onClick={() => sendMessage("How can I apply this to my life practically?")} className="action-pill">
                           <Heart size={14} /> PRACTICAL APPLICATION
                         </button>
-                        <button onClick={() => { setUserMessage("Describe the historical context of this scripture."); }} className="action-pill">
+                        <button onClick={() => sendMessage("Describe the historical context of this scripture.")} className="action-pill">
                           <Clock size={14} /> HISTORICAL CONTEXT
                         </button>
                       </div>
@@ -384,7 +386,7 @@ export const BibleStudy = () => {
                         type="text"
                         value={userMessage}
                         onChange={(e) => setUserMessage(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                        onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
                         placeholder="Share your reflection or ask Aria..."
                         disabled={isLoading}
                       />
@@ -434,7 +436,7 @@ export const BibleStudy = () => {
         @media (max-width: 480px) { .study-content-wrapper { padding: 0.75rem; } .hero-branding h1 { font-size: 1.75rem; } .sparkle-icon { width: 48px; height: 48px; } .session-title { font-size: 1.25rem; } .study-badge { font-size: 0.6rem; padding: 0.3rem 0.6rem; } .scripture-text { font-size: 1rem; } .msg-content-bubble { padding: 0.75rem 1rem; font-size: 0.875rem; } .aria-avatar, .user-avatar { width: 32px; height: 32px; } .input-outer input { font-size: 0.875rem; } .send-circle { width: 36px; height: 36px; } .tag-btn { font-size: 0.75rem; padding: 0.35rem 0.85rem; } }
         .content-sidebar { display: flex; flex-direction: column; gap: 1.5rem; height: 100%; overflow-y: auto; }
         .scripture-card { padding: 2.5rem; border-radius: 32px; position: relative; overflow: hidden; background: var(--bg-card); }
-        .card-texture { position: absolute; inset: 0; background: url('https://www.transparenttextures.com/patterns/natural-paper.png'); opacity: 0.05; pointer-events: none; }
+        .card-texture { position: absolute; inset: 0; pointer-events: none; }
         .quote-icon { color: var(--brand-accent); margin-bottom: 1.5rem; opacity: 0.4; }
         .scripture-text { font-size: 1.4rem; line-height: 1.5; color: var(--text-main); margin-bottom: 1rem; }
         .scripture-ref { font-size: 0.8rem; font-weight: 700; color: var(--brand-accent); letter-spacing: 0.1em; }

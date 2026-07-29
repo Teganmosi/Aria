@@ -13,6 +13,7 @@ import { toast } from 'sonner'
 import { useAuth } from '../hooks/useAuth'
 import { profileService } from '../services/api'
 import { AnimatedBackground, ThemeToggle } from '../components/ui/SharedComponents'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 
 const SettingsCard = ({ icon, title, subtitle, action, destructive = false }: { icon: React.ReactNode; title: string; subtitle: string; action: () => void; destructive?: boolean }) => {
   return (
@@ -45,6 +46,7 @@ const SettingsCard = ({ icon, title, subtitle, action, destructive = false }: { 
 export const Profile = () => {
   const { user, logout, refreshUser } = useAuth()
   const [displayName, setDisplayName] = useState(user?.full_name || '')
+  const [confirmingClearMemory, setConfirmingClearMemory] = useState(false)
   const [email] = useState(user?.email || '')
   const [avatarUrl, setAvatarUrl] = useState(user?.avatar_url || '')
   const [ariaCustomPrompt, setAriaCustomPrompt] = useState(user?.aria_custom_prompt || '')
@@ -130,14 +132,14 @@ export const Profile = () => {
           <SettingsCard
             icon={<BookOpen size={20} />}
             title="Bible Translation"
-            subtitle="Current: King James Version (KJV)"
-            action={() => toast.info('Translation settings coming soon!')}
+            subtitle="Current: King James Version (KJV) — more translations coming soon"
+            action={() => toast.info('Translation settings are coming soon!')}
           />
           <SettingsCard
             icon={<Clock size={20} />}
             title="Devotion Reminders"
-            subtitle="Adjust your daily morning reflection time"
-            action={() => toast.info('Notification settings coming soon!')}
+            subtitle="Daily reflection reminders — coming soon"
+            action={() => toast.info('Notification settings are coming soon!')}
           />
         </div>
 
@@ -179,8 +181,8 @@ export const Profile = () => {
           <SettingsCard
             icon={<ShieldCheck size={20} />}
             title="Privacy & Security"
-            subtitle="Manage your password and session data"
-            action={() => toast.info('Security settings coming soon!')}
+            subtitle="Password and session controls — coming soon"
+            action={() => toast.info('Security settings are coming soon!')}
           />
         </div>
 
@@ -261,12 +263,25 @@ export const Profile = () => {
                 <label htmlFor="personalContextInput" style={{ display: 'block', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', margin: 0 }}>YOUR PERSONAL CONTEXT</label>
                 <button
                   type="button"
-                  onClick={() => { if(confirm("Clear all of Aria's remembered context?")) setAriaPersonalContext(''); }}
+                  onClick={() => setConfirmingClearMemory(true)}
                   style={{ background: 'transparent', border: 'none', color: '#ef4444', fontSize: '0.65rem', fontWeight: 700, cursor: 'pointer' }}
                 >
                   CLEAR MEMORY
                 </button>
               </div>
+              <ConfirmDialog
+                open={confirmingClearMemory}
+                danger
+                title="Clear Aria's memory?"
+                description="This erases the personal context you've shared with Aria. Your notes, journal, and conversations are not affected."
+                confirmLabel="Clear Memory"
+                onCancel={() => setConfirmingClearMemory(false)}
+                onConfirm={() => {
+                  setAriaPersonalContext('')
+                  setConfirmingClearMemory(false)
+                  toast.success("Memory cleared — save your profile to make it stick.")
+                }}
+              />
               <textarea
                 id="personalContextInput"
                 placeholder="Share things you want Aria to know about you, your journey, or your current life situation."

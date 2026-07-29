@@ -74,7 +74,7 @@ export const Login = () => {
   }
 
   return (
-    <div className="responsive-stack flex min-h-screen w-screen overflow-x-hidden bg-[var(--bg-main)]">
+    <div className="responsive-stack flex min-h-screen w-full overflow-x-hidden bg-[var(--bg-main)]">
 
       {/* Left Panel - Hero Image */}
       <div
@@ -181,7 +181,6 @@ export const Login = () => {
             </div>
             <div className="flex gap-4">
               <button type="button" onClick={handleGoogleLogin} style={{ flex: 1, padding: '1rem', background: 'var(--input-bg)', border: 'none', borderRadius: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>Google</button>
-              <button type="button" style={{ flex: 1, padding: '1rem', background: 'var(--input-bg)', border: 'none', borderRadius: '2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', cursor: 'pointer', fontWeight: 600, color: 'var(--text-main)', fontSize: '0.95rem' }}>Apple</button>
             </div>
             <p className="mt-12 text-base text-[var(--text-secondary)]">
               New to the sanctuary? <Link to="/register" style={{ color: 'var(--text-main)', fontWeight: 600, textDecoration: 'none', borderBottom: '1px solid var(--text-main)', paddingBottom: '2px', marginLeft: '0.5rem' }}>Create an account</Link>

@@ -133,7 +133,7 @@ export const EmotionalSupport = () => {
       {mode === 'select' ? (
         <div style={{ flex: 1, padding: isMobile ? '0 1rem 2rem' : '0 3rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}>
 
-          <div style={{ textAlign: 'center', maxWidth: '700px', marginBottom: isMobile ? '2rem' : '4rem', paddingHorizontal: isMobile ? '0.5rem' : '0' }}>
+          <div style={{ textAlign: 'center', maxWidth: '700px', marginBottom: isMobile ? '2rem' : '4rem', paddingLeft: isMobile ? '0.5rem' : '0', paddingRight: isMobile ? '0.5rem' : '0' }}>
             <h2 className="font-serif" style={{ fontSize: isMobile ? '1.75rem' : '3rem', color: 'var(--text-main)', marginBottom: '1rem', lineHeight: 1.2 }}>
               How does your <span style={{ fontStyle: 'italic' }}>soul</span> feel today?
             </h2>
@@ -194,7 +194,7 @@ export const EmotionalSupport = () => {
 
           {/* Chat View */}
           <div style={{ flex: 1, padding: isMobile ? '0 1rem 10rem' : '0 4rem 14rem', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: isMobile ? '1rem' : '2rem' }}>
-            <div style={{ alignSelf: 'center', textAlign: 'center', marginBottom: isMobile ? '1.5rem' : '3rem', maxWidth: '500px', paddingHorizontal: isMobile ? '0.5rem' : '0' }}>
+            <div style={{ alignSelf: 'center', textAlign: 'center', marginBottom: isMobile ? '1.5rem' : '3rem', maxWidth: '500px', paddingLeft: isMobile ? '0.5rem' : '0', paddingRight: isMobile ? '0.5rem' : '0' }}>
               <div style={{ color: selectedSituationInfo?.color, marginBottom: '0.75rem' }}>{selectedSituationInfo?.icon}</div>
               <h4 style={{ fontSize: '0.6rem', letterSpacing: '0.2em', color: 'var(--text-muted)', fontWeight: 800 }}>NOW REFLECTING ON</h4>
               <p className="font-serif" style={{ fontSize: isMobile ? '1.2rem' : '1.5rem', color: 'var(--text-main)', fontStyle: 'italic' }}>{selectedSituationInfo?.label}</p>
@@ -226,14 +226,14 @@ export const EmotionalSupport = () => {
           </div>
 
           {/* Fixed Floating Input Area */}
-          <div style={{ position: 'fixed', bottom: isMobile ? '1rem' : '3rem', left: isMobile ? '0.5rem' : 'auto', right: isMobile ? '0.5rem' : 'auto', padding: isMobile ? '0 0.5rem' : '0 4rem', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100, width: isMobile ? 'calc(100% - 1rem)' : 'calc(100% - 240px - 4rem)' }}>
+          <div style={{ position: 'fixed', bottom: isMobile ? '1rem' : '3rem', left: isMobile ? '0.5rem' : 'auto', right: isMobile ? '0.5rem' : 'auto', padding: isMobile ? '0 0.5rem' : '0 4rem', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100, width: isMobile ? 'calc(100% - 1rem)' : '100%' }}>
             <div style={{ position: 'relative', width: '100%', maxWidth: '900px' }}>
               <input
                 type="text"
                 placeholder={isMobile ? "Share your thoughts..." : "Share what is on your soul..."}
                 value={userMessage}
                 onChange={(e) => setUserMessage(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
                 style={{
                   width: '100%',
                   padding: isMobile ? '1.25rem 3rem 1.25rem 1.25rem' : '1.75rem 2rem',

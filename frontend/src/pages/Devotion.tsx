@@ -341,7 +341,7 @@ export const Devotion = () => {
 
       {/* Fixed Floating Input (only in teaching mode) */}
       {mode === 'teaching' && (
-        <div style={{ position: 'fixed', bottom: '3rem', left: 'auto', right: 'auto', padding: '0 4rem', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100, width: 'calc(100% - 240px - 4rem)' }}>
+        <div style={{ position: 'fixed', bottom: '3rem', left: 'auto', right: 'auto', padding: '0 4rem', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 100, width: '100%' }}>
           <div style={{ display: 'flex', gap: '1rem', width: '100%', maxWidth: '850px' }}>
             <div style={{ position: 'relative', flex: 1 }}>
               <input
@@ -349,7 +349,7 @@ export const Devotion = () => {
                 placeholder="Reflect on this teaching..."
                 value={userMessage}
                 onChange={(e) => setUserMessage(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
                 style={{
                   width: '100%', padding: '1.5rem 2rem', background: 'var(--bg-card)',
                   border: '1px solid var(--border-color)', borderRadius: '24px',

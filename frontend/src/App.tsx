@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, type ReactNode } from 'react'
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Toaster } from 'sonner'
 import { useAuthStore } from './store/auth-store'
@@ -8,6 +8,8 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 // Public Pages - Eager loaded for fast initial render
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
+import { ForgotPassword } from './pages/ForgotPassword'
+import { ResetPassword } from './pages/ResetPassword'
 
 // Protected App Layout - Eager loaded
 import { AppLayout } from './components/AppLayout'
@@ -116,6 +118,34 @@ const PublicRoute = ({ children }: { children: ReactNode }) => {
   return <>{children}</>
 }
 
+const NotFound = () => (
+  <div className="min-h-screen flex flex-col items-center justify-center gap-5 bg-[var(--bg-main)] px-6 text-center">
+    <span
+      className="font-serif"
+      style={{ fontStyle: 'italic', fontSize: '2.5rem', fontWeight: 700, color: 'var(--text-main)' }}
+    >
+      Page not found
+    </span>
+    <p style={{ color: 'var(--text-secondary)', maxWidth: '360px', lineHeight: 1.65, margin: 0 }}>
+      The page you're looking for doesn't exist or has moved. Let's get you back to still waters.
+    </p>
+    <Link
+      to="/"
+      style={{
+        padding: '0.8rem 2.25rem',
+        borderRadius: '3rem',
+        background: 'var(--brand-solid)',
+        color: 'var(--bg-main)',
+        fontWeight: 600,
+        fontSize: '0.9rem',
+        textDecoration: 'none',
+      }}
+    >
+      Return Home
+    </Link>
+  </div>
+)
+
 function App() {
   const checkAuth = useAuthStore((state) => state.checkAuth)
   const location = useLocation()
@@ -125,15 +155,21 @@ function App() {
   }, [checkAuth])
 
   return (
-    <ErrorBoundary showReset>
+    <>
+      {/* Toaster lives outside the boundary so error-triggered toasts survive a catch */}
       <Toaster position="top-right" richColors closeButton />
-      <AnimatePresence mode="wait" initial={false}>
-        <Routes location={location} key={location.pathname}>
-          {/* Public Routes */}
-          <Route path="/" element={<PublicRoute><LazyLoad><PageTransition><LandingPage /></PageTransition></LazyLoad></PublicRoute>} />
-          <Route path="/login" element={<PublicRoute><PageTransition><Login /></PageTransition></PublicRoute>} />
-          <Route path="/register" element={<PublicRoute><PageTransition><Register /></PageTransition></PublicRoute>} />
-          <Route path="/teaser" element={<LazyLoad><Teaser /></LazyLoad>} />
+      <ErrorBoundary showReset>
+        <AnimatePresence mode="wait" initial={false}>
+          <Routes location={location} key={location.pathname}>
+            {/* Public Routes */}
+            <Route path="/" element={<PublicRoute><LazyLoad><PageTransition><LandingPage /></PageTransition></LazyLoad></PublicRoute>} />
+            <Route path="/login" element={<PublicRoute><PageTransition><Login /></PageTransition></PublicRoute>} />
+            <Route path="/register" element={<PublicRoute><PageTransition><Register /></PageTransition></PublicRoute>} />
+            {/* Password recovery — deliberately NOT wrapped in PublicRoute: signed-in
+                users must also be able to open reset links */}
+            <Route path="/forgot-password" element={<PageTransition><ForgotPassword /></PageTransition>} />
+            <Route path="/reset-password" element={<PageTransition><ResetPassword /></PageTransition>} />
+            <Route path="/teaser" element={<LazyLoad><Teaser /></LazyLoad>} />
 
           {/* Protected App Routes */}
           <Route path="/app" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
@@ -149,11 +185,12 @@ function App() {
             <Route path="profile" element={<LazyLoad><Profile /></LazyLoad>} />
           </Route>
 
-          {/* Catch all */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </AnimatePresence>
-    </ErrorBoundary>
+            {/* Catch all */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AnimatePresence>
+      </ErrorBoundary>
+    </>
   )
 }
 

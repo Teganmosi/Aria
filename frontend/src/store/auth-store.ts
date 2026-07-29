@@ -29,15 +29,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: initialUser,
   isAuthenticated: !!initialToken,
   isLoading: !!initialToken, // If token exists, load in background. If not, stop loading.
-  showAuthModal: !initialToken,
-
-  setShowAuthModal: (show: boolean) => set({ showAuthModal: show }),
 
   checkAuth: async () => {
     const token = localStorage.getItem('authToken')
     if (!token) {
       localStorage.removeItem('authUser')
-      set({ user: null, isAuthenticated: false, isLoading: false, showAuthModal: true })
+      set({ user: null, isAuthenticated: false, isLoading: false })
       return
     }
     try {
@@ -48,7 +45,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       clearTokens()
       clearTtsAudioTokenCache()
       localStorage.removeItem('authUser')
-      set({ user: null, isAuthenticated: false, showAuthModal: true })
+      set({ user: null, isAuthenticated: false })
     } finally {
       set({ isLoading: false })
     }
@@ -60,7 +57,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       setTokens(response.access_token, response.refresh_token ?? '')
       const userData = response.user ?? response.data?.user ?? ({} as User)
       localStorage.setItem('authUser', JSON.stringify(userData))
-      set({ user: userData, isAuthenticated: true, showAuthModal: false })
+      set({ user: userData, isAuthenticated: true })
     }
     return response
   },
@@ -71,16 +68,22 @@ export const useAuthStore = create<AuthState>((set) => ({
       setTokens(response.access_token, response.refresh_token ?? '')
       const userData = response.user ?? response.data?.user ?? ({ email, full_name: fullName } as User)
       localStorage.setItem('authUser', JSON.stringify(userData))
-      set({ user: userData, isAuthenticated: true, showAuthModal: false })
+      set({ user: userData, isAuthenticated: true })
     }
     return response
   },
 
-  logout: () => {
+  logout: async () => {
+    try {
+      // Invalidate the refresh token server-side so a stolen token can't outlive logout.
+      await authService.logout()
+    } catch {
+      // Server-side invalidation is best-effort — always complete local logout.
+    }
     clearTokens()
     clearTtsAudioTokenCache()
     localStorage.removeItem('authUser')
-    set({ user: null, isAuthenticated: false, showAuthModal: true })
+    set({ user: null, isAuthenticated: false })
   },
 
   refreshUser: async () => {
@@ -99,7 +102,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       setTokens(response.access_token, response.refresh_token ?? refreshToken ?? '')
       const userData = response.user ?? response.data?.user ?? ({} as User)
       localStorage.setItem('authUser', JSON.stringify(userData))
-      set({ user: userData, isAuthenticated: true, showAuthModal: false })
+      set({ user: userData, isAuthenticated: true })
     }
     return response
   },

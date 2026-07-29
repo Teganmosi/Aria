@@ -28,6 +28,27 @@ export const authService = {
     return data
   },
 
+  forgotPassword: async (email: string, redirectTo: string) => {
+    const { data } = await axiosBase.post('/auth/forgot-password', {
+      email,
+      redirect_to: redirectTo,
+    })
+    return data
+  },
+
+  resetPassword: async (
+    newPassword: string,
+    recovery: { code?: string | null; accessToken?: string | null; refreshToken?: string | null }
+  ) => {
+    const { data } = await axiosBase.post('/auth/reset-password', {
+      new_password: newPassword,
+      code: recovery.code,
+      access_token: recovery.accessToken,
+      refresh_token: recovery.refreshToken,
+    })
+    return data
+  },
+
   getMe: async () => {
     const { data } = await axiosPrivate.get('/auth/me')
     return data

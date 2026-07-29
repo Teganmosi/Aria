@@ -792,13 +792,15 @@ export const Bible = () => {
         .verse-text { font-size: 1.2rem; line-height: 1.7; flex: 1; color: var(--text-main); }
         .verse-actions { display: flex; gap: 0.5rem; opacity: 0; transition: opacity 0.2s; }
         .verse-card:hover .verse-actions { opacity: 1; }
+        /* Touch devices have no hover — actions must always be visible */
+        @media (hover: none) { .verse-actions { opacity: 1; } }
         .verse-action { width: 36px; height: 36px; border-radius: 50%; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
         .verse-action:hover { color: var(--brand-accent); background: var(--bg-card); border-color: var(--brand-accent); }
         .verse-action.saved { color: var(--brand-accent); border-color: var(--brand-accent); background: var(--bg-card); }
         .reading-footer-nav { display: flex; align-items: center; justify-content: space-between; padding: 0.875rem 1.25rem; border-radius: 100px; background: var(--glass-bg); backdrop-filter: blur(20px); border: 1px solid var(--border-color); gap: 0.5rem; }
         .nav-btn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.75rem; padding: 0.75rem; background: none; border: none; color: var(--text-main); font-size: 0.95rem; font-weight: 600; cursor: pointer; border-radius: 100px; transition: all 0.2s; }
         .nav-btn:hover:not(:disabled) { background: var(--bg-hover); } .nav-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        .ai-insight-popup { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); width: 450px; padding: 2rem; border-radius: 24px; z-index: 100; background: var(--bg-card); border: 1px solid var(--brand-accent); box-shadow: var(--shadow-main); animation: slideUp 0.3s ease-out; }
+        .ai-insight-popup { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%); width: 450px; max-width: calc(100vw - 2rem); padding: 2rem; border-radius: 24px; z-index: 100; background: var(--bg-card); border: 1px solid var(--brand-accent); box-shadow: var(--shadow-main); animation: slideUp 0.3s ease-out; }
         @keyframes slideUp { from { transform: translate(-50%, 20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
         .ai-insight-popup blockquote { font-style: italic; color: var(--text-secondary); margin-bottom: 2rem; font-size: 1rem; }
         .popup-actions { display: flex; gap: 1rem; }

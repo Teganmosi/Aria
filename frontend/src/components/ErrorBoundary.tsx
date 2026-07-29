@@ -52,7 +52,7 @@ export class ErrorBoundary extends Component<Props, State> {
                   <RefreshCw size={18} />
                   Try Again
                 </button>
-                <Link to="/app/home" className="btn-home">
+                <Link to="/" className="btn-home">
                   <Home size={18} />
                   Go Home
                 </Link>

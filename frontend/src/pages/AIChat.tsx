@@ -125,7 +125,7 @@ export const AIChat = () => {
   }
 
   return (
-    <div className="h-screen relative flex flex-col overflow-hidden bg-[var(--bg-main)]">
+    <div className="h-full relative flex flex-col overflow-hidden bg-[var(--bg-main)]">
       <AnimatedBackground />
 
       {/* Ripple animation for voice circle — pseudo-elements can't be done in Tailwind */}

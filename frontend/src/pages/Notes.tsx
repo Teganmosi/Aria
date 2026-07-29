@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 import { notesService } from '../services/api'
 import { useNotes, useCreateNote, useUpdateNote, useDeleteNote } from '../hooks/use-notes'
 import { AnimatedBackground } from '../components/ui/SharedComponents'
+import { ConfirmDialog } from '../components/ui/ConfirmDialog'
 
 const NoteCard = ({ note, onEdit, onDelete, onUnlock }) => {
   const formatDate = (dateString) => {
@@ -161,13 +162,19 @@ export const Notes = () => {
     }
   }
 
-  const handleDelete = async (id) => {
-    if (confirm('Delete this insight forever?')) {
-      try {
-        await deleteNote.mutateAsync(id)
-      } catch {
-        toast.error('Could not delete the note. Please try again.')
-      }
+  const [noteToDelete, setNoteToDelete] = useState(null)
+
+  const handleDelete = (id) => setNoteToDelete(id)
+
+  const confirmDeleteNote = async () => {
+    if (!noteToDelete) return
+    try {
+      await deleteNote.mutateAsync(noteToDelete)
+      toast.success('Note deleted')
+    } catch {
+      toast.error('Could not delete the note. Please try again.')
+    } finally {
+      setNoteToDelete(null)
     }
   }
 
@@ -216,6 +223,16 @@ export const Notes = () => {
         </select>
       </div>
 
+      <ConfirmDialog
+        open={noteToDelete !== null}
+        danger
+        title="Delete this insight?"
+        description="This removes the entry from your journal forever. This cannot be undone."
+        confirmLabel="Delete Forever"
+        onCancel={() => setNoteToDelete(null)}
+        onConfirm={confirmDeleteNote}
+      />
+
       {/* Notes Grid */}
       <div className="flex-1 overflow-y-auto z-10" style={{ padding: '0 3rem 4rem' }}>
         {isLoading ? (
@@ -223,7 +240,11 @@ export const Notes = () => {
         ) : filteredNotes.length === 0 ? (
           <div className="text-center mt-32 text-[var(--text-muted)]">
             <FileText size={48} style={{ marginBottom: '1.5rem', opacity: 0.2 }} />
-            <p>Your journal is waiting for its first entry.</p>
+            {searchQuery || filterSource ? (
+              <p>No entries match your search. Try different words or clear the filters.</p>
+            ) : (
+              <p>Your journal is waiting for its first entry.</p>
+            )}
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>

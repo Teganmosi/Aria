@@ -116,8 +116,6 @@ export interface AuthState {
   user: User | null
   isAuthenticated: boolean
   isLoading: boolean
-  showAuthModal: boolean
-  setShowAuthModal: (show: boolean) => void
   checkAuth: () => Promise<void>
   login: (email: string, password: string) => Promise<AuthResponse>
   register: (email: string, password: string, fullName: string) => Promise<AuthResponse>

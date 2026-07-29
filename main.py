@@ -28,6 +28,8 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from config import settings
+from models import ForgotPasswordRequest, ResetPasswordRequest
+from auth import supabase_auth_forgot_password, supabase_auth_reset_password
 from models import (
     UserRegister,
     UserResponse,
@@ -471,6 +473,41 @@ async def health_check():
 
 
 # ==================== Authentication Endpoints ====================
+
+
+@app.post("/api/v1/auth/forgot-password", response_model=Dict[str, Any])
+@limiter.limit("3/minute")
+async def forgot_password(request: Request, payload: ForgotPasswordRequest):
+    """Request a password-reset email. Always reports success so responses don't
+    reveal which emails have accounts."""
+    try:
+        await asyncio.to_thread(
+            supabase_auth_forgot_password, payload.email, payload.redirect_to
+        )
+    except Exception:
+        logger.exception("Forgot-password request failed")
+    return {"message": "If an account exists for that email, a reset link has been sent."}
+
+
+@app.post("/api/v1/auth/reset-password", response_model=Dict[str, Any])
+@limiter.limit("5/minute")
+async def reset_password(request: Request, payload: ResetPasswordRequest):
+    """Set a new password using the recovery tokens from a reset email link."""
+    try:
+        await asyncio.to_thread(
+            supabase_auth_reset_password,
+            payload.new_password,
+            payload.code,
+            payload.access_token,
+            payload.refresh_token,
+        )
+        return {"message": "Password updated successfully. You can now sign in."}
+    except Exception:
+        logger.exception("Password reset failed")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This reset link is invalid or has expired. Please request a new one.",
+        )
 
 
 @app.post("/api/v1/auth/register", response_model=Dict[str, Any])

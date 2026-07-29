@@ -262,7 +262,7 @@ export const LandingPage = () => {
           style={{ top: '-20%', bottom: '-20%' }}
         >
           <img
-            src="https://picsum.photos/seed/sanctuary-morning-spiritual/1600/1100"
+            src="/login-hero.png"
             className="w-full h-full object-cover object-center"
             alt=""
             aria-hidden="true"
@@ -369,7 +369,6 @@ export const LandingPage = () => {
             <BentoCard
               className="glass-panel"
               style={{ minHeight: '420px', padding: '3rem' }}
-              backgroundImage="https://picsum.photos/seed/peaceful-reading-light/1200/600"
             >
               <MessageSquare size={26} color="var(--text-main)" style={{ marginBottom: '2.25rem' }} />
               <h3
@@ -459,9 +458,10 @@ export const LandingPage = () => {
               </div>
               <div className="shrink-0" style={{ width: '250px' }}>
                 <img
-                  src="https://picsum.photos/seed/forest-path-morning-faith/500/760"
+                  src="/register-hero.png"
                   className="w-full h-full object-cover"
-                  alt="Forest path at dawn"
+                  alt=""
+                  aria-hidden="true"
                 />
               </div>
             </BentoCard>
@@ -556,9 +556,6 @@ export const LandingPage = () => {
               </h5>
               <div className="flex flex-col gap-3 text-[0.85rem] text-[var(--text-secondary)]">
                 <a href="#about" className="l-nl">About Us</a>
-                <button className="l-nl bg-transparent border-0 p-0 text-[var(--text-secondary)] text-[0.85rem] text-left cursor-pointer">
-                  Contact
-                </button>
               </div>
             </div>
           </div>

@@ -26,6 +26,24 @@ export const axiosPrivate = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+// ── Error message normalization ───────────────────────────────────────────────
+// The backend (FastAPI) reports errors in a `detail` field, but a raw AxiosError
+// only carries "Request failed with status code 401" — useless to show users.
+// Rewrite err.message so UI catch blocks can display it directly.
+const normalizeApiError = (error: unknown) => {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data
+    const detail =
+      (typeof data?.detail === 'string' && data.detail) ||
+      (typeof data?.error === 'string' && data.error) ||
+      (Array.isArray(data?.detail) && data.detail[0]?.msg) ||
+      error.message
+    error.message = detail
+  }
+  return Promise.reject(error)
+}
+axiosBase.interceptors.response.use((response) => response, normalizeApiError)
+
 // ── Token helpers ────────────────────────────────────────────────────────────
 
 export const getAccessToken = () => localStorage.getItem('authToken')

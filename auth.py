@@ -9,6 +9,7 @@ from fastapi import Depends, HTTPException, status, WebSocket, WebSocketExceptio
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from config import settings
 from database import db
+from supabase import create_client
 import bcrypt
 
 # Set up logging
@@ -262,6 +263,37 @@ async def get_current_user_websocket(websocket: WebSocket) -> Dict[str, Any]:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="User not found")
 
     return profile
+
+
+def supabase_auth_forgot_password(email: str, redirect_to: str) -> None:
+    """Send a password-reset email via Supabase.
+
+    Raises on transport errors; callers should still return a generic success to
+    avoid leaking which emails have accounts.
+    """
+    db.client.auth.reset_password_for_email(email, {"redirect_to": redirect_to})
+
+
+def supabase_auth_reset_password(
+    new_password: str,
+    code: Optional[str] = None,
+    access_token: Optional[str] = None,
+    refresh_token: Optional[str] = None,
+) -> None:
+    """Set a new password using the recovery tokens from a reset email.
+
+    Supports both Supabase flows: PKCE (?code= link, the default) and implicit
+    (#access_token/#refresh_token). Uses a dedicated client so the shared
+    singleton's session state is never mutated mid-request.
+    """
+    if not code and not (access_token and refresh_token):
+        raise ValueError("Missing recovery tokens — the reset link is invalid or expired.")
+    client = create_client(settings.supabase_url, settings.supabase_key)
+    if code:
+        client.auth.exchange_code_for_session({"auth_code": code})
+    else:
+        client.auth.set_session(access_token, refresh_token)
+    client.auth.update_user({"password": new_password})
 
 
 def supabase_oauth_exchange(access_token: str) -> Dict[str, Any]:

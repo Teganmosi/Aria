@@ -81,7 +81,7 @@ ActivityRow.propTypes = {
 
 export const ActivityHistory = () => {
     const navigate = useNavigate()
-    const { data: activities = [], isLoading: loading } = useActivityHistory(50)
+    const { data: activities = [], isLoading: loading, isError, refetch } = useActivityHistory(50)
 
     const renderContent = () => {
         if (loading) {
@@ -89,6 +89,25 @@ export const ActivityHistory = () => {
                 <div className="text-center p-16">
                     <div className="loading-spinner"></div>
                     <p className="mt-4 text-[var(--text-muted)]">Gathering your milestones...</p>
+                </div>
+            )
+        }
+
+        if (isError) {
+            return (
+                <div className="text-center bg-[var(--bg-card)] rounded-[32px] border border-[var(--border-color)]" style={{ padding: '5rem' }}>
+                    <Sparkles size={48} color="var(--text-muted)" style={{ opacity: 0.3, marginBottom: '1.5rem' }} />
+                    <h3 style={{ color: 'var(--text-main)', marginBottom: '1rem' }}>The path is momentarily hidden</h3>
+                    <p style={{ color: 'var(--text-secondary)', maxWidth: '400px', margin: '0 auto 2rem' }}>
+                        We couldn't load your activity history. This is usually temporary — please try again.
+                    </p>
+                    <button
+                        onClick={() => refetch()}
+                        className="bg-[var(--brand-solid)] text-[var(--bg-main)] border-0 rounded-xl font-semibold cursor-pointer"
+                        style={{ padding: '1rem 2rem' }}
+                    >
+                        TRY AGAIN
+                    </button>
                 </div>
             )
         }

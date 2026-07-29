@@ -441,6 +441,20 @@ class UserRegister(BaseModel):
     full_name: Optional[str] = None
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+    redirect_to: str  # Frontend URL Supabase redirects to with recovery tokens
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str = Field(..., min_length=8)
+    # PKCE flow (Supabase default): ?code= in the reset link
+    code: Optional[str] = None
+    # Implicit flow (legacy): #access_token & #refresh_token in the reset link
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+
+
 class UserResponse(BaseModel):
     id: str
     email: str

@@ -7,6 +7,7 @@ import {
   BookOpen, ChevronRight, CheckCircle2, Volume2, VolumeX
 } from 'lucide-react'
 import { notesService, ttsService } from '../services/api'
+import { toast } from 'sonner'
 import { useHomeData } from '../hooks/use-home-data'
 import { useAuthStore } from '../store/auth-store'
 import { BurningFlame } from '../components/ui/BurningFlame'
@@ -129,7 +130,7 @@ export const Home = () => {
   }
 
   const { data: homeData } = useHomeData()
-  const stats = homeData?.stats ?? { streak_days: 7, streak_history: [true, true, true, true, true, true, false] }
+  const stats = homeData?.stats ?? { streak_days: 0, streak_history: [false, false, false, false, false, false, false] }
   const activities = homeData?.activity ?? []
 
   const [showCelebration, setShowCelebration] = useState(false)
@@ -202,7 +203,10 @@ export const Home = () => {
         tags: ['manna', 'prayer', 'daily', verseObj.reference]
       })
       setIsSaved(true)
-    } catch { }
+    } catch (err) {
+      console.error('Home: failed to save manna to devotions:', err)
+      toast.error('Could not save to your devotions. Please try again.')
+    }
   }
 
   const toggleMannaAudio = useCallback(async () => {
@@ -327,21 +331,25 @@ export const Home = () => {
               style={{ cursor: 'pointer' }}
             />
           )) : (
-            <>
-              <JourneyCard
-                icon={AlignLeft}
-                tag="IN PROGRESS"
-                title="The Life of David"
-                desc="Exploring leadership, failure, and the heart after God. You are currently on Session 4: Facing Goliaths."
-                progress={70}
-              />
-              <JourneyCard
-                icon={MessageSquare}
-                time="JUST NOW"
-                title="Finding Peace"
-                desc="Waiting for your first spiritual session to begin."
-              />
-            </>
+            <div
+              className="flex flex-col items-center justify-center text-center rounded-[28px] border border-dashed border-[var(--border-color)]"
+              style={{ padding: '3.5rem 2rem', gridColumn: '1 / -1' }}
+            >
+              <Sparkles size={28} color="var(--brand-solid)" style={{ marginBottom: '1rem' }} />
+              <h4 style={{ margin: '0 0 0.5rem', fontSize: '1.25rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif" }}>
+                Your journey begins here
+              </h4>
+              <p style={{ margin: '0 0 1.5rem', color: 'var(--text-secondary)', fontSize: '0.9rem', maxWidth: '360px', lineHeight: 1.6 }}>
+                Start a conversation, open a Bible study, or begin today's devotion — your sessions will appear here.
+              </p>
+              <button
+                onClick={() => navigate('/app/ai-chat')}
+                className="l-btn border-0 rounded-xl font-semibold cursor-pointer"
+                style={{ padding: '0.75rem 2rem', fontSize: '0.875rem', background: 'var(--brand-solid)', color: 'var(--bg-main)' }}
+              >
+                Start a Conversation
+              </button>
+            </div>
           )}
         </div>
       </div>
