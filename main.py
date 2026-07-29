@@ -20,6 +20,8 @@ from datetime import datetime, timedelta, timezone
 import asyncio
 import logging
 import json
+import base64
+import time
 import aiofiles
 import aiofiles.os
 import uuid
@@ -30,6 +32,7 @@ from slowapi.errors import RateLimitExceeded
 from config import settings
 from models import ForgotPasswordRequest, ResetPasswordRequest
 from auth import supabase_auth_forgot_password, supabase_auth_reset_password
+from voice_engines import select_voice_engine, ProviderConnectionLost
 
 # Bump when the Terms or Privacy Policy change materially; new signups record the
 # current version, and existing users should re-consent to the new version.
@@ -1493,20 +1496,20 @@ class VoiceSessionCreate(BaseModel):
 
 
 # Per-tier voice call duration limits (enforced server-side in websocket_voice_call).
-# Once the premium tier ships, free users move to the 2-minute cap below and premium
-# users get extended limits; until then everyone keeps the current 10-minute limit so
-# we don't degrade the experience with no upgrade path to offer.
+# Flip PREMIUM_LAUNCHED at launch: free users move to the 2-minute cap and premium
+# users get extended limits. Until then everyone keeps the current 10-minute limit so
+# nobody is capped before there's something to upgrade to.
+PREMIUM_LAUNCHED = False
 FREE_TIER_CALL_LIMIT_MINUTES = 2
 PREMIUM_TIER_CALL_LIMIT_MINUTES = 60
 
 
 def _get_voice_call_limits(profile: Optional[Dict[str, Any]]) -> tuple:
     """Return (max_duration_minutes, warning_at_minutes) for a user profile."""
-    is_premium = bool((profile or {}).get("is_premium"))
-    if is_premium:
+    if (profile or {}).get("tier") == "premium":
         return PREMIUM_TIER_CALL_LIMIT_MINUTES, PREMIUM_TIER_CALL_LIMIT_MINUTES - 5
-    # TODO(premium-launch): switch free users to FREE_TIER_CALL_LIMIT_MINUTES
-    # (with warning at 1.5 min) when the premium tier goes live.
+    if PREMIUM_LAUNCHED:
+        return FREE_TIER_CALL_LIMIT_MINUTES, FREE_TIER_CALL_LIMIT_MINUTES - 0.5
     return 10, 8
 
 
@@ -1527,6 +1530,7 @@ async def create_voice_session(
         "mode": payload.mode,
         "max_duration_minutes": max_minutes,
         "warning_at_minutes": warning_minutes,
+        "tier": current_user.get("tier") or "free",
     }
 
 
@@ -2359,7 +2363,8 @@ async def _forward_s2s_to_frontend(
 
 @app.websocket("/ws/voice-call/{call_id}")
 async def websocket_voice_call(websocket: WebSocket, call_id: str):
-    """Voice call websocket endpoint. Bridges frontend to the S2S Hugging Face space."""
+    """Voice call websocket endpoint. Bridges the browser to the active voice engine
+    (free: HF Pocket-S2S · premium: Gemini Live / Qwen-Omni — see voice_engines.py)."""
     # Accept connection immediately to ensure clean WS close frame (4001) instead of 403 on auth failure
     await websocket.accept()
     try:
@@ -2381,6 +2386,16 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
         logger.warning(f"Voice call {call_id}: rejected, user {user_id} already has an active call")
         await websocket.close(code=4003, reason="Another call is already active")
         return
+
+    # Engine selection. Premium users without minutes gracefully fall back to the free
+    # engine rather than getting a dead call — the upgrade nudge happens client-side.
+    tier = (profile or {}).get("tier") or "free"
+    force_free = False
+    if tier == "premium" and user_id:
+        if not await asyncio.to_thread(db.has_minutes, user_id, 0.05):
+            force_free = True
+            tier = "free"
+    engine = select_voice_engine(profile, force_free=force_free)
 
     # Build Aria's spiritual companion persona
     ARIA_SPIRITUAL_SYSTEM_PROMPT = (
@@ -2406,16 +2421,17 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
         "such as: 'Hi, I'm Aria. How are you doing today? I'm here for you.'"
     )
 
-    # Always use alba — warm, clear, feminine voice perfect for a spiritual companion
-    pocket_voice = "alba"
-    logger.info(f"Voice call {call_id}: voice={pocket_voice} (user preference: {voice_preference})")
+    # Voice names are provider-specific vocabularies; each engine gets a warm, clear
+    # feminine voice suited to a spiritual companion.
+    voice_for_engine = {"hf": "alba", "gemini": "Leda", "qwen": "Cherry"}.get(engine.name, "alba")
+    logger.info(f"Voice call {call_id}: engine={engine.name} tier={tier} voice={voice_for_engine} (user preference: {voice_preference})")
 
     # Initial connection — close frontend if all retries fail
     try:
-        s2s_ws = await _connect_and_configure_s2s(call_id, pocket_voice, ARIA_SPIRITUAL_SYSTEM_PROMPT)
+        await engine.start(ARIA_SPIRITUAL_SYSTEM_PROMPT, voice_for_engine, call_id)
     except Exception:
-        logger.exception("All S2S connection attempts failed")
-        await websocket.close(code=4002, reason="S2S connection failed")
+        logger.exception("Voice engine connection failed")
+        await websocket.close(code=4002, reason="Voice engine connection failed")
         return
 
     # Connect frontend
@@ -2423,14 +2439,99 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
     await voice_call_manager.send_message(
         call_id, {"type": "conversation_started", "message": "Connected to Aria."}
     )
+    if user_id:
+        await asyncio.to_thread(db.create_call_session, call_id, user_id, tier, engine.name)
 
-    # Shared mutable reference so forward_frontend_to_s2s sees reconnected ws
-    s2s_ref = {"ws": s2s_ws}
     reconnecting = asyncio.Event()
     call_messages = []
+    call_failed = {"value": False}  # mutable flag read in the billing block
+    call_started = time.monotonic()
 
-    # Server-side duration enforcement (the free-tier cap will reuse this when premium ships).
+    # Server-side duration enforcement (free-tier cap arms when PREMIUM_LAUNCHED flips).
     max_minutes, warning_minutes = _get_voice_call_limits(profile or user)
+
+    async def _read_frontend():
+        try:
+            while True:
+                data = await websocket.receive_json()
+                msg_type = data.get("type")
+                if msg_type == "ping":
+                    await voice_call_manager.send_message(call_id, {"type": "pong"})
+                elif msg_type == "close":
+                    break
+                elif msg_type == "audio_input" and not reconnecting.is_set():
+                    audio_b64 = data.get("audio", "")
+                    if audio_b64:
+                        await engine.send_audio(base64.b64decode(audio_b64))
+        except Exception as e:
+            if not isinstance(e, (WebSocketDisconnect, RuntimeError)):
+                logger.exception("Error reading frontend voice socket")
+
+    async def _read_engine():
+        aria_speaking = False
+        max_restarts = 4
+        for attempt in range(max_restarts + 1):
+            try:
+                while True:
+                    ev = await engine.recv_event()
+                    if ev.kind == "audio":
+                        if not aria_speaking:
+                            await voice_call_manager.send_message(call_id, {"type": "aria_speaking", "speaking": True})
+                            aria_speaking = True
+                        await voice_call_manager.send_message(call_id, {
+                            "type": "audio_output",
+                            "audio": base64.b64encode(ev.audio).decode(),
+                        })
+                    elif ev.kind == "user_transcript" and ev.text:
+                        call_messages.append({"role": "user", "content": ev.text})
+                        await voice_call_manager.send_message(call_id, {
+                            "type": "transcript", "text": ev.text, "role": "user",
+                        })
+                    elif ev.kind == "ai_text" and ev.text:
+                        if call_messages and call_messages[-1]["role"] == "assistant":
+                            call_messages[-1]["content"] += " " + ev.text
+                        else:
+                            call_messages.append({"role": "assistant", "content": ev.text})
+                        await voice_call_manager.send_message(call_id, {
+                            "type": "transcript", "text": ev.text, "role": "assistant",
+                        })
+                    elif ev.kind == "vad_user":
+                        await voice_call_manager.send_message(call_id, {
+                            "type": "user_speaking", "speaking": ev.speaking,
+                        })
+                    elif ev.kind == "aria_done":
+                        if aria_speaking:
+                            await voice_call_manager.send_message(call_id, {"type": "aria_speaking", "speaking": False})
+                            aria_speaking = False
+            except ProviderConnectionLost:
+                aria_speaking = False
+                if attempt >= max_restarts:
+                    call_failed["value"] = True
+                    await voice_call_manager.send_message(call_id, {
+                        "type": "error", "message": "Connection to Aria lost. Please try again.",
+                    })
+                    return
+                reconnecting.set()
+                await voice_call_manager.send_message(call_id, {
+                    "type": "status", "message": "Reconnecting to Aria, please hold...",
+                })
+                try:
+                    await engine.restart(ARIA_SPIRITUAL_SYSTEM_PROMPT, voice_for_engine, call_id)
+                    reconnecting.clear()
+                    await voice_call_manager.send_message(call_id, {
+                        "type": "status", "message": "Reconnected. Aria is listening.",
+                    })
+                except Exception:
+                    reconnecting.clear()
+                    call_failed["value"] = True
+                    await voice_call_manager.send_message(call_id, {
+                        "type": "error", "message": "Could not reconnect to Aria. Please try again.",
+                    })
+                    return
+            except Exception:
+                logger.exception("Unexpected error reading voice engine")
+                call_failed["value"] = True
+                return
 
     async def _call_duration_watchdog():
         try:
@@ -2458,10 +2559,8 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
 
     # Run tasks concurrently
     tasks = [
-        asyncio.create_task(_forward_frontend_to_s2s(websocket, call_id, s2s_ref, reconnecting)),
-        asyncio.create_task(_forward_s2s_to_frontend(
-            call_id, s2s_ref, reconnecting, call_messages, pocket_voice, ARIA_SPIRITUAL_SYSTEM_PROMPT
-        )),
+        asyncio.create_task(_read_frontend()),
+        asyncio.create_task(_read_engine()),
         asyncio.create_task(_call_duration_watchdog()),
     ]
     try:
@@ -2471,17 +2570,44 @@ async def websocket_voice_call(websocket: WebSocket, call_id: str):
             if not t.done():
                 t.cancel()
         voice_call_manager.disconnect(call_id, user_id)
-        try:
-            await s2s_ref["ws"].close()
-        except Exception:
-            pass
+        await engine.close()
         try:
             from starlette.websockets import WebSocketState
             if websocket.client_state == WebSocketState.CONNECTED:
                 await websocket.close()
         except Exception:
             pass
-            
+
+        # ── Metering & billing ──
+        # Duration comes from server timestamps (never client-reported). Premium engines
+        # charge per started minute; failed calls and sub-10s connects are never charged.
+        # Mid-call balance exhaustion charges whatever remains (graceful, never negative).
+        duration_seconds = int(time.monotonic() - call_started)
+        if user_id:
+            status_str = "failed" if call_failed["value"] else "completed"
+            minutes_charged = None
+            provider_cost = None
+            try:
+                if engine.cost_per_minute_usd > 0 and not call_failed["value"] and duration_seconds >= 10:
+                    minutes_used = round(duration_seconds / 60, 2)
+                    provider_cost = round(minutes_used * engine.cost_per_minute_usd, 6)
+                    wallet = await asyncio.to_thread(db.get_wallet, user_id)
+                    balance = float(wallet.get("minutes_balance") or 0)
+                    minutes_charged = min(minutes_used, balance)
+                    if minutes_charged > 0:
+                        await asyncio.to_thread(
+                            db.record_wallet_transaction,
+                            user_id, "deduct", -minutes_charged,
+                            None, None, call_id,
+                            f"{engine.name} voice call ({duration_seconds}s)",
+                        )
+                await asyncio.to_thread(
+                    db.finish_call_session,
+                    call_id, duration_seconds, status_str, provider_cost, minutes_charged,
+                )
+            except Exception:
+                logger.exception("Call metering/billing failed")
+
         # Trigger background synthesis
         if call_messages and user_id:
             run_background_task(synthesize_voice_journey(user_id, call_messages))

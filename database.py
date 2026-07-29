@@ -298,6 +298,7 @@ class Database:
                     aria_custom_prompt TEXT,
                     aria_personal_context TEXT,
                     aria_voice TEXT DEFAULT 'verse',
+                    tier TEXT DEFAULT 'free',
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
@@ -538,6 +539,40 @@ class Database:
                     accepted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
                 )
                 """)
+                cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS wallets (
+                    user_id {id_type} PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                    minutes_balance NUMERIC(10, 2) NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+                """)
+                cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS wallet_transactions (
+                    id SERIAL PRIMARY KEY,
+                    user_id {id_type} NOT NULL,
+                    type TEXT NOT NULL,
+                    minutes NUMERIC(10, 2) NOT NULL,
+                    amount_ngn INTEGER,
+                    provider_ref TEXT UNIQUE,
+                    call_session_id {id_type},
+                    description TEXT DEFAULT '',
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                )
+                """)
+                cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS call_sessions (
+                    id {id_type} PRIMARY KEY,
+                    user_id {id_type} NOT NULL,
+                    tier_at_call TEXT NOT NULL DEFAULT 'free',
+                    engine TEXT NOT NULL DEFAULT 'hf',
+                    started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    ended_at TIMESTAMP WITH TIME ZONE,
+                    duration_seconds INTEGER,
+                    provider_cost_usd NUMERIC(12, 6),
+                    minutes_charged NUMERIC(10, 2),
+                    status TEXT NOT NULL DEFAULT 'active'
+                )
+                """)
 
                 # Indexes
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_bible_study_sessions_user_id ON bible_study_sessions (user_id)")
@@ -553,6 +588,19 @@ class Database:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_ai_chat_sessions_user_id ON ai_chat_sessions (user_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_ai_chat_messages_session_id ON ai_chat_messages (session_id)")
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_consents_user_id ON consents (user_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_wallet_transactions_user_id ON wallet_transactions (user_id)")
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_call_sessions_user_id ON call_sessions (user_id)")
+
+                # Schema evolution for databases created before a column existed.
+                # Postgres' ADD COLUMN IF NOT EXISTS makes these safe to re-run.
+                for alter in (
+                    "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS tier TEXT DEFAULT 'free'",
+                ):
+                    try:
+                        cur.execute(alter)
+                    except Exception:
+                        logger.debug(f"Schema evolution step skipped: {alter}", exc_info=True)
+
                 self.__class__._tables_ensured = True
         except Exception:
             logger.exception("Error ensuring tables")
@@ -1523,6 +1571,122 @@ class Database:
                 )
         except Exception:
             logger.exception("Failed to record consent")
+
+    # ── Premium tier: wallets, transactions, call sessions ──────────────────
+
+    def get_wallet(self, user_id: str) -> Dict[str, Any]:
+        """Return the user's wallet, creating a zero-balance wallet on first access."""
+        with self.get_connection() as conn:
+            cur = self._cursor(conn)
+            cur.execute(
+                "INSERT INTO wallets (user_id) VALUES (%s) ON CONFLICT (user_id) DO NOTHING",
+                (user_id,),
+            )
+            cur.execute(
+                "SELECT user_id, minutes_balance, updated_at FROM wallets WHERE user_id = %s",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else {"user_id": user_id, "minutes_balance": 0, "updated_at": None}
+
+    def has_minutes(self, user_id: str, minutes: float) -> bool:
+        with self.get_connection() as conn:
+            cur = self._cursor(conn)
+            cur.execute("SELECT minutes_balance FROM wallets WHERE user_id = %s", (user_id,))
+            row = cur.fetchone()
+            return bool(row and float(row["minutes_balance"]) >= minutes)
+
+    def record_wallet_transaction(
+        self,
+        user_id: str,
+        txn_type: str,
+        minutes: float,
+        amount_ngn: Optional[int] = None,
+        provider_ref: Optional[str] = None,
+        call_session_id: Optional[str] = None,
+        description: str = "",
+    ) -> int:
+        """Apply a signed balance change and record it, atomically.
+
+        `minutes` is signed: positive for topup/refund/bonus, negative for deductions.
+        The row lock (FOR UPDATE) prevents concurrent calls from racing the balance,
+        and the unique provider_ref makes Paystack topups idempotent.
+        Raises ValueError on insufficient balance for deductions.
+        """
+        with self.get_connection() as conn:
+            cur = self._cursor(conn)
+            cur.execute(
+                "INSERT INTO wallets (user_id) VALUES (%s) ON CONFLICT (user_id) DO NOTHING",
+                (user_id,),
+            )
+            cur.execute(
+                "SELECT minutes_balance FROM wallets WHERE user_id = %s FOR UPDATE",
+                (user_id,),
+            )
+            row = cur.fetchone()
+            current = float(row["minutes_balance"]) if row else 0.0
+            new_balance = current + minutes
+            if new_balance < 0:
+                raise ValueError("Insufficient minutes balance")
+            cur.execute(
+                "UPDATE wallets SET minutes_balance = %s, updated_at = NOW() WHERE user_id = %s",
+                (new_balance, user_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO wallet_transactions
+                    (user_id, type, minutes, amount_ngn, provider_ref, call_session_id, description)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (user_id, txn_type, minutes, amount_ngn, provider_ref, call_session_id, description),
+            )
+            return cur.fetchone()["id"]
+
+    def get_wallet_transactions(self, user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            cur = self._cursor(conn)
+            cur.execute(
+                """
+                SELECT id, type, minutes, amount_ngn, description, created_at
+                FROM wallet_transactions WHERE user_id = %s
+                ORDER BY created_at DESC LIMIT %s
+                """,
+                (user_id, limit),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+    def create_call_session(self, session_id: str, user_id: str, tier: str, engine: str) -> None:
+        with self.get_connection() as conn:
+            cur = self._cursor(conn)
+            cur.execute(
+                """
+                INSERT INTO call_sessions (id, user_id, tier_at_call, engine, status)
+                VALUES (%s, %s, %s, %s, 'active')
+                ON CONFLICT (id) DO NOTHING
+                """,
+                (session_id, user_id, tier, engine),
+            )
+
+    def finish_call_session(
+        self,
+        session_id: str,
+        duration_seconds: int,
+        status: str,
+        provider_cost_usd: Optional[float] = None,
+        minutes_charged: Optional[float] = None,
+    ) -> None:
+        with self.get_connection() as conn:
+            cur = self._cursor(conn)
+            cur.execute(
+                """
+                UPDATE call_sessions
+                SET ended_at = NOW(), duration_seconds = %s, status = %s,
+                    provider_cost_usd = %s, minutes_charged = %s
+                WHERE id = %s
+                """,
+                (duration_seconds, status, provider_cost_usd, minutes_charged, session_id),
+            )
 
     def get_all_profiles(self) -> List[Dict[str, Any]]:
         """Get all profiles from the database"""

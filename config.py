@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379"
     redis_enabled: bool = False
     
+    # Premium voice tier
+    gemini_api_key: str = ""
+    dashscope_api_key: str = ""
+    premium_voice_engine: str = "gemini"  # "gemini" | "qwen"
+
     # Application Configuration
     aria_custom_prompt: Optional[str] = None # Added support for custom prompt
     app_name: str = "Aria - Your Spiritual Companion"
@@ -76,6 +81,8 @@ class Settings(BaseSettings):
         self.yarngpt_api_key = os.getenv('YARNGPT_API_KEY', self.yarngpt_api_key)
         self.google_application_credentials = os.getenv('GOOGLE_APPLICATION_CREDENTIALS', self.google_application_credentials)
         self.gcp_service_account_json = os.getenv('GCP_SERVICE_ACCOUNT_JSON', self.gcp_service_account_json)
+        self.gemini_api_key = os.getenv('GEMINI_API_KEY', self.gemini_api_key)
+        self.dashscope_api_key = os.getenv('DASHSCOPE_API_KEY', self.dashscope_api_key)
         env_secret = os.getenv('SECRET_KEY')
         if env_secret:
             self.secret_key = env_secret
