@@ -194,7 +194,7 @@ export const BibleStudy = () => {
   else if (messages.length > 2) progressPercent = '60%';
 
   return (
-    <div className="study-page">
+    <div className={`study-page ${mode !== 'select' ? 'session-active' : ''}`}>
       <AnimatedBackground />
 
       <div className="study-content-wrapper">
@@ -442,8 +442,10 @@ export const BibleStudy = () => {
       </div>
 
       <style>{`
-        .study-page { min-height: 100vh; background: var(--bg-main); position: relative; color: var(--text-main); overflow: hidden; }
-        .study-content-wrapper { max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem; height: 100vh; display: flex; flex-direction: column; position: relative; z-index: 10; }
+        .study-page { min-height: 100vh; background: var(--bg-main); position: relative; color: var(--text-main); overflow-y: auto; }
+        .study-page.session-active { overflow: hidden; }
+        .study-content-wrapper { max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem; height: auto; min-height: 100vh; display: flex; flex-direction: column; position: relative; z-index: 10; }
+        .session-active .study-content-wrapper { height: 100vh; overflow: hidden; }
         .revamped-session { display: flex; flex-direction: column; height: 100%; gap: 1.5rem; }
         .session-nav { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0; }
         .study-badge { display: inline-flex; align-items: center; gap: 0.5rem; background: var(--bg-alt); padding: 0.4rem 0.8rem; border-radius: 20px; color: var(--brand-accent); font-size: 0.65rem; font-weight: 800; letter-spacing: 0.1em; margin-bottom: 0.5rem; }
@@ -458,7 +460,7 @@ export const BibleStudy = () => {
         .mobile-action-btn:hover:not(:disabled) { border-color: var(--brand-accent); color: var(--brand-accent); }
         
         @media (max-width: 900px) {
-          .study-content-wrapper { height: 100dvh !important; padding: 0.75rem 1rem !important; overflow: hidden; }
+          .session-active .study-content-wrapper { height: 100dvh !important; padding: 0.75rem 1rem !important; overflow: hidden; }
           .revamped-session { height: 100%; display: flex; flex-direction: column; gap: 0.75rem; }
           .study-layout { display: flex; flex-direction: column; height: calc(100% - 70px); gap: 0.75rem; }
           .content-sidebar { display: flex; flex-direction: row; gap: 0.75rem; height: auto; max-height: 140px; overflow-y: auto; order: 1; flex-shrink: 0; }
@@ -474,7 +476,7 @@ export const BibleStudy = () => {
           .floating-input-area { padding: 0.75rem 1rem !important; }
         }
         @media (max-width: 768px) {
-          .study-content-wrapper { padding: 1rem; height: 100dvh !important; min-height: 0 !important; }
+          .session-active .study-content-wrapper { padding: 1rem; height: 100dvh !important; min-height: 0 !important; }
           .revamped-session { gap: 1rem; }
           .session-nav { flex-direction: column; align-items: flex-start; gap: 1rem; padding-bottom: 1rem; }
           .exit-btn { align-self: flex-end; }
@@ -498,7 +500,7 @@ export const BibleStudy = () => {
           .progress-mini-card { padding: 1rem; }
         }
         @media (max-width: 480px) {
-          .study-content-wrapper { padding: 0.75rem; height: 100dvh !important; min-height: 0 !important; }
+          .session-active .study-content-wrapper { padding: 0.75rem; height: 100dvh !important; min-height: 0 !important; }
           .hero-branding h1 { font-size: 1.75rem; }
           .sparkle-icon { width: 48px; height: 48px; }
           .session-title { font-size: 1.25rem; }
