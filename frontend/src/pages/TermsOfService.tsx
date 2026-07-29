@@ -1,13 +1,14 @@
-import { LegalPage } from '../components/LegalPage'
+import { LegalPage, LegalContact } from '../components/LegalPage'
+import { LEGAL } from '../legal-config'
 
 /**
- * Aria Terms of Service — version 1.0.
- * Placeholders to finalize before launch: {{OPERATOR_NAME}}, {{CONTACT_EMAIL}}, the Federal Republic of Nigeria.
+ * Aria Terms of Service.
+ * All editable values (operator, contact, jurisdiction, version) live in src/legal-config.ts.
  */
 export const TermsOfService = () => (
   <LegalPage title="Terms of Service" lastUpdated="July 29, 2026" version="1.0">
     <p>
-      These terms are the agreement between you and Aria (operated by the Aria team)
+      These terms are the agreement between you and Aria (operated by {LEGAL.operatorName})
       when you use our website and applications. By creating an account or using Aria, you
       accept them — along with our{' '}
       <a href="/privacy" style={{ color: 'var(--brand-solid)' }}>Privacy Policy</a>.
@@ -38,7 +39,7 @@ export const TermsOfService = () => (
       <li>Provide accurate information and keep your login credentials secure.</li>
       <li>You are responsible for activity under your account.</li>
       <li>You must be at least 13 years old.</li>
-      <li>Tell us at {'{{CONTACT_EMAIL}}'} if you believe your account has been compromised.</li>
+      <li>Tell us at <LegalContact /> if you believe your account has been compromised.</li>
     </ul>
 
     <h2>3. Acceptable use</h2>
@@ -76,13 +77,13 @@ export const TermsOfService = () => (
     <p>
       <strong>Refunds:</strong> used minutes are non-refundable. If a technical failure on our
       side consumes minutes without delivering a call, we will re-credit them — contact
-      {' {{CONTACT_EMAIL}}'}. Statutory refund rights in your country are not affected.
+       <LegalContact />. Statutory refund rights in your country are not affected.
     </p>
 
     <h2>6. Suspension and ending your account</h2>
     <p>
       You may stop using Aria and request deletion of your account at any time
-      ({'{{CONTACT_EMAIL}}'}). We may suspend access that violates these terms. Sections that by
+      (<LegalContact />). We may suspend access that violates these terms. Sections that by
       their nature should survive (such as content rights, disclaimers, and liability) do.
     </p>
 
@@ -111,12 +112,12 @@ export const TermsOfService = () => (
 
     <h2>10. Governing law and contact</h2>
     <p>
-      These terms are governed by the laws of {'the Federal Republic of Nigeria'}, without regard to conflict of
+      These terms are governed by the laws of {LEGAL.jurisdiction}, without regard to conflict of
       law rules. Any disputes will be resolved in the courts of that jurisdiction, unless local
       law grants you another venue.
     </p>
     <p>
-      Questions: <strong>{'{{CONTACT_EMAIL}}'}</strong>.
+      Questions: <LegalContact />.
     </p>
   </LegalPage>
 )

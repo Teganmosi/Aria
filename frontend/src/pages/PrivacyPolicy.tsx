@@ -1,8 +1,9 @@
-import { LegalPage } from '../components/LegalPage'
+import { LegalPage, LegalContact } from '../components/LegalPage'
+import { LEGAL } from '../legal-config'
 
 /**
- * Aria Privacy Policy — version 1.0.
- * Placeholders to finalize before launch: {{OPERATOR_NAME}}, {{CONTACT_EMAIL}}, the Federal Republic of Nigeria.
+ * Aria Privacy Policy.
+ * All editable values (operator, contact, jurisdiction, version) live in src/legal-config.ts.
  */
 export const PrivacyPolicy = () => (
   <LegalPage title="Privacy Policy" lastUpdated="July 29, 2026" version="1.0">
@@ -24,8 +25,8 @@ export const PrivacyPolicy = () => (
 
     <h2>1. Who we are</h2>
     <p>
-      Aria (&quot;Aria&quot;, &quot;we&quot;, &quot;us&quot;) is operated by the Aria team.
-      Questions about this policy or your data: <strong>{'{{CONTACT_EMAIL}}'}</strong>.
+      Aria (&quot;Aria&quot;, &quot;we&quot;, &quot;us&quot;) is operated by {LEGAL.operatorName}.
+      Questions about this policy or your data: <LegalContact />.
     </p>
 
     <h2>2. What we collect</h2>
@@ -100,14 +101,14 @@ export const PrivacyPolicy = () => (
     <ul>
       <li><strong>Aria&apos;s memory of you:</strong> clear it anytime via Profile → Clear Memory.</li>
       <li><strong>Notes and journals:</strong> delete them yourself from within the app.</li>
-      <li><strong>Everything else:</strong> email us at {'{{CONTACT_EMAIL}}'} and we will provide,
+      <li><strong>Everything else:</strong> email us at <LegalContact /> and we will provide,
         correct, or delete your personal data, normally within 30 days.</li>
     </ul>
 
     <h2>7. Security</h2>
     <p>
       Connections are encrypted in transit (HTTPS/WSS). Passwords are hashed by Supabase and are
-      never visible to us. Access to production systems is limited to the Aria team. No system is
+      never visible to us. Access to production systems is limited to {LEGAL.operatorName}. No system is
       perfectly secure — if a breach ever affected your data, we would notify you promptly.
     </p>
 
@@ -126,8 +127,8 @@ export const PrivacyPolicy = () => (
 
     <h2>10. Contact</h2>
     <p>
-      Anything unclear, or a request about your data: <strong>{'{{CONTACT_EMAIL}}'}</strong>.
-      Governed under the laws of {'the Federal Republic of Nigeria'}.
+      Anything unclear, or a request about your data: <LegalContact />.
+      Governed under the laws of {LEGAL.jurisdiction}.
     </p>
   </LegalPage>
 )

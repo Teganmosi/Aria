@@ -1,5 +1,17 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { LEGAL } from '../legal-config'
+
+/**
+ * Renders the support contact — the real address once set in legal-config.ts,
+ * otherwise an honest fallback line (never a raw placeholder).
+ */
+export const LegalContact = () =>
+  LEGAL.contactEmail ? (
+    <strong>{LEGAL.contactEmail}</strong>
+  ) : (
+    <em>our support contact — being finalized alongside our company registration</em>
+  )
 
 interface LegalPageProps {
   title: string
