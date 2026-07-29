@@ -55,8 +55,16 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> List[str]:
         try:
-            return json.loads(self.cors_origins)
-        except (json.JSONDecodeError, TypeError):
+            origins = json.loads(self.cors_origins)
+            if not isinstance(origins, list):
+                raise ValueError("CORS_ORIGINS must be a JSON array")
+            return origins
+        except (json.JSONDecodeError, TypeError, ValueError):
+            logger.warning(
+                "CORS_ORIGINS is not a valid JSON array (got %r) — falling back to localhost "
+                'origins. In production set it like: \'["https://your-frontend.example.com"]\'',
+                self.cors_origins,
+            )
             return ["http://localhost:3000", "http://localhost:5173", "http://localhost:8000"]
     
     def __init__(self, **kwargs):
