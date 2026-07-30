@@ -1048,12 +1048,18 @@ class Database:
             return local_verses
 
         # Fallback for translations not yet seeded locally
-        logger.info(f"Fetching {book} {chapter} ({version}) from bible-api.com...")
+        api_version = version.lower()
+        api_supported = {"cherokee", "web", "kjv", "oeb-us", "oeb-cw", "almeida", "rccv"}
+        if api_version not in api_supported:
+            logger.info(f"Translation {version} not directly supported by external API. Falling back to KJV text for cache.")
+            api_version = "kjv"
+
+        logger.info(f"Fetching {book} {chapter} ({version}) from bible-api.com using api_version={api_version}...")
         fetched_verses = []
         try:
             import httpx
             formatted_book = book.replace(" ", "+")
-            url = f"https://bible-api.com/{formatted_book}+{chapter}?translation={version.lower()}"
+            url = f"https://bible-api.com/{formatted_book}+{chapter}?translation={api_version}"
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(url)
                 if response.status_code == 200:
