@@ -3074,14 +3074,20 @@ async def _generate_chat_stream(session_id: str, full_context: List[Dict[str, st
         custom_instructions=custom_instructions,
         user_id=user_id,
     )
+    
+    def safe_next(gen):
+        try:
+            return next(gen)
+        except StopIteration:
+            return None
+
     full_content = ""
     while True:
-        try:
-            chunk = await asyncio.to_thread(next, generator)
-            full_content += chunk
-            yield chunk
-        except StopIteration:
+        chunk = await asyncio.to_thread(safe_next, generator)
+        if chunk is None:
             break
+        full_content += chunk
+        yield chunk
 
     if full_content:
         await asyncio.to_thread(

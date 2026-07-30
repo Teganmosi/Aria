@@ -7,7 +7,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_MODEL = 'meta/llama-3.1-8b-instruct'
+DEFAULT_MODEL = 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning'
 
 
 def _run_async_in_thread(coro):
