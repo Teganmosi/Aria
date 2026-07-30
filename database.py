@@ -56,7 +56,7 @@ class Database:
         "profiles": frozenset({"id", "email", "full_name", "avatar_url", "preferred_bible_version",
                                 "notification_preferences", "spiritual_journey_notes",
                                 "aria_custom_prompt", "aria_personal_context", "aria_voice",
-                                "created_at", "updated_at"}),
+                                "tier", "created_at", "updated_at"}),
         "bible_study_sessions": frozenset({"id", "user_id", "book", "chapter", "verses",
                                             "selected_text", "is_realtime", "ai_explanation",
                                             "ai_context", "conversation_summary", "created_at", "updated_at"}),
@@ -239,7 +239,18 @@ class Database:
                     """)
                     
                     if users_exists:
-                        logger.info("Database tables already exist. Skipping schema setup.")
+                        logger.info("Database tables already exist. Running schema evolution check.")
+                        with conn.cursor() as evol_cur:
+                            for alter in (
+                                "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS tier TEXT DEFAULT 'free'",
+                                "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS aria_custom_prompt TEXT",
+                                "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS aria_personal_context TEXT",
+                                "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS aria_voice TEXT DEFAULT 'sage'",
+                            ):
+                                try:
+                                    evol_cur.execute(alter)
+                                except Exception:
+                                    logger.debug(f"Schema evolution step skipped: {alter}", exc_info=True)
                         self.__class__._tables_ensured = True
                         return
             except Exception as e:
@@ -595,6 +606,9 @@ class Database:
                 # Postgres' ADD COLUMN IF NOT EXISTS makes these safe to re-run.
                 for alter in (
                     "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS tier TEXT DEFAULT 'free'",
+                    "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS aria_custom_prompt TEXT",
+                    "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS aria_personal_context TEXT",
+                    "ALTER TABLE profiles ADD COLUMN IF NOT EXISTS aria_voice TEXT DEFAULT 'sage'",
                 ):
                     try:
                         cur.execute(alter)
