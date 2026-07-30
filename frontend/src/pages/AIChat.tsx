@@ -39,6 +39,7 @@ export const AIChat = () => {
   const [ariaPersonalContext, setAriaPersonalContext] = useState(user?.aria_personal_context || '')
   const [ariaVoice, setAriaVoice] = useState(user?.aria_voice || 'sage')
   const textareaRef = useRef(null)
+  const scrollContainerRef = useRef(null)
 
   const [isRecording, setIsRecording] = useState(false)
   const [recordingDuration, setRecordingDuration] = useState(0)
@@ -160,7 +161,10 @@ export const AIChat = () => {
         try {
           const res = await aiChatService.getWelcomeGreeting()
           if (res?.greeting) {
-            setMessages([{ id: 'welcome', role: 'assistant', content: res.greeting }])
+            const greetingMsgs = [{ id: 'welcome', role: 'assistant', content: res.greeting }]
+            prevLengthRef.current = greetingMsgs.length
+            setMessages(greetingMsgs)
+            setTimeout(() => scrollToBottom('auto'), 50)
           }
         } catch (err) {
           console.error("Error fetching welcome greeting:", err)
@@ -173,11 +177,24 @@ export const AIChat = () => {
     }
   }
 
-  const messagesEndRef = useRef(null)
+  const scrollToBottom = (behavior = 'smooth') => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior
+      })
+    }
+  }
 
+  const prevLengthRef = useRef(messages.length)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    if (messages.length > prevLengthRef.current) {
+      scrollToBottom('smooth')
+    } else if (messages.length < prevLengthRef.current) {
+      scrollToBottom('auto')
+    }
+    prevLengthRef.current = messages.length
+  }, [messages.length])
 
   useEffect(() => {
     if (!currentSessionId && messages.length === 0) {
@@ -185,7 +202,10 @@ export const AIChat = () => {
         try {
           const res = await aiChatService.getWelcomeGreeting()
           if (res?.greeting) {
-            setMessages([{ id: 'welcome', role: 'assistant', content: res.greeting }])
+            const greetingMsgs = [{ id: 'welcome', role: 'assistant', content: res.greeting }]
+            prevLengthRef.current = greetingMsgs.length
+            setMessages(greetingMsgs)
+            setTimeout(() => scrollToBottom('auto'), 50)
           }
         } catch (err) {
           console.error("Error fetching welcome greeting:", err)
@@ -202,11 +222,14 @@ export const AIChat = () => {
       setSessionTitle(session.title || 'Conversation')
       setShowHistory(false)
       const history = await aiChatService.getMessages(session.id)
-      setMessages(history.map(m => ({
+      const mapped = history.map(m => ({
         id: m.id || crypto.randomUUID(),
         role: m.role,
         content: m.content
-      })))
+      }))
+      prevLengthRef.current = mapped.length
+      setMessages(mapped)
+      setTimeout(() => scrollToBottom('auto'), 50)
     } catch {
       toast.error('Failed to load conversation')
     } finally {
@@ -230,7 +253,17 @@ export const AIChat = () => {
       for await (const chunk of stream) {
         if (isFirstChunk) { setIsLoading(false); isFirstChunk = false }
         fullResponse += chunk
+        
+        const container = scrollContainerRef.current
+        const shouldScroll = container
+          ? (container.scrollHeight - container.scrollTop - container.clientHeight < 150)
+          : true
+
         setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, content: fullResponse } : m))
+
+        if (shouldScroll) {
+          setTimeout(() => scrollToBottom('auto'), 0)
+        }
       }
       if (!currentSessionId) {
         const { data: history } = await refetchSessions()
@@ -408,7 +441,10 @@ export const AIChat = () => {
         </div>
 
         {/* Chat content */}
-        <div className={`flex-1 min-h-0 relative flex flex-col items-center p-8 w-full ${messages.length > 0 ? 'overflow-y-auto' : 'overflow-hidden'}`}>
+        <div
+          ref={scrollContainerRef}
+          className="flex-1 min-h-0 relative flex flex-col items-center p-8 w-full overflow-y-auto"
+        >
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-[var(--brand-accent)] opacity-10 blur-[100px] z-0 pointer-events-none" />
 
           {messages.length === 0 ? (
