@@ -37,6 +37,7 @@ export const BibleStudy = () => {
   const [isPrayerMode, setIsPrayerMode] = useState(false)
   const [sessionId, setSessionId] = useState(null)
   const messagesEndRef = useRef(null)
+  const textareaRef = useRef(null)
 
   const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }
 
@@ -137,7 +138,12 @@ export const BibleStudy = () => {
   const sendMessage = async (presetText?: string) => {
     const userMsg = (presetText ?? userMessage).trim()
     if (!userMsg) return
-    if (presetText === undefined) setUserMessage('')
+    if (presetText === undefined) {
+      setUserMessage('')
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto'
+      }
+    }
     setMessages(prev => [...prev, { role: 'user', content: userMsg }])
     setIsLoading(true)
     try {
@@ -401,13 +407,24 @@ export const BibleStudy = () => {
                     </div>
 
                     <div className="input-outer glass-panel">
-                      <input
-                        type="text"
+                      <textarea
+                        ref={textareaRef}
+                        rows={1}
                         value={userMessage}
-                        onChange={(e) => setUserMessage(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+                        onChange={(e) => {
+                          setUserMessage(e.target.value)
+                          e.target.style.height = 'auto'
+                          e.target.style.height = `${e.target.scrollHeight}px`
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault()
+                            sendMessage()
+                          }
+                        }}
                         placeholder="Share your reflection or ask Aria..."
                         disabled={isLoading}
+                        className="study-textarea"
                       />
                       <div className="input-btns">
                         <button onClick={sendMessage} disabled={isLoading || !userMessage.trim()} className="send-circle">
@@ -491,8 +508,8 @@ export const BibleStudy = () => {
           .revamped-msg { max-width: 90%; }
           .msg-content-bubble { padding: 0.875rem 1.25rem; font-size: 0.9375rem; }
           .floating-input-area { padding: 1rem; }
-          .input-outer { padding: 0.4rem 0.4rem 0.4rem 1rem; }
-          .input-outer input { font-size: 0.9375rem; }
+          .input-outer { padding: 0.4rem 0.4rem 0.4rem 1rem; border-radius: 20px; }
+          .input-outer textarea { font-size: 0.9375rem; }
           .send-circle { width: 40px; height: 40px; }
           .footer-controls { flex-wrap: wrap; gap: 0.5rem; }
           .complete-btn, .final-prayer-btn, .start-new-btn { font-size: 0.65rem; padding: 0.5rem 1rem; }
@@ -508,7 +525,7 @@ export const BibleStudy = () => {
           .scripture-text { font-size: 1rem; }
           .msg-content-bubble { padding: 0.75rem 1rem; font-size: 0.875rem; }
           .aria-avatar, .user-avatar { width: 32px; height: 32px; }
-          .input-outer input { font-size: 0.875rem; }
+          .input-outer textarea { font-size: 0.875rem; }
           .send-circle { width: 36px; height: 36px; }
           .tag-btn { font-size: 0.75rem; padding: 0.35rem 0.85rem; }
         }
@@ -542,8 +559,9 @@ export const BibleStudy = () => {
         .companion .msg-content-bubble { background: var(--bg-alt); color: var(--text-main); border-top-left-radius: 4px; font-family: 'Playfair Display', serif; }
         .user .msg-content-bubble { background: var(--brand-solid); color: var(--text-inverse); border-top-right-radius: 4px; }
         .floating-input-area { padding: 1.5rem 2rem; background: var(--bg-card); border-top: 1px solid var(--border-color); }
-        .input-outer { display: flex; align-items: center; padding: 0.5rem 0.5rem 0.5rem 1.5rem; border-radius: 100px; }
-        .input-outer input { flex: 1; background: none; border: none; color: var(--text-main); font-size: 1rem; outline: none; }
+        .input-outer { display: flex; align-items: flex-end; padding: 0.5rem 0.5rem 0.5rem 1.5rem; border-radius: 24px; }
+        .input-outer textarea { flex: 1; background: none; border: none; color: var(--text-main); font-size: 1rem; outline: none; }
+        .study-textarea { resize: none; overflow-y: auto; max-height: 120px; line-height: 1.5; padding: 0.5rem 0; font-family: inherit; }
         .send-circle { width: 44px; height: 44px; background: var(--brand-solid); color: var(--text-inverse); border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: transform 0.2s; }
         .send-circle:hover:not(:disabled) { transform: scale(1.05); }
         .footer-controls { display: flex; justify-content: center; gap: 1rem; margin-top: 1rem; }

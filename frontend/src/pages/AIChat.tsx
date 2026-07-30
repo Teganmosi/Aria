@@ -38,6 +38,7 @@ export const AIChat = () => {
   const [ariaCustomPrompt, setAriaCustomPrompt] = useState(user?.aria_custom_prompt || '')
   const [ariaPersonalContext, setAriaPersonalContext] = useState(user?.aria_personal_context || '')
   const [ariaVoice, setAriaVoice] = useState(user?.aria_voice || 'sage')
+  const textareaRef = useRef(null)
 
   const [isRecording, setIsRecording] = useState(false)
   const [recordingDuration, setRecordingDuration] = useState(0)
@@ -210,6 +211,9 @@ export const AIChat = () => {
     if (!chatInput.trim() || isLoading) return
     const userMessage = chatInput
     setChatInput('')
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+    }
     const newMessages = [...messages, { id: crypto.randomUUID(), role: 'user', content: userMessage }]
     setMessages(newMessages)
     setIsLoading(true)
@@ -479,17 +483,27 @@ export const AIChat = () => {
                   </div>
                 </div>
               ) : (
-                <div className="relative flex items-center">
-                  <input
-                    type="text"
+                <div className="relative flex items-end">
+                  <textarea
+                    ref={textareaRef}
+                    rows={1}
                     placeholder={isTranscribing ? "Transcribing voice..." : "Talk to Aria..."}
                     value={chatInput}
                     disabled={isTranscribing}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                    className={`w-full px-4 sm:px-6 py-4 sm:py-5 pr-24 sm:pr-28 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-[0.95rem] sm:text-[1rem] text-[var(--text-main)] outline-none shadow-[var(--shadow-main)] ${isTranscribing ? 'opacity-50' : ''}`}
+                    onChange={(e) => {
+                      setChatInput(e.target.value)
+                      e.target.style.height = 'auto'
+                      e.target.style.height = `${e.target.scrollHeight}px`
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        handleSend()
+                      }
+                    }}
+                    className={`w-full px-4 sm:px-6 py-4 sm:py-5 pr-24 sm:pr-28 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-[0.95rem] sm:text-[1rem] text-[var(--text-main)] outline-none shadow-[var(--shadow-main)] resize-none overflow-y-auto max-h-[150px] leading-relaxed ${isTranscribing ? 'opacity-50' : ''}`}
                   />
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                  <div className="absolute right-4 bottom-3 sm:bottom-4.5 flex items-center gap-2">
                     <button
                       onClick={startRecording}
                       disabled={isTranscribing}
