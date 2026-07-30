@@ -56,6 +56,13 @@ export const AIChat = () => {
     }
   }, [])
 
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`
+    }
+  }, [chatInput])
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -211,9 +218,6 @@ export const AIChat = () => {
     if (!chatInput.trim() || isLoading) return
     const userMessage = chatInput
     setChatInput('')
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto'
-    }
     const newMessages = [...messages, { id: crypto.randomUUID(), role: 'user', content: userMessage }]
     setMessages(newMessages)
     setIsLoading(true)
@@ -271,6 +275,20 @@ export const AIChat = () => {
         @keyframes ripple {
           0%   { transform: scale(1);   opacity: 0.5; }
           100% { transform: scale(1.5); opacity: 0; }
+        }
+        .chat-textarea {
+          padding-left: 1rem !important;
+          padding-right: 6.5rem !important;
+          padding-top: 1rem !important;
+          padding-bottom: 1rem !important;
+        }
+        @media (min-width: 640px) {
+          .chat-textarea {
+            padding-left: 1.5rem !important;
+            padding-right: 7.5rem !important;
+            padding-top: 1.25rem !important;
+            padding-bottom: 1.25rem !important;
+          }
         }
       `}</style>
 
@@ -490,18 +508,14 @@ export const AIChat = () => {
                     placeholder={isTranscribing ? "Transcribing voice..." : "Talk to Aria..."}
                     value={chatInput}
                     disabled={isTranscribing}
-                    onChange={(e) => {
-                      setChatInput(e.target.value)
-                      e.target.style.height = 'auto'
-                      e.target.style.height = `${e.target.scrollHeight}px`
-                    }}
+                    onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault()
                         handleSend()
                       }
                     }}
-                    className={`w-full px-4 sm:px-6 py-4 sm:py-5 pr-24 sm:pr-28 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-[0.95rem] sm:text-[1rem] text-[var(--text-main)] outline-none shadow-[var(--shadow-main)] resize-none overflow-y-auto max-h-[150px] leading-relaxed ${isTranscribing ? 'opacity-50' : ''}`}
+                    className={`chat-textarea w-full bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-[0.95rem] sm:text-[1rem] text-[var(--text-main)] outline-none shadow-[var(--shadow-main)] resize-none overflow-y-auto max-h-[150px] leading-relaxed ${isTranscribing ? 'opacity-50' : ''}`}
                   />
                   <div className="absolute right-4 bottom-3 sm:bottom-4.5 flex items-center gap-2">
                     <button
