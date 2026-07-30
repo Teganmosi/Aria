@@ -3068,18 +3068,21 @@ async def _get_or_create_chat_session(user_id: str, session_id: Optional[str], m
 
 
 async def _generate_chat_stream(session_id: str, full_context: List[Dict[str, str]], mode: str, custom_instructions: Optional[str], user_id: str):
-    chunks = await asyncio.to_thread(
-        lambda: list(ai_service.generate_response_stream(
-            messages=full_context,
-            mode=mode,
-            custom_instructions=custom_instructions,
-            user_id=user_id,
-        ))
+    generator = ai_service.generate_response_stream(
+        messages=full_context,
+        mode=mode,
+        custom_instructions=custom_instructions,
+        user_id=user_id,
     )
     full_content = ""
-    for chunk in chunks:
-        full_content += chunk
-        yield chunk
+    while True:
+        try:
+            chunk = await asyncio.to_thread(next, generator)
+            full_content += chunk
+            yield chunk
+        except StopIteration:
+            break
+
     if full_content:
         await asyncio.to_thread(
             db.create_chat_message,

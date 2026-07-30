@@ -7,7 +7,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_MODEL = 'nvidia/nemotron-mini-4b-instruct'
+DEFAULT_MODEL = 'meta/llama-3.1-8b-instruct'
 
 
 def _run_async_in_thread(coro):
@@ -421,18 +421,23 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
 
         tools = [self._MEMORY_SEARCH_TOOL, self._BIBLE_FETCH_TOOL]
 
+        enable_tools = bool(user_id and config['model'] != "nvidia/nemotron-mini-4b-instruct")
+
         try:
-            response = self._client.chat.completions.create(
-                model=config['model'],
-                messages=[
+            kwargs = {
+                "model": config['model'],
+                "messages": [
                     {'role': 'system', 'content': system_prompt},
                     *sanitized_messages
                 ],
-                temperature=config['temperature'],
-                max_tokens=config['max_tokens'],
-                tools=tools if user_id else None,
-                tool_choice="auto" if user_id else None
-            )
+                "temperature": config['temperature'],
+                "max_tokens": config['max_tokens']
+            }
+            if enable_tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = "auto"
+
+            response = self._client.chat.completions.create(**kwargs)
 
             message = response.choices[0].message
             tool_calls = getattr(message, "tool_calls", None)
@@ -469,11 +474,9 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
                 return "I apologize, but I was unable to generate a response. Please try again."
 
             return content
-        except Exception as e:
+        except Exception:
             logger.exception("Error generating AI response")
-            import traceback
-            tb = traceback.format_exc()
-            return f"Error generating AI response: {str(e)}\n\nTraceback:\n{tb}"
+            return "I apologize, but I encountered an error. Please try again."
 
     def _execute_stream_tool_calls(
         self,
@@ -540,19 +543,24 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
 
         tools = [self._MEMORY_SEARCH_TOOL, self._BIBLE_FETCH_TOOL]
 
+        enable_tools = bool(user_id and config['model'] != "nvidia/nemotron-mini-4b-instruct")
+
         try:
-            stream = self._client.chat.completions.create(
-                model=config['model'],
-                messages=[
+            kwargs = {
+                "model": config['model'],
+                "messages": [
                     {'role': 'system', 'content': system_prompt},
                     *sanitized_messages
                 ],
-                temperature=config['temperature'],
-                max_tokens=config['max_tokens'],
-                tools=tools if user_id else None,
-                tool_choice="auto" if user_id else None,
-                stream=True
-            )
+                "temperature": config['temperature'],
+                "max_tokens": config['max_tokens'],
+                "stream": True
+            }
+            if enable_tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = "auto"
+
+            stream = self._client.chat.completions.create(**kwargs)
 
             tool_call_chunks = []
             is_tool_call = False
@@ -568,11 +576,9 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
                 yield from self._execute_stream_tool_calls(
                     config, system_prompt, sanitized_messages, tool_call_chunks, user_id
                 )
-        except Exception as e:
+        except Exception:
             logger.exception("Error generating AI response stream")
-            import traceback
-            tb = traceback.format_exc()
-            yield f"Error generating AI response stream: {str(e)}\n\nTraceback:\n{tb}"
+            yield "I apologize, but I encountered an error. Please try again."
     
     def explain_bible_verse(
         self,
