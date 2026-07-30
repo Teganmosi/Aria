@@ -979,6 +979,12 @@ class Database:
             logger.exception("Error creating devotion")
             return None
 
+    def get_devotion(self, devotion_id: str) -> Optional[Dict[str, Any]]:
+        with self.get_connection() as conn:
+            cur = self._cursor(conn)
+            cur.execute("SELECT * FROM devotions WHERE id = %s", (devotion_id,))
+            return self.to_dict(cur.fetchone())
+
     def get_devotions(self, user_id: str) -> List[Dict[str, Any]]:
         with self.get_connection() as conn:
             cur = self._cursor(conn)

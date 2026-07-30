@@ -1171,16 +1171,10 @@ async def process_devotion_ai(devotion_id: str):
             {"role": m["role"], "content": m["content"]} for m in messages
         ]
 
-        # Get devotion context
-        def get_user_id():
-            with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT user_id, day_plan_summary FROM devotions WHERE id = ?", (devotion_id,))
-                row = cursor.fetchone()
-                return row['user_id'] if row else None
-
-        user_id = await asyncio.to_thread(get_user_id)
-        if not user_id: return
+        devotion = await asyncio.to_thread(db.get_devotion, devotion_id)
+        if not devotion:
+            return
+        user_id = devotion["user_id"]
 
         user_profile = await asyncio.to_thread(db.get_profile, user_id)
         custom_instructions = (
@@ -1192,6 +1186,7 @@ async def process_devotion_ai(devotion_id: str):
             conversation_history,
             "devotion",
             custom_instructions=custom_instructions,
+            user_id=user_id,
         )
         
         await asyncio.to_thread(
@@ -2793,11 +2788,7 @@ manager = ConnectionManager()
 async def process_bible_study_ai(session_id: str):
     """Helper to process AI interaction for Bible study"""
     try:
-        messages = db.get_bible_study_messages(session_id)
-        conversation_history = [
-            {"role": m["role"], "content": m["content"]} for m in reversed(messages)
-        ]
-        # Use reversed messages to get history in correct order if get_bible_study_messages returns chronological
+        conversation_history = _extract_bible_study_messages(session_id)
 
         session = db.get_bible_study_session(session_id)
         if session:
@@ -2806,13 +2797,12 @@ async def process_bible_study_ai(session_id: str):
                 _get_user_custom_instructions(user_profile) if user_profile else None
             )
 
-            response = ai_service.explain_bible_verse(
-                book=session["book"],
-                chapter=session["chapter"],
-                verses=session["verses"],
-                selected_text=session["selected_text"],
-                conversation_history=conversation_history,
+            response = await asyncio.to_thread(
+                ai_service.generate_response,
+                conversation_history,
+                "bibleStudy",
                 custom_instructions=custom_instructions,
+                user_id=session["user_id"],
             )
             db.create_bible_study_message(
                 {"session_id": session_id, "role": "assistant", "content": response}
@@ -2864,31 +2854,29 @@ async def websocket_bible_study(websocket: WebSocket, session_id: str):
 async def process_emotional_support_ai(session_id: str):
     """Helper to process AI interaction for emotional support"""
     try:
-        messages = db.get_emotional_support_messages(session_id)
-        conversation_history = [
-            {"role": m["role"], "content": m["content"]} for m in reversed(messages)
-        ]
+        conversation_history = _extract_emotional_support_messages(session_id)
 
         session = db.get_emotional_support_session(session_id)
-        user_profile = db.get_profile(session["user_id"]) if session else None
-        custom_instructions = (
-            _get_user_custom_instructions(user_profile) if user_profile else None
-        )
-
-        response = await asyncio.to_thread(
-            ai_service.generate_response,
-            conversation_history,
-            "emotionalSupport",
-            custom_instructions=custom_instructions,
-        )
-        db.create_emotional_support_message(
-            {"session_id": session_id, "role": "assistant", "content": response}
-        )
-        await manager.send_message(
-            session_id, {"type": "message", "role": "assistant", "content": response}
-        )
-        # Trigger background synthesis
         if session:
+            user_profile = db.get_profile(session["user_id"])
+            custom_instructions = (
+                _get_user_custom_instructions(user_profile) if user_profile else None
+            )
+
+            response = await asyncio.to_thread(
+                ai_service.generate_response,
+                conversation_history,
+                "emotionalSupport",
+                custom_instructions=custom_instructions,
+                user_id=session["user_id"],
+            )
+            db.create_emotional_support_message(
+                {"session_id": session_id, "role": "assistant", "content": response}
+            )
+            await manager.send_message(
+                session_id, {"type": "message", "role": "assistant", "content": response}
+            )
+            # Trigger background synthesis
             run_background_task(synthesize_session_journey(session["user_id"], session_id, "emotionalSupport"))
     except Exception:
         logger.exception("Error in emotional support AI")
