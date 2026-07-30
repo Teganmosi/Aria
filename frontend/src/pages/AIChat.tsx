@@ -25,7 +25,7 @@ const markdownComponents = {
 };
 
 export const AIChat = () => {
-  const { user } = useAuth()
+  const { user, refreshUser } = useAuth()
   const [chatInput, setChatInput] = useState('')
   const [messages, setMessages] = useState<{role:string;content:string}[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -246,6 +246,13 @@ export const AIChat = () => {
     }
   }
 
+  const openCustomization = () => {
+    setAriaCustomPrompt(user?.aria_custom_prompt || '')
+    setAriaPersonalContext(user?.aria_personal_context || '')
+    setAriaVoice(user?.aria_voice || 'sage')
+    setIsCustomizing(true)
+  }
+
   const handleSaveCustomization = async () => {
     try {
       await profileService.updateProfile({
@@ -253,6 +260,8 @@ export const AIChat = () => {
         aria_personal_context: ariaPersonalContext,
         aria_voice: ariaVoice
       })
+      await refreshUser()
+      setIsCustomizing(false)
       toast.success('Aria updated successfully!')
     } catch (err) {
       toast.error(err.message || 'Failed to update Aria')
@@ -305,7 +314,7 @@ export const AIChat = () => {
         </div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setIsCustomizing(true)}
+            onClick={openCustomization}
             className="bg-[var(--bg-card)] border border-[var(--border-color)] hover:bg-[var(--bg-alt)] hover:border-[var(--text-muted)] p-2.5 lg:px-4 lg:py-2 rounded-full flex items-center justify-center gap-2 text-[var(--text-secondary)] hover:text-[var(--text-main)] text-[0.8rem] font-semibold cursor-pointer tracking-[0.05em] transition-all duration-300 shadow-[var(--shadow-main)]"
           >
             <Sparkles size={14} className="text-[var(--brand-accent)] animate-pulse" />
