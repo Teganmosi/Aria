@@ -469,9 +469,11 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
                 return "I apologize, but I was unable to generate a response. Please try again."
 
             return content
-        except Exception:
+        except Exception as e:
             logger.exception("Error generating AI response")
-            return "I apologize, but I encountered an error. Please try again."
+            import traceback
+            tb = traceback.format_exc()
+            return f"Error generating AI response: {str(e)}\n\nTraceback:\n{tb}"
 
     def _execute_stream_tool_calls(
         self,
@@ -566,9 +568,11 @@ Speak as a friend who carries the peace of God — warm, grounded in the Word, a
                 yield from self._execute_stream_tool_calls(
                     config, system_prompt, sanitized_messages, tool_call_chunks, user_id
                 )
-        except Exception:
+        except Exception as e:
             logger.exception("Error generating AI response stream")
-            yield "I apologize, but I encountered an error. Please try again."
+            import traceback
+            tb = traceback.format_exc()
+            yield f"Error generating AI response stream: {str(e)}\n\nTraceback:\n{tb}"
     
     def explain_bible_verse(
         self,
