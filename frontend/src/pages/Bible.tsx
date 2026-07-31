@@ -479,17 +479,17 @@ export const Bible = () => {
       )}
 
       <div className="page-content">
-        <header className="bible-header glass-panel">
+        <header className={`bible-header glass-panel ${view === 'books' ? 'bible-header--center' : ''}`}>
           <div className="bible-header-left">
             {view !== 'books' && (
               <button className="back-btn" onClick={goBack}>
                 <ArrowLeft size={20} />
               </button>
             )}
-            <div className="flex items-start gap-3">
-              <BookOpen size={24} color="var(--brand-accent)" className="mt-1.5 flex-shrink-0" />
-              <div className="flex flex-col">
-                <h1 className="font-serif m-0" style={{ fontSize: '1.75rem', lineHeight: '1.2' }}>The Sanctuary Library</h1>
+            <div className={`flex ${view === 'books' ? 'flex-col items-center gap-2' : 'items-start gap-3'}`}>
+              <BookOpen size={view === 'books' ? 32 : 24} color="var(--brand-accent)" className={view === 'books' ? 'mb-1' : 'mt-1.5 flex-shrink-0'} />
+              <div className={`flex flex-col ${view === 'books' ? 'items-center text-center' : ''}`}>
+                <h1 className="font-serif m-0" style={{ fontSize: view === 'books' ? '2rem' : '1.75rem', lineHeight: '1.2' }}>The Sanctuary Library</h1>
                 <p className="text-[var(--text-secondary)]" style={{ margin: '0.25rem 0 0', fontSize: '0.9rem' }}>
                   {selectedBook
                     ? (
@@ -752,6 +752,8 @@ export const Bible = () => {
           .chapters-grid-container { padding: 1.5rem !important; border-radius: 20px !important; }
         }
         .bible-header { display: flex; justify-content: space-between; align-items: center; padding: 1.5rem 2rem; border-radius: 24px; margin-bottom: 2rem; background: var(--glass-bg); backdrop-filter: blur(20px); border: 1px solid var(--border-color); }
+        .bible-header--center { justify-content: center; text-align: center; padding: 2.5rem 2rem; }
+        .bible-header--center .bible-header-left { width: 100%; justify-content: center; }
         .bible-header-left { display: flex; align-items: center; gap: 1.5rem; }
         .back-btn { width: 44px; height: 44px; border-radius: 50%; background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-main); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; flex-shrink: 0; }
         .back-btn:hover { background: var(--bg-hover); transform: translateX(-3px); }
