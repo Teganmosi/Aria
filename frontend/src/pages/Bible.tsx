@@ -486,31 +486,31 @@ export const Bible = () => {
                 <ArrowLeft size={20} />
               </button>
             )}
-            <div className="flex flex-col">
-              <div className="flex items-center gap-3">
-                <BookOpen size={24} color="var(--brand-accent)" />
-                <h1 className="font-serif m-0" style={{ fontSize: '1.75rem' }}>The Sanctuary Library</h1>
+            <div className="flex items-start gap-3">
+              <BookOpen size={24} color="var(--brand-accent)" className="mt-1.5 flex-shrink-0" />
+              <div className="flex flex-col">
+                <h1 className="font-serif m-0" style={{ fontSize: '1.75rem', lineHeight: '1.2' }}>The Sanctuary Library</h1>
+                <p className="text-[var(--text-secondary)]" style={{ margin: '0.25rem 0 0', fontSize: '0.9rem' }}>
+                  {selectedBook
+                    ? (
+                      view === 'reading'
+                        ? (
+                          <span className="inline-flex items-center gap-1 flex-wrap">
+                            <button className="passage-nav-btn" onClick={() => { setShowChapterOverlay(false); setShowBookOverlay(true) }}>
+                              {selectedBook.name}
+                            </button>
+                            <span style={{ opacity: 0.4 }}>•</span>
+                            <button className="passage-nav-btn" onClick={() => { setShowBookOverlay(false); setShowChapterOverlay(true) }}>
+                              Chapter {selectedChapter}
+                            </button>
+                          </span>
+                        )
+                        : `${selectedBook.name} • Chapter ${selectedChapter}`
+                    )
+                    : "Explore God's Word in quiet reflection"
+                  }
+                </p>
               </div>
-              <p className="text-[var(--text-secondary)]" style={{ margin: '0.25rem 0 0', fontSize: '0.9rem' }}>
-                {selectedBook
-                  ? (
-                    view === 'reading'
-                      ? (
-                        <span className="inline-flex items-center gap-1 flex-wrap">
-                          <button className="passage-nav-btn" onClick={() => { setShowChapterOverlay(false); setShowBookOverlay(true) }}>
-                            {selectedBook.name}
-                          </button>
-                          <span style={{ opacity: 0.4 }}>•</span>
-                          <button className="passage-nav-btn" onClick={() => { setShowBookOverlay(false); setShowChapterOverlay(true) }}>
-                            Chapter {selectedChapter}
-                          </button>
-                        </span>
-                      )
-                      : `${selectedBook.name} • Chapter ${selectedChapter}`
-                  )
-                  : "Explore God's Word in quiet reflection"
-                }
-              </p>
             </div>
           </div>
 
