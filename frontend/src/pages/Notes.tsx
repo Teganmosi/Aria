@@ -674,6 +674,12 @@ export const Notes = () => {
             padding: 0 1.25rem;
             margin-bottom: 1.5rem;
           }
+          .filter-search-input {
+            padding: 0.875rem 1rem 0.875rem 3rem !important;
+          }
+          .filter-select {
+            padding: 0.875rem 2.5rem 0.875rem 1rem !important;
+          }
           .notes-grid-container {
             padding: 0 1.25rem 2rem;
           }
