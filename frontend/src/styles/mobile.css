@@ -158,7 +158,6 @@ html {
   }
   
   /* Button optimization */
-  button,
   .btn-base {
     padding: 0.875rem 1.25rem !important;
     font-size: 0.8125rem !important;
