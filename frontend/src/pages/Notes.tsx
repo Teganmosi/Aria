@@ -235,7 +235,7 @@ export const Notes = () => {
           <div className="text-center mt-16 text-[var(--text-muted)]">Preparing your journal...</div>
         ) : filteredNotes.length === 0 ? (
           <div className="text-center mt-32 text-[var(--text-muted)]">
-            <FileText size={48} style={{ marginBottom: '1.5rem', opacity: 0.2 }} />
+            <FileText size={48} style={{ margin: '0 auto 1.5rem', opacity: 0.2, display: 'block' }} />
             {searchQuery || filterSource ? (
               <p>No entries match your search. Try different words or clear the filters.</p>
             ) : (
