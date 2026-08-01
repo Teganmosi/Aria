@@ -3227,7 +3227,11 @@ async def get_home_data(current_user: Dict[str, Any] = Depends(get_current_user)
     # 3. Store in Redis cache with 60s expiration
     if settings.redis_enabled and redis_client:
         try:
-            redis_client.setex(cache_key, 60, json.dumps(response_data))
+            def datetime_serializer(obj):
+                if hasattr(obj, "isoformat"):
+                    return obj.isoformat()
+                raise TypeError(f"Type {type(obj)} not serializable")
+            redis_client.setex(cache_key, 60, json.dumps(response_data, default=datetime_serializer))
         except Exception:
             logger.exception("Redis home data cache save failed")
 
