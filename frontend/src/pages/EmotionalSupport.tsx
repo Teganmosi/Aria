@@ -142,7 +142,7 @@ export const EmotionalSupport = () => {
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: isMobile ? '1rem' : '1.5rem', width: '100%', maxWidth: '900px', marginBottom: isMobile ? '2rem' : '4rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: isMobile ? '0.75rem' : '1.5rem', width: '100%', maxWidth: '900px', marginBottom: isMobile ? '1.5rem' : '4rem' }}>
             {SITUATIONS.map((s) => (
               <button
                 key={s.id}
@@ -151,7 +151,7 @@ export const EmotionalSupport = () => {
                   background: selectedSituation === s.id ? 'var(--bg-card)' : 'var(--bg-alt)',
                   border: selectedSituation === s.id ? '2px solid var(--brand-solid)' : '1px solid var(--border-color)',
                   borderRadius: '20px',
-                  padding: isMobile ? '1.25rem' : '2rem',
+                  padding: isMobile ? '1rem' : '2rem',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -163,14 +163,14 @@ export const EmotionalSupport = () => {
                 }}
               >
                 <div style={{
-                  width: isMobile ? '40px' : '50px', height: isMobile ? '40px' : '50px', background: `${s.color}25`, borderRadius: '12px',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: isMobile ? '0.75rem' : '1.25rem',
+                  width: isMobile ? '36px' : '50px', height: isMobile ? '36px' : '50px', background: `${s.color}25`, borderRadius: '12px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: isMobile ? '0.5rem' : '1.25rem',
                   color: s.color
                 }}>
                   {s.icon}
                 </div>
-                <h3 className="font-serif" style={{ fontSize: isMobile ? '1rem' : '1.2rem', color: 'var(--text-main)', marginBottom: '0.5rem' }}>{s.label}</h3>
-                <p style={{ fontSize: isMobile ? '0.75rem' : '0.8rem', color: 'var(--text-secondary)' }}>{s.description}</p>
+                <h3 className="font-serif" style={{ fontSize: isMobile ? '0.95rem' : '1.2rem', color: 'var(--text-main)', marginBottom: isMobile ? '0.25rem' : '0.5rem' }}>{s.label}</h3>
+                <p style={{ fontSize: isMobile ? '0.7rem' : '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>{s.description}</p>
               </button>
             ))}
           </div>
