@@ -448,43 +448,43 @@ export const AIChat = () => {
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-[var(--brand-accent)] opacity-10 blur-[100px] z-0 pointer-events-none" />
 
           {messages.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center z-[1] text-center px-4 pb-24 w-full">
+            <div className="flex-1 flex flex-col items-center justify-center z-[1] text-center px-4 pb-28 sm:pb-24 w-full">
               {/* Voice call button */}
-              <div className="relative mb-12">
+              <div className="relative mb-6 sm:mb-12">
                 <button
-                  className="voice-ripple group relative w-[180px] h-[180px] bg-[var(--bg-card)] rounded-full flex flex-col items-center justify-center shadow-[var(--shadow-main)] gap-4 cursor-pointer border border-[var(--border-color)] p-0 transition-all duration-[400ms] hover:scale-105 hover:border-[var(--brand-accent)]"
+                  className="voice-ripple group relative w-[130px] h-[130px] sm:w-[180px] sm:h-[180px] bg-[var(--bg-card)] rounded-full flex flex-col items-center justify-center shadow-[var(--shadow-main)] gap-3 sm:gap-4 cursor-pointer border border-[var(--border-color)] p-0 transition-all duration-[400ms] hover:scale-105 hover:border-[var(--brand-accent)]"
                   onClick={() => setIsVoiceCallOpen(true)}
                   onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setIsVoiceCallOpen(true)}
                   aria-label="Tap to call Aria"
                 >
-                  <div className="w-14 h-14 bg-[var(--brand-solid)] text-[var(--bg-main)] rounded-full flex items-center justify-center transition-all duration-300 group-hover:bg-[var(--brand-accent)] group-hover:text-[#0B192C] group-hover:rotate-[15deg]">
-                    <Mic size={24} />
+                  <div className="w-10 h-10 sm:w-14 sm:h-14 bg-[var(--brand-solid)] text-[var(--bg-main)] rounded-full flex items-center justify-center transition-all duration-300 group-hover:bg-[var(--brand-accent)] group-hover:text-[#0B192C] group-hover:rotate-[15deg]">
+                    <Mic size={20} />
                   </div>
-                  <span className="text-[0.65rem] tracking-[0.15em] text-[var(--text-secondary)] font-extrabold">TAP TO CALL</span>
+                  <span className="text-[0.6rem] sm:text-[0.65rem] tracking-[0.15em] text-[var(--text-secondary)] font-extrabold">TAP TO CALL</span>
                 </button>
               </div>
 
               {/* Quote */}
-              <div className="mb-12 max-w-[600px]">
-                <h2 className="font-serif text-[2.5rem] max-sm:text-[1.75rem] text-[var(--text-main)] leading-[1.3] mb-6 font-normal">
+              <div className="mb-6 sm:mb-12 max-w-[600px]">
+                <h2 className="font-serif text-[1.6rem] sm:text-[2.5rem] text-[var(--text-main)] leading-[1.3] mb-3 sm:mb-6 font-normal">
                   "Speak, Lord, for your servant is listening."
                 </h2>
-                <p className="text-[var(--text-secondary)] text-[1rem] leading-[1.6]">
+                <p className="text-[var(--text-secondary)] text-[0.9rem] sm:text-[1rem] leading-[1.6]">
                   Aria is here to reflect and pray with you.
                 </p>
               </div>
 
               {/* Suggestion chips */}
-              <div className="flex gap-3 flex-wrap justify-center">
+              <div className="flex gap-2.5 sm:gap-3 flex-wrap justify-center">
                 <button
                   onClick={() => setChatInput("I'd like to pray for strength")}
-                  className="bg-[var(--bg-card)] border border-[var(--border-color)] px-6 py-3 rounded-[2rem] text-[0.8rem] text-[var(--text-main)] hover:bg-[var(--bg-alt)] hover:border-[var(--brand-accent)] hover:text-[var(--brand-accent)] font-semibold cursor-pointer transition-all duration-300"
+                  className="bg-[var(--bg-card)] border border-[var(--border-color)] px-4 py-2.5 sm:px-6 sm:py-3 rounded-[2rem] text-[0.75rem] sm:text-[0.8rem] text-[var(--text-main)] hover:bg-[var(--bg-alt)] hover:border-[var(--brand-accent)] hover:text-[var(--brand-accent)] font-semibold cursor-pointer transition-all duration-300"
                 >
                   ASK FOR PRAYER
                 </button>
                 <button
                   onClick={() => setChatInput("Explain Hebrews 11:1")}
-                  className="bg-[var(--bg-card)] border border-[var(--border-color)] px-6 py-3 rounded-[2rem] text-[0.8rem] text-[var(--text-main)] hover:bg-[var(--bg-alt)] hover:border-[var(--brand-accent)] hover:text-[var(--brand-accent)] font-semibold cursor-pointer transition-all duration-300"
+                  className="bg-[var(--bg-card)] border border-[var(--border-color)] px-4 py-2.5 sm:px-6 sm:py-3 rounded-[2rem] text-[0.75rem] sm:text-[0.8rem] text-[var(--text-main)] hover:bg-[var(--bg-alt)] hover:border-[var(--brand-accent)] hover:text-[var(--brand-accent)] font-semibold cursor-pointer transition-all duration-300"
                 >
                   SCRIPTURE CONTEXT
                 </button>
