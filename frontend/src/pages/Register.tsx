@@ -107,7 +107,7 @@ export const Register = () => {
           <div style={{ marginBottom: '2.5rem' }}>
             <img src="/sanctuary-mark.png" style={{ width: '48px', height: '48px', marginBottom: '1.5rem', opacity: 0.9 }} alt="Sanctuary Logo" />
             <h2 className="font-serif" style={{ fontSize: '2.5rem', color: 'var(--text-main)', marginBottom: '0.5rem', lineHeight: 1.2 }}>Create Your Account</h2>
-            <p className="text-[var(--text-secondary)] text-base">Start your spiritual journey with Aria today.</p>
+            <p className="text-[var(--text-secondary)] text-base">Start your journey with Aria today.</p>
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">

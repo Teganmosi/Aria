@@ -117,7 +117,7 @@ export const Home = () => {
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768)
   const [mannaPlaying, setMannaPlaying] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  
+
   // Maps stored user voices to YarnGPT voice names
   const FRONTEND_VOICE_MAP = {
     alloy: 'Osagie',
@@ -229,17 +229,17 @@ export const Home = () => {
       const userVoice = user?.aria_voice || 'verse'
       const voice = FRONTEND_VOICE_MAP[userVoice] || 'Idera'
       const url = await ttsService.getSpeechUrl(text, voice)
-      
+
       const audio = new Audio(url)
       audioRef.current = audio
-      
+
       audio.onended = () => {
         setMannaPlaying(false)
       }
       audio.onerror = () => {
         setMannaPlaying(false)
       }
-      
+
       await audio.play()
       setMannaPlaying(true)
     } catch (err) {
@@ -294,7 +294,7 @@ export const Home = () => {
       <div className="mb-20">
         <div className="flex justify-between items-end mb-10">
           <div>
-            <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.15em', marginBottom: '0.5rem' }}>YOUR SPIRITUAL JOURNEY</p>
+            <p style={{ margin: 0, fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.15em', marginBottom: '0.5rem' }}>YOUR JOURNEY</p>
             <h3 style={{ margin: 0, fontSize: '2rem', color: 'var(--text-main)', fontFamily: "'Playfair Display', serif" }}>Continuing the Path</h3>
           </div>
           <p onClick={() => navigate('/app/activity')} style={{ margin: 0, fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted)', cursor: 'pointer', borderBottom: '1px solid var(--border-color)', paddingBottom: '2px' }}>VIEW ALL</p>
