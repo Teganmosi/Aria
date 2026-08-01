@@ -458,3 +458,71 @@
     0% { transform: scale(1); opacity: 0.4; }
     100% { transform: scale(2.4); opacity: 0; }
 }
+
+/* Responsive Call View for Mobile Devices */
+@media (max-width: 768px) {
+    .voice-call-overlay {
+        padding: 1.5rem 1rem;
+    }
+
+    .avatar-container {
+        margin-bottom: 1.5rem;
+    }
+
+    .avatar-image-wrapper {
+        width: 140px;
+        height: 140px;
+    }
+
+    .avatar-glow {
+        width: 180px;
+        height: 180px;
+    }
+
+    .ring-1 { width: 170px; height: 170px; }
+    .ring-2 { width: 200px; height: 200px; }
+    .ring-3 { width: 250px; height: 250px; }
+
+    .call-title {
+        font-size: 2.2rem;
+        margin-bottom: 1rem;
+    }
+
+    .status-label {
+        font-size: 0.7rem;
+        letter-spacing: 0.3em;
+    }
+
+    .waveform-container {
+        margin-bottom: 1.25rem;
+    }
+
+    .transcript-panel {
+        min-height: 80px;
+        padding: 1.25rem 1.5rem;
+        font-size: 1rem;
+        border-radius: 24px;
+    }
+
+    .controls-bar {
+        margin-bottom: 1.5rem;
+        gap: 1.75rem;
+        padding: 0.8rem 1.75rem;
+    }
+
+    .btn-mute {
+        width: 52px;
+        height: 52px;
+    }
+
+    .btn-end {
+        width: 68px;
+        height: 68px;
+    }
+
+    .encryption-text {
+        bottom: 1.25rem;
+        font-size: 0.6rem;
+        letter-spacing: 0.15em;
+    }
+}
