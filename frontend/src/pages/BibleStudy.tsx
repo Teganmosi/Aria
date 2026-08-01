@@ -39,7 +39,11 @@ export const BibleStudy = () => {
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
 
-  const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }
+  const scrollToBottom = () => {
+    if (messages.length > 1) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }
 
   useEffect(() => { scrollToBottom() }, [messages])
 
@@ -59,7 +63,7 @@ export const BibleStudy = () => {
     try {
       const session = await bibleService.createStudySession(book, chapter, [], text)
       setSessionId(session.id)
-      const initialMsg = `Welcome! 🕊️ I see you've selected a specific passage from ${book} ${chapter}: "${text}". It's a beautiful selection. What speaks to your heart about these specific words?`
+      const initialMsg = `Welcome! 🕊️ Let's reflect on this selection from ${book} ${chapter} together. What speaks to your heart about these words?`
       setMessages([{ role: 'companion', content: initialMsg }])
       await bibleService.createStudyMessage(session.id, 'assistant', initialMsg)
     } catch { } finally { setIsLoading(false) }
@@ -111,7 +115,7 @@ export const BibleStudy = () => {
 
         let initialMsg = ""
         if (content.type === 'verse') {
-          initialMsg = `Welcome to our study! 🕊️ We're looking at ${content.reference}: "${content.text}". What strikes you most about these words?`
+          initialMsg = `Welcome to our study! 🕊️ Let's reflect on ${content.reference} together. What strikes you most about these words?`
         } else if (content.type === 'chapter') {
           initialMsg = `Let's dive into ${content.reference} together. It's a powerful chapter with ${content.verses?.length || 0} verses. Is there a specific part you'd like to reflect on first?`
         } else {
