@@ -245,7 +245,7 @@ export const BibleStudy = () => {
                 <div className="example-tags">
                   <span className="tag-label">Inspirations:</span>
                   {['Romans 8:28', 'Psalm 23', 'Faith', 'God\'s Love', 'Forgiveness'].map(ex => (
-                    <button key={ex} className="tag-btn glass-panel" onClick={() => { setUserInput(ex); setInputType(detectInputType(ex)); }}>{ex}</button>
+                    <button key={ex} className="tag-btn" onClick={() => { setUserInput(ex); setInputType(detectInputType(ex)); }}>{ex}</button>
                   ))}
                 </div>
 
@@ -497,12 +497,15 @@ export const BibleStudy = () => {
           .revamped-session { gap: 1rem; }
           .session-nav { flex-direction: column; align-items: flex-start; gap: 1rem; padding-bottom: 1rem; }
           .exit-btn { align-self: flex-end; }
-          .hero-branding h1 { font-size: 2rem; }
-          .hero-branding p { font-size: 1rem; }
-          .input-panel { padding: 1.5rem; }
+          .hero-branding { margin-bottom: 1.5rem !important; }
+          .hero-branding h1 { font-size: 2rem !important; margin: 0.5rem 0 !important; }
+          .hero-branding p { font-size: 0.95rem !important; margin: 0 !important; }
+          .sparkle-icon { width: 48px !important; height: 48px !important; margin-bottom: 0.5rem !important; }
+          .sparkle-icon svg { width: 24px !important; height: 24px !important; }
+          .input-panel { padding: 1.5rem; border-radius: 24px !important; }
           .sanctuary-input { padding: 1rem 1.5rem; font-size: 1rem; }
           .begin-button { padding: 1rem; font-size: 1rem; width: 100%; }
-          .example-tags { justify-content: flex-start; }
+          .example-tags { justify-content: center; gap: 0.5rem; }
           .tag-btn { font-size: 0.8rem; padding: 0.4rem 1rem; }
           .messages-flow { padding: 1rem; gap: 1rem; }
           .revamped-msg { max-width: 90%; }
@@ -585,7 +588,23 @@ export const BibleStudy = () => {
         .type-hint { position: absolute; right: 1.5rem; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
         .example-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.75rem; margin-top: 0.5rem; }
         .tag-label { color: var(--text-muted); font-size: 0.9rem; align-self: center; }
-        .tag-btn { padding: 0.5rem 1.25rem; border-radius: 100px; border: none; cursor: pointer; font-size: 0.9rem; color: var(--text-secondary); }
+        .tag-btn {
+          background: var(--glass-bg);
+          backdrop-filter: blur(var(--glass-blur));
+          border: 1px solid var(--border-color);
+          box-shadow: var(--shadow-sm);
+          padding: 0.5rem 1.25rem;
+          border-radius: 100px;
+          cursor: pointer;
+          font-size: 0.9rem;
+          color: var(--text-secondary);
+          transition: all 0.2s ease;
+        }
+        .tag-btn:hover {
+          background: var(--bg-hover);
+          border-color: var(--brand-accent);
+          color: var(--text-main);
+        }
         .begin-button { margin-top: 1rem; padding: 1.5rem; border-radius: 100px; border: none; background: var(--brand-solid); color: var(--text-inverse); font-size: 1.1rem; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 1rem; }
       `}</style>
     </div>
