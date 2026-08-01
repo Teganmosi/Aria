@@ -38,7 +38,7 @@ const FaithStreak = ({ days, streak }) => {
           <BurningFlame size="sm" intensity={1} />
         </div>
         <div>
-          <p style={{ margin: 0, fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.1em' }}>FAITH STREAK</p>
+          <p style={{ margin: 0, fontSize: '0.6rem', fontWeight: 800, color: 'var(--text-muted)', letterSpacing: '0.1em' }}>YOUR STREAK</p>
           <h4 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-main)', fontWeight: 700 }}>{streak} Day Streak</h4>
         </div>
       </div>
