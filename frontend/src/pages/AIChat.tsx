@@ -512,8 +512,6 @@ export const AIChat = () => {
                   Aria is reflecting...
                 </div>
               )}
-
-              <div ref={messagesEndRef} />
             </div>
           )}
 
